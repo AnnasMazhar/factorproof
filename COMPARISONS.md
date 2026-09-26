@@ -9,6 +9,9 @@ verified say `unverified`. Star counts are GitHub API values on that date.
 | **MlFinLab** (Hudson & Thames) | All rights reserved, not open source. Commercial use needs a paid licence; Business tier is **£100 (+VAT) per month, per user** | Commercial product; public repo last pushed **2023-10-02** (4,933 stars) | **Yes** — purged K-fold and combinatorial purged CV (AFML ch. 7) | **Yes** — Bonferroni, Holm and BHY adjustments in the Sharpe-haircut and profit-hurdle algorithms | **Yes** | **No** — threshold helpers (profit hurdles, minimum track record), but no accept/reject verdict API in the public source; the current paid package was not inspected (`unverified`) | **Yes**, local install |
 | **Quantopian stack** (alphalens / pyfolio / empyrical) | Apache-2.0 (all three) | **No** — last commits on the default branch: alphalens 2020-04-27, pyfolio 2020-02-28, empyrical 2020-10-14. Not archived | **No** — no purged or embargo code | **No** — no Benjamini-Hochberg, Bonferroni or FDR code | **No** | **No** — metrics and tear sheets only | **Yes** |
 | **qlib** (Microsoft) | MIT | **Yes** — 48,876 stars, last push **2026-09-22** | **No** — no purged/embargo/walk-forward code or docs | **No** | **No** — plain Sharpe ratios only | **No** — experiment tracking and metrics, no accept/reject gate | Only after downloading its dataset (`scripts/get_data.py`); then yes |
+| **purgedcv** (eslazarev) | MIT | **Yes** — v0.0.2, PyPI 2025-04-16; 35 stars, JOSS paper submitted | **Yes** — `PurgedKFold`, `WalkForwardSplit`, `CombinatorialPurgedCV` with full embargo support | **No** — no BH/Bonferroni across a factor family; only single-strategy DSR/PSR | **Yes** — `deflated_sharpe_ratio` and `probabilistic_sharpe_ratio` fully implemented | **No** — a CV/statistics library only; no factor computation, no IC, no quantile spread, no accept/reject gate | **Yes** — offline, pure time-series inputs |
+| **ml4t-diagnostic** (ml4t org) | MIT | **Yes** — active 2026, 32 stars, part of a 7-library ML4T ecosystem | **Yes** — `WalkForwardCV`, `CombinatorialCV`, purge + embargo + CPCV | **Yes** — FDR control, White's Reality Check, DSR, PBO | **Yes** | **No** — metrics and tearsheets; no standalone accept/reject gate | **Partial** — requires Polars; optional Numba/LightGBM/SHAP extras; 7-library ecosystem is a hard dependency chain |
+| **pyanomaly** (chulwoohan) | MIT | **Partial** — v1.01 2024-03-13, 132 stars; no commits since | **No** — no purged or embargo CV | **No** | **No** | **No** — quantile portfolios and factor regression; no promotion verdict | **No** — requires a WRDS subscription for all data; no offline synthetic path |
 | **factorproof** (this repo) | MIT | Yes — v0.1.0, active development | **Yes** — `PurgedWalkForward`: label-overlap purge plus an explicit embargo | **Yes** — Benjamini-Hochberg (primary) and Bonferroni, applied inside the gate across the screened family | **Yes** — implemented and property-tested; *not* wired into the default gate | **Yes** — 10 checks, all must pass, exit code 1 on reject, no `--force` | **Yes** — synthetic OHLCV built in, CSV loader, no network calls |
 
 ## Where MlFinLab wins
@@ -55,6 +58,9 @@ either.
 - MlFinLab repo metadata and source (purged CV, BHY, haircut, deflated Sharpe): GitHub API + `master` tarball
 - alphalens / pyfolio / empyrical metadata, licences, last default-branch commits: GitHub API and commits API
 - qlib metadata: https://api.github.com/repos/microsoft/qlib ; feature search: `master` checkout, no matches for purged/embargo/deflated/Benjamini/"false discovery"/walk-forward
+- purgedcv repo: https://github.com/eslazarev/purged-cross-validation (35 stars, MIT, JOSS paper, v0.0.2 PyPI 2025-04-16); feature list verified against README and API summary table
+- ml4t-diagnostic repo: https://github.com/ml4t/diagnostic (32 stars, MIT, active 2026); feature list from README capability table and ecosystem description
+- pyanomaly repo: https://github.com/chulwoohan/pyanomaly (132 stars, MIT, v1.01 2024-03-13); WRDS requirement from README installation instructions; feature gaps confirmed by source search for "purge", "embargo", "false discovery", "Wilson"
 - Topic sizes (GitHub search API, same date) used for `launch/topics.txt`
 
 ## Choose this when…
@@ -65,5 +71,11 @@ either.
   overfitting controls, and you are willing to live with 2020-era code or a community fork.
 - **qlib** — you want an end-to-end ML research platform with data pipelines and experiment
   tracking, and overfitting statistics are handled elsewhere.
+- **purgedcv** — you are building a sklearn-compatible ML pipeline and want correct time-series
+  CV splits with CPCV and PBO baked in. You do not need IC measurement or a factor gate.
+- **ml4t-diagnostic** — you have already committed to the ML4T seven-library ecosystem, use Polars,
+  and want tearsheets alongside validation. The ecosystem overhead is acceptable.
+- **pyanomaly** — you have a WRDS subscription and want to replicate academic equity anomalies
+  against CRSP/Compustat firm characteristics. Real data, academic scope, no overfitting controls.
 - **factorproof** — you want purged walk-forward CV, multiple-testing correction, a deflated Sharpe
   and a gate that says no, under MIT, offline, inspectable, with no subscription.
