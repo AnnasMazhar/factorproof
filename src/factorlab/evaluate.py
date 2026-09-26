@@ -10,8 +10,14 @@ References:
   between factor scores and forward returns.
 - Wilson score interval (hit rate lower bound): Wilson (1927) J. American
   Statistical Association 22(158):209-212. Implemented from first principles.
+  NOTE: Wilson bounds are valid for the *hit rate* (a binomial proportion).
+  For the IC estimand (a correlation), use block_bootstrap_ic_ci() instead.
 - Quantile spread: standard in the quantitative finance literature; see also
   Asness et al. (2013) J. Portfolio Management 39(5):18-36.
+- Newey-West HAC standard errors: Newey & West (1987) Econometrica 55(3):703-708.
+  HAC corrects the IC t-stat for autocorrelation induced by overlapping labels.
+  With horizon H, per-date ICs share H-1 overlapping days, inflating the naive
+  t-stat by ~sqrt(H). The HAC t-stat uses max_lags = H-1 to correct this.
 """
 
 from __future__ import annotations
@@ -37,12 +43,14 @@ class FactorMetrics:
     ic_pearson: float
     ic_spearman: float
     ic_ir: float
-    ic_tstat: float
+    ic_tstat: float  # Newey-West HAC t-stat (corrected, safe for promotion)
+    ic_tstat_naive: float  # diagnostic_only=True — naive mean/std*sqrt(n), inflated by ~sqrt(H)
     ic_decay: dict[int, float]  # horizon -> mean IC
     quantile_spread: float
     monotonicity: float  # Spearman of quantile-rank vs mean-return
     hit_rate: float
-    hit_rate_wilson_lb: float  # Wilson lower bound (see significance.py)
+    hit_rate_wilson_lb: float  # Wilson lower bound on hit rate (binomial proportion)
+    # NOTE: for IC confidence intervals, use block_bootstrap_ic_ci() not Wilson
     turnover: float
     coverage: float
     n_obs: int  # number of non-NaN cross-sections
@@ -92,15 +100,29 @@ def information_coefficient(
     factor_vals: pd.Series,
     fwd_ret: pd.DataFrame,
     method: Literal["pearson", "spearman"] = "pearson",
-) -> tuple[float, float, float, float]:
-    """Compute mean IC, IC-IR, and t-stat via cross-sectional correlation per date.
+    horizon: int = 1,
+) -> tuple[float, float, float, float, float]:
+    """Compute mean IC, IC-IR, HAC t-stat, naive t-stat, and n_dates.
 
     The IC is computed for each date as the cross-sectional Pearson (or Spearman)
     correlation between factor values and forward returns across assets.
     Then we take mean(IC) as the IC estimate and std(IC) as the noise.
 
     IC-IR = mean(IC) / std(IC)
-    t-stat = IC-IR * sqrt(n_dates)
+
+    Two t-statistics are returned:
+    1. HAC t-stat (Newey-West): corrects for autocorrelation caused by overlapping
+       label windows. With horizon H, per-date ICs share H-1 overlapping days,
+       inflating the naive t-stat by ~sqrt(H). The HAC SE uses max_lags = H-1.
+       This is the value that should be used in the promotion gate.
+
+       Reference: Newey & West (1987) Econometrica 55(3):703-708.
+       SE_HAC = sqrt((1/T^2) * sum_{l=-L}^{L} w_l * sum_{t} IC_t * IC_{t-|l|})
+       where w_l = 1 - |l|/(L+1) (Bartlett kernel), L = H-1.
+
+    2. Naive t-stat (diagnostic_only): ic_ir * sqrt(n_dates).
+       Inflated by ~sqrt(H) for H > 1 due to overlapping labels. Do NOT use
+       this value in promotion logic. Exposed for diagnostic comparison only.
 
     Reference: Grinold & Kahn (2000) "Active Portfolio Management", ch. 10.
 
@@ -112,10 +134,12 @@ def information_coefficient(
         DataFrame with columns (date, asset, fwd_ret).
     method:
         'pearson' or 'spearman'.
+    horizon:
+        Forward-return horizon in days. Used to set max_lags = H-1 for HAC.
 
     Returns
     -------
-    (mean_ic, ic_ir, ic_tstat, n_dates)
+    (mean_ic, ic_ir, ic_tstat_hac, ic_tstat_naive, n_dates)
     """
     # Merge factor and forward returns on (date, asset)
     factor_df = factor_vals.reset_index()
@@ -125,7 +149,7 @@ def information_coefficient(
     merged = merged.dropna(subset=["factor", "fwd_ret"])
 
     if merged.empty:
-        return float("nan"), float("nan"), float("nan"), 0
+        return float("nan"), float("nan"), float("nan"), float("nan"), 0
 
     ics_per_date = []
     for _, grp in merged.groupby("date"):
@@ -141,15 +165,29 @@ def information_coefficient(
             ics_per_date.append(ic)
 
     if len(ics_per_date) < 2:  # noqa: PLR2004
-        return float("nan"), float("nan"), float("nan"), len(ics_per_date)
+        return float("nan"), float("nan"), float("nan"), float("nan"), len(ics_per_date)
 
     ic_arr = np.array(ics_per_date)
     mean_ic = float(np.mean(ic_arr))
     std_ic = float(np.std(ic_arr, ddof=1))
     ic_ir = mean_ic / std_ic if std_ic > 0 else float("nan")
     n = len(ic_arr)
-    ic_tstat = ic_ir * math.sqrt(n) if not math.isnan(ic_ir) else float("nan")
-    return mean_ic, ic_ir, ic_tstat, n
+
+    # Naive t-stat (diagnostic_only): inflated by ~sqrt(H) for H > 1
+    ic_tstat_naive = ic_ir * math.sqrt(n) if not math.isnan(ic_ir) else float("nan")
+
+    # Newey-West HAC t-stat: corrects for overlapping-label autocorrelation
+    # max_lags = H-1 (one lag per overlapping period)
+    max_lags = max(0, horizon - 1)
+    se_hac = _newey_west_se(ic_arr, max_lags=max_lags)
+    if se_hac > 0 and not math.isnan(se_hac):
+        ic_tstat_hac = mean_ic / se_hac
+    elif se_hac == 0 and mean_ic == 0:
+        ic_tstat_hac = 0.0
+    else:
+        ic_tstat_hac = float("nan")
+
+    return mean_ic, ic_ir, ic_tstat_hac, ic_tstat_naive, n
 
 
 def ic_decay(
@@ -171,7 +209,9 @@ def ic_decay(
     """
     result: dict[int, float] = {}
     for h in sorted(fwd_returns_dict):
-        mean_ic, _, _, _ = information_coefficient(factor_vals, fwd_returns_dict[h], "pearson")
+        mean_ic, _, _, _, _ = information_coefficient(
+            factor_vals, fwd_returns_dict[h], "pearson", horizon=h
+        )
         result[h] = mean_ic
     return result
 
@@ -365,8 +405,10 @@ def evaluate_factor(
     results = []
     for h in horizons:
         fwd = fwd_dict[h]
-        ic_p, ic_ir_p, ic_t_p, n_obs = information_coefficient(factor_vals, fwd, "pearson")
-        ic_s, _, _, _ = information_coefficient(factor_vals, fwd, "spearman")
+        ic_p, ic_ir_p, ic_t_hac, ic_t_naive, n_obs = information_coefficient(
+            factor_vals, fwd, "pearson", horizon=h
+        )
+        ic_s, _, _, _, _ = information_coefficient(factor_vals, fwd, "spearman", horizon=h)
         spread, mono, _ = quantile_analysis(factor_vals, fwd, n_quantiles)
         hr, hr_lb, _ = hit_rate_metrics(factor_vals, fwd)
 
@@ -377,7 +419,8 @@ def evaluate_factor(
                 ic_pearson=ic_p,
                 ic_spearman=ic_s,
                 ic_ir=ic_ir_p,
-                ic_tstat=ic_t_p,
+                ic_tstat=ic_t_hac,
+                ic_tstat_naive=ic_t_naive,
                 ic_decay=decay,
                 quantile_spread=spread,
                 monotonicity=mono,
@@ -394,6 +437,115 @@ def evaluate_factor(
 # ---------------------------------------------------------------------------
 # Private math utilities (no scipy)
 # ---------------------------------------------------------------------------
+
+
+def _newey_west_se(ic_arr: np.ndarray, max_lags: int) -> float:
+    """Newey-West HAC standard error for the mean of ic_arr.
+
+    Corrects for autocorrelation up to max_lags (use H-1 for horizon H).
+
+    Reference: Newey & West (1987) Econometrica 55(3):703-708.
+    Bartlett kernel weights: w_l = 1 - l/(L+1), l = 1, ..., L.
+
+    The long-run variance estimator is:
+        V_HAC = gamma_0 + 2 * sum_{l=1}^{L} w_l * gamma_l
+    where gamma_l = (1/T) * sum_{t=l+1}^{T} (x_t - xbar)(x_{t-l} - xbar)
+
+    The HAC SE of the sample mean is sqrt(V_HAC / T).
+
+    Parameters
+    ----------
+    ic_arr:
+        1-D array of IC values (time series).
+    max_lags:
+        Maximum lag L = H-1 where H is the forward-return horizon.
+
+    Returns
+    -------
+    HAC standard error of the mean.
+    """
+    t = len(ic_arr)
+    if t < 2:  # noqa: PLR2004
+        return float("nan")
+
+    xc = ic_arr - ic_arr.mean()  # demeaned
+
+    # Lag-0 autocovariance
+    gamma0 = float(np.dot(xc, xc) / t)
+
+    if max_lags == 0:
+        # No overlap correction — same as naive SE
+        return math.sqrt(gamma0 / t) if gamma0 >= 0 else float("nan")
+
+    lrv = gamma0
+    for lag in range(1, min(max_lags, t - 1) + 1):
+        bartlett_w = 1.0 - lag / (max_lags + 1)
+        gamma_l = float(np.dot(xc[lag:], xc[:-lag]) / t)
+        lrv += 2.0 * bartlett_w * gamma_l
+
+    # lrv can be negative (e.g. alternating series) — clamp to zero
+    if lrv < 0:
+        lrv = 0.0
+
+    return math.sqrt(lrv / t)
+
+
+def block_bootstrap_ic_ci(
+    ic_arr: np.ndarray,
+    horizon: int,
+    n_boot: int = 2000,
+    alpha: float = 0.05,
+    seed: int = 0,
+) -> tuple[float, float]:
+    """Block bootstrap confidence interval for the mean IC.
+
+    Uses non-overlapping blocks of length = horizon to respect the
+    autocorrelation structure induced by overlapping forward-return labels.
+
+    Wilson bounds are correct for hit rate (binomial proportion) but NOT for
+    IC (a correlation). This function provides the correct CI for IC.
+
+    Reference: Efron & Tibshirani (1993) "An Introduction to the Bootstrap"
+    ISBN 0412042312. Chapter 8 discusses block bootstrap for dependent data.
+
+    Parameters
+    ----------
+    ic_arr:
+        1-D array of per-date IC values.
+    horizon:
+        Forward-return horizon. Used as block size.
+    n_boot:
+        Number of bootstrap replications.
+    alpha:
+        Significance level (default 0.05 → 95% CI).
+    seed:
+        RNG seed for determinism.
+
+    Returns
+    -------
+    (lower, upper) percentile bootstrap confidence interval.
+    """
+    t = len(ic_arr)
+    block_size = max(1, horizon)
+    n_blocks = max(1, t // block_size)
+
+    rng = np.random.default_rng(seed)
+    boot_means = np.empty(n_boot)
+
+    # Build non-overlapping blocks
+    block_starts = list(range(0, n_blocks * block_size, block_size))
+    blocks = [ic_arr[s : s + block_size] for s in block_starts if s + block_size <= t]
+    if not blocks:
+        blocks = [ic_arr]
+
+    for i in range(n_boot):
+        chosen = rng.choice(len(blocks), size=len(blocks), replace=True)
+        resampled = np.concatenate([blocks[j] for j in chosen])
+        boot_means[i] = float(np.mean(resampled))
+
+    lower = float(np.percentile(boot_means, 100 * alpha / 2))
+    upper = float(np.percentile(boot_means, 100 * (1 - alpha / 2)))
+    return (lower, upper)
 
 
 def _pearson_corr(x: np.ndarray, y: np.ndarray) -> float:

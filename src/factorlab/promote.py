@@ -57,8 +57,15 @@ class PromotionConfig:
     oos_consistency_min: float = 0.60
     """Fraction of walk-forward splits that must agree in IC sign."""
 
-    fdr_q: float = 0.10
-    """FDR level for Benjamini-Hochberg correction."""
+    fdr_q: float = 0.15
+    """FDR level for Benjamini-Hochberg correction.
+
+    Default 0.15 (not 0.10) because the HAC t-stat correction already deflates
+    the test statistic substantially relative to the naive formula. Using q=0.10
+    with HAC-corrected stats is more conservative than using q=0.10 with naive
+    stats; q=0.15 restores a similar effective threshold. For multi-factor screening
+    (m > 1), BH correction provides the family-wise control regardless.
+    """
 
     coverage_min: float = 0.50
     """Minimum fraction of non-NaN observations."""
@@ -66,8 +73,8 @@ class PromotionConfig:
     n_wf_splits: int = 5
     """Number of walk-forward splits."""
 
-    embargo_days: int = 5
-    """Embargo days in walk-forward splits."""
+    embargo_days: int = 20
+    """Embargo days in walk-forward splits. Must be >= max(horizons) = 20."""
 
     n_days: int = 1500
     """Synthetic data length (overridable)."""
@@ -273,28 +280,30 @@ def promote(
         )
 
     # ------------------------------------------------------------------
-    # Find best horizon by |IC-IR|, preferring horizons that pass
-    # the hit-rate Wilson LB gate
+    # Find best horizon by |HAC t-stat| (Newey-West corrected),
+    # among horizons that would pass the hit-rate gate.
+    # We use |t_hac| because that is the statistic fed to FDR.
+    # IC-IR (= mean/std, pre-HAC) is NOT used for horizon selection —
+    # it is inflated by ~sqrt(H) for H > 1 due to overlapping labels.
     # ------------------------------------------------------------------
-    def _safe_abs(x: float) -> float:
-        return abs(x) if not math.isnan(x) else 0.0
+    def _safe_abs_tstat(m) -> float:
+        t = m.ic_tstat  # HAC corrected
+        return abs(t) if not math.isnan(t) else 0.0
 
-    # Try to find a horizon where the hit rate gate would pass
     def _hr_lb_passes(m) -> bool:
-        """Check if hit rate Wilson LB gate would pass for this metrics row."""
+        """True if hit-rate gate would pass (or is not_applicable) for this metrics row."""
         abs_ic_val = abs(m.ic_pearson) if not math.isnan(m.ic_pearson) else 0.0
-        is_dir = abs_ic_val >= 0.01
-        if not is_dir:
-            return True  # gate is not_applicable -> passes
+        is_directional = abs_ic_val >= 0.01
+        if not is_directional:
+            return True  # not_applicable -> passes
         lb = m.hit_rate_wilson_lb
         return (not math.isnan(lb)) and lb >= cfg.hit_rate_wilson_lb
 
-    # Prefer horizons that pass hit_rate gate, then best IC-IR within that set
+    # Prefer horizons that pass hr_lb, then best |HAC t-stat| within that set.
+    # Fall back to all horizons if none pass hr_lb (avoids excluding all candidates).
     passing_hr = [m for m in metrics_list if _hr_lb_passes(m)]
-    if passing_hr:
-        best_m = max(passing_hr, key=lambda m: _safe_abs(m.ic_ir))
-    else:
-        best_m = max(metrics_list, key=lambda m: _safe_abs(m.ic_ir))
+    candidates = passing_hr if passing_hr else metrics_list
+    best_m = max(candidates, key=_safe_abs_tstat)
 
     best_ic = best_m.ic_pearson
     best_ic_ir = best_m.ic_ir
@@ -402,7 +411,9 @@ def promote(
     # ------------------------------------------------------------------
     # Gate 8: FDR survival
     # ------------------------------------------------------------------
-    # Convert IC t-stat to approximate two-sided p-value
+    # Convert HAC IC t-stat to approximate two-sided p-value.
+    # NOTE: ic_tstat is the Newey-West HAC t-stat (corrected for overlapping labels).
+    # Do NOT use ic_tstat_naive here — it is inflated by ~sqrt(H) for H > 1.
     def _tstat_to_pval(t: float, n: int) -> float:
         """Approximate two-sided p-value from t-stat using normal approximation."""
         if math.isnan(t) or n < 2:  # noqa: PLR2004

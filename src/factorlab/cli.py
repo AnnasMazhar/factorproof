@@ -110,8 +110,10 @@ def cmd_screen(args) -> int:
         factor_metrics_map[name] = metrics_list
         all_metrics.extend(metrics_list)
 
-        # Collect IC t-stat p-value for FDR correction (best horizon)
-        best = max(metrics_list, key=lambda m: abs(m.ic_ir) if not math.isnan(m.ic_ir) else 0.0)
+        # Collect HAC IC t-stat p-value for FDR correction (best horizon by |t_hac|)
+        best = max(
+            metrics_list, key=lambda m: abs(m.ic_tstat) if not math.isnan(m.ic_tstat) else 0.0
+        )
         from .significance import _norm_cdf
 
         def _tstat_to_pval(t: float, n: int) -> float:

@@ -100,6 +100,13 @@ class PurgedWalkForward:
             raise ValueError("embargo_days must be >= 0")
         if label_horizon < 1:
             raise ValueError("label_horizon must be >= 1")
+        # Spec STATISTICAL CORRECTIONS: embargo_days must be >= label_horizon
+        # to prevent any overlap between the label windows at train/test boundary.
+        if embargo_days < label_horizon:
+            raise ValueError(
+                f"embargo_days ({embargo_days}) must be >= label_horizon ({label_horizon}). "
+                "A smaller embargo does not break the overlap it exists to prevent."
+            )
         self.n_splits = n_splits
         self.embargo_days = embargo_days
         self.label_horizon = label_horizon
@@ -303,6 +310,172 @@ def check_lookahead(factor: Factor) -> bool:
     This is a structural check that does not require data.
     """
     return bool(getattr(factor, "uses_future_data", False))
+
+
+# ---------------------------------------------------------------------------
+# Combinatorial Purged Cross-Validation (CPCV)
+# ---------------------------------------------------------------------------
+
+
+@dataclass
+class CPCVSplit:
+    """One train/test split from CPCV.
+
+    Attributes
+    ----------
+    split_id:
+        0-based split index.
+    train_idx:
+        Integer positions (iloc) of training rows after purging.
+    test_idx:
+        Integer positions (iloc) of test rows.
+    test_group:
+        Which group(s) form the test set (0-based group indices).
+    n_purged:
+        Training rows removed by purge.
+    """
+
+    split_id: int
+    train_idx: np.ndarray
+    test_idx: np.ndarray
+    test_group: tuple[int, ...]
+    n_purged: int
+
+
+class CPurgedCV:
+    """Combinatorial Purged Cross-Validation (CPCV).
+
+    Partition unique dates into `n_groups` equally-sized groups. For each
+    combination of `k` groups chosen as test (C(n_groups, k) combinations),
+    use the remaining groups as training after purging and embargo.
+
+    This generates more OOS paths than walk-forward CV (which only tests
+    each group once). With k=2 test groups from n_groups=6, we get C(6,2)=15
+    OOS paths, producing more robust sign-consistency estimates.
+
+    Reference: López de Prado (2018) "Advances in Financial Machine Learning"
+    ISBN 9781119482086, Chapter 12. The MlFinLab library ships this; factor-lab
+    provides an open implementation.
+
+    Parameters
+    ----------
+    n_groups:
+        Number of date groups to partition the data into.
+    k_test:
+        Number of groups held out as test in each combination. Default 2.
+    embargo_days:
+        Calendar days of gap appended after each test group boundary.
+        Must be >= label_horizon.
+    label_horizon:
+        Forward-return horizon in days (used for purging).
+    """
+
+    def __init__(
+        self,
+        n_groups: int = 6,
+        k_test: int = 2,
+        embargo_days: int = 5,
+        label_horizon: int = 5,
+    ) -> None:
+        if n_groups < 2:  # noqa: PLR2004
+            raise ValueError("n_groups must be >= 2")
+        if k_test < 1 or k_test >= n_groups:
+            raise ValueError("k_test must be in [1, n_groups)")
+        if embargo_days < label_horizon:
+            raise ValueError(
+                f"embargo_days ({embargo_days}) must be >= label_horizon ({label_horizon})."
+            )
+        self.n_groups = n_groups
+        self.k_test = k_test
+        self.embargo_days = embargo_days
+        self.label_horizon = label_horizon
+
+    def split(self, df: pd.DataFrame) -> list[CPCVSplit]:
+        """Generate all CPCV splits.
+
+        Parameters
+        ----------
+        df:
+            Tidy long-format OHLCV panel with a 'date' column.
+
+        Returns
+        -------
+        List of CPCVSplit, one per combination of test groups.
+        """
+        from itertools import combinations
+
+        dates = pd.DatetimeIndex(sorted(df["date"].unique()))
+        n_dates = len(dates)
+        group_size = n_dates // self.n_groups
+
+        # Assign each date to a group (last group absorbs remainder)
+        group_dates: list[pd.DatetimeIndex] = []
+        for g in range(self.n_groups):
+            start = g * group_size
+            end = (g + 1) * group_size if g < self.n_groups - 1 else n_dates
+            group_dates.append(dates[start:end])
+
+        splits: list[CPCVSplit] = []
+        split_id = 0
+
+        for test_groups in combinations(range(self.n_groups), self.k_test):
+            test_group_set = set(test_groups)
+            train_group_set = set(range(self.n_groups)) - test_group_set
+
+            # Collect all test dates
+            test_dates_all = pd.DatetimeIndex(
+                sorted(d for g in test_groups for d in group_dates[g])
+            )
+
+            # Collect training dates
+            train_dates_raw = pd.DatetimeIndex(
+                sorted(d for g in train_group_set for d in group_dates[g])
+            )
+
+            # Purge training dates whose label window [t, t+horizon) overlaps any
+            # test date. A training date t is purged if:
+            #   t + label_horizon >= first date of any adjacent test group
+            # We remove training dates within label_horizon calendar days of any
+            # test group's start boundary.
+            embargo_td = pd.Timedelta(days=self.label_horizon)
+            keep_mask = np.ones(len(train_dates_raw), dtype=bool)
+
+            for tg in test_groups:
+                tg_first = group_dates[tg][0]
+                # Purge training dates before this test group that are too close
+                # to the test group's start (label window overlaps)
+                purge_before = (train_dates_raw < tg_first) & (
+                    train_dates_raw >= tg_first - embargo_td
+                )
+                # Exclude training dates that fall inside or after the test group
+                # (these shouldn't be in train_dates_raw since we split by groups,
+                # but guard against edge cases)
+                keep_mask &= ~purge_before
+
+            train_dates_final = train_dates_raw[keep_mask]
+            n_purged = len(train_dates_raw) - len(train_dates_final)
+
+            if len(train_dates_final) == 0 or len(test_dates_all) == 0:
+                split_id += 1
+                continue
+
+            train_mask_df = df["date"].isin(train_dates_final)
+            test_mask_df = df["date"].isin(test_dates_all)
+            train_idx = np.where(train_mask_df.values)[0]
+            test_idx = np.where(test_mask_df.values)[0]
+
+            splits.append(
+                CPCVSplit(
+                    split_id=split_id,
+                    train_idx=train_idx,
+                    test_idx=test_idx,
+                    test_group=test_groups,
+                    n_purged=n_purged,
+                )
+            )
+            split_id += 1
+
+        return splits
 
 
 # ---------------------------------------------------------------------------

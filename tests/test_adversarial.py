@@ -186,7 +186,7 @@ def test_factor_with_inf_values_handled():
     fwd_df = pd.DataFrame(fwd_rows)
 
     # Should not raise; IC may be NaN or finite
-    mean_ic, ic_ir, ic_t, n = information_coefficient(factor_series, fwd_df, "pearson")
+    mean_ic, ic_ir, ic_t, ic_t_naive, n = information_coefficient(factor_series, fwd_df, "pearson")
     # The important thing: no exception raised, and result is finite or NaN (not inf)
     for val in [mean_ic, ic_ir, ic_t]:
         if not math.isnan(val):
@@ -234,6 +234,7 @@ def test_report_markdown_timestamp_free():
         ic_spearman=0.04,
         ic_ir=0.30,
         ic_tstat=2.1,
+        ic_tstat_naive=3.5,
         ic_decay={1: 0.06, 5: 0.05, 20: 0.03},
         quantile_spread=0.002,
         monotonicity=0.8,

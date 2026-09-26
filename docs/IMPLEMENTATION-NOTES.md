@@ -5,22 +5,36 @@ implementation code to test.
 
 ---
 
-## 1. Information Coefficient
+## 1. Information Coefficient (IC) and Newey-West HAC t-stat
 
 **Reference:** Grinold & Kahn (2000) ch. 10.
     IC_t = corr(f_t, r_{t+h})  (cross-sectional, per date)
     mean_IC = mean over dates
     IC_IR = mean_IC / std_IC
 
+**HAC t-stat reference:** Newey & West (1987) Econometrica 55(3):703-708.
+With forward-return horizon H, per-date IC values share H−1 overlapping days,
+inducing autocorrelation that inflates the naive t-stat by ~sqrt(H). The HAC SE:
+    V_HAC = gamma_0 + 2 * sum_{l=1}^{L} (1 - l/(L+1)) * gamma_l
+    SE_HAC = sqrt(V_HAC / T)
+    t_HAC = mean_IC / SE_HAC
+where gamma_l is the lag-l autocovariance, L = max_lags = H-1 (Bartlett kernel).
+
+The naive t-stat is: t_naive = IC_IR * sqrt(T), exposed as ic_tstat_naive
+(diagnostic only — not used in the promotion gate).
+
 **Implementation:**
-    `src/factorlab/evaluate.py:information_coefficient` (lines ~87-130)
-    - Computes cross-sectional Pearson or Spearman per date via `_pearson_corr`
-    - `_pearson_corr` implements: sum((x-xbar)(y-ybar)) / sqrt(sum((x-xbar)^2)*sum((y-ybar)^2))
-    - `_rankdata` implements average-rank Spearman; verified against sum = n(n+1)/2
+    `src/factorlab/evaluate.py:information_coefficient` — returns 5-tuple including HAC t-stat
+    `src/factorlab/evaluate.py:_newey_west_se` — implements Bartlett kernel HAC SE
+    `src/factorlab/evaluate.py:block_bootstrap_ic_ci` — block bootstrap CI for IC mean
 
 **Tests:**
     `tests/test_evaluate.py:test_ic_pearson_known_answer`
     `tests/test_evaluate.py:test_ic_spearman_known_answer`
+    `tests/test_evaluate.py:test_hac_vs_naive_tstat_at_horizon_1` (max_lags=0 → no correction)
+    `tests/test_evaluate.py:test_hac_tstat_reduced_by_overlap` (AR(1) series: HAC SE >= naive)
+    `tests/test_evaluate.py:test_noise_control_naive_inflated_hac_not_at_h20` (H=20 ratio >= 2x)
+    `tests/test_evaluate.py:test_block_bootstrap_ic_ci_contains_mean`
     `tests/test_properties.py:test_pearson_corr_symmetry`
     `tests/test_properties.py:test_pearson_corr_self_correlation`
     `tests/test_properties.py:test_rankdata_sum`
@@ -113,6 +127,10 @@ ASCII timeline (from docs/DESIGN.md):
 **Implementation:**
     `src/factorlab/cv.py:PurgedWalkForward.split`
 
+**Enforcement:** `embargo_days >= label_horizon` is enforced at `__init__` time
+(raises `ValueError`). A smaller embargo allows the label window at the train/test
+boundary to overlap the test window, defeating the purge.
+
 **Tests (structural):**
     `tests/test_cv.py:test_purge_no_label_overlap` — asserts no train date has
         label window reaching into the test set
@@ -120,6 +138,26 @@ ASCII timeline (from docs/DESIGN.md):
     `tests/test_cv.py:test_embargo_removes_gap` — asserts gap >= embargo_days
     `tests/test_cv.py:test_correct_number_of_splits`
     `tests/test_cv.py:test_split_chronological_order`
+    `tests/test_cv.py:test_embargo_less_than_horizon_raises` — enforcement test
+    `tests/test_cv.py:test_embargo_equal_to_horizon_is_valid` — boundary case
+
+---
+
+## 5b. Combinatorial Purged CV (CPCV)
+
+**Reference:** López de Prado (2018) "Advances in Financial Machine Learning"
+ISBN 9781119482086, Chapter 12.
+
+CPCV partitions data into n_groups groups and tests each C(n_groups, k_test)
+combination of k_test groups. This produces more OOS paths than walk-forward CV.
+
+**Implementation:**
+    `src/factorlab/cv.py:CPurgedCV`
+
+**Tests:**
+    `tests/test_cv.py:test_cpcv_generates_correct_number_of_splits` — C(n,k) count
+    `tests/test_cv.py:test_cpcv_no_train_test_overlap` — no date in both sets
+    `tests/test_cv.py:test_cpcv_embargo_less_than_horizon_raises` — enforcement
 
 ---
 

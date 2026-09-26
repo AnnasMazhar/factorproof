@@ -60,8 +60,11 @@ def test_purge_no_label_overlap(small_df):
     For each split: every training date t must satisfy
         t + label_horizon < first_test_date
     (i.e., the forward-return window does not reach into the test set).
+
+    NOTE: embargo_days must be >= label_horizon per spec STATISTICAL CORRECTIONS.
+    Using embargo_days=5, label_horizon=5 (minimum valid values).
     """
-    splitter = PurgedWalkForward(n_splits=3, embargo_days=2, label_horizon=5)
+    splitter = PurgedWalkForward(n_splits=3, embargo_days=5, label_horizon=5)
     splits = list(splitter.split(small_df))
 
     for spl in splits:
@@ -82,8 +85,10 @@ def test_no_train_test_date_overlap(small_df):
     """KAT: no date should appear in both train and test sets.
 
     Fault detected: insufficient purging leaving shared dates in both partitions.
+
+    NOTE: embargo_days must be >= label_horizon per spec STATISTICAL CORRECTIONS.
     """
-    splitter = PurgedWalkForward(n_splits=3, embargo_days=2, label_horizon=5)
+    splitter = PurgedWalkForward(n_splits=3, embargo_days=5, label_horizon=5)
     splits = list(splitter.split(small_df))
 
     for spl in splits:
@@ -140,9 +145,12 @@ def test_correct_number_of_splits(small_df):
     """KAT: splitter generates exactly n_splits splits.
 
     Fault detected: off-by-one in fold generation loop.
+
+    NOTE: embargo_days must be >= label_horizon per spec STATISTICAL CORRECTIONS.
+    Using embargo_days=5, label_horizon=5.
     """
     for n in [2, 3, 4]:
-        splitter = PurgedWalkForward(n_splits=n, embargo_days=2, label_horizon=5)
+        splitter = PurgedWalkForward(n_splits=n, embargo_days=5, label_horizon=5)
         splits = list(splitter.split(small_df))
         assert len(splits) == n, f"Expected {n} splits, got {len(splits)}"
 
@@ -151,8 +159,10 @@ def test_split_chronological_order(small_df):
     """KAT: test windows must be in chronological order and non-overlapping.
 
     Fault detected: shuffled or overlapping test folds.
+
+    NOTE: embargo_days must be >= label_horizon per spec STATISTICAL CORRECTIONS.
     """
-    splitter = PurgedWalkForward(n_splits=4, embargo_days=2, label_horizon=5)
+    splitter = PurgedWalkForward(n_splits=4, embargo_days=5, label_horizon=5)
     splits = list(splitter.split(small_df))
 
     prev_test_end = pd.Timestamp.min
@@ -209,9 +219,11 @@ def test_walk_forward_consistency_shape(planted_df):
     """KAT: evaluate_walk_forward returns one result per horizon.
 
     Fault detected: wrong number of results (off-by-one or wrong horizon mapping).
+
+    NOTE: embargo_days must be >= label_horizon per spec STATISTICAL CORRECTIONS.
     """
     factor = get_factor("mom_20")
-    splitter = PurgedWalkForward(n_splits=3, embargo_days=3, label_horizon=5)
+    splitter = PurgedWalkForward(n_splits=3, embargo_days=5, label_horizon=5)
     horizons = [1, 5]
     results = evaluate_walk_forward(factor, planted_df, splitter, horizons)
     assert len(results) == len(horizons), f"Expected {len(horizons)} results, got {len(results)}"
@@ -229,9 +241,11 @@ def test_walk_forward_planted_signal_positive_oos_ic(planted_df):
     which gives mom_20 a real positive predictive edge.
     This test would catch a factor implementation that produces
     all-zero or all-NaN values.
+
+    NOTE: embargo_days must be >= label_horizon per spec STATISTICAL CORRECTIONS.
     """
     factor = get_factor("mom_20")
-    splitter = PurgedWalkForward(n_splits=3, embargo_days=3, label_horizon=5)
+    splitter = PurgedWalkForward(n_splits=3, embargo_days=5, label_horizon=5)
     results = evaluate_walk_forward(factor, planted_df, splitter, [1])
     h1_result = next(r for r in results if r.horizon == 1)
     # Must have at least one valid split
@@ -240,3 +254,86 @@ def test_walk_forward_planted_signal_positive_oos_ic(planted_df):
     import math
 
     assert not math.isnan(h1_result.oos_mean_ic), "OOS IC is NaN on planted-signal data"
+
+
+# ---------------------------------------------------------------------------
+# Embargo enforcement (spec STATISTICAL CORRECTIONS)
+# ---------------------------------------------------------------------------
+
+
+def test_embargo_less_than_horizon_raises():
+    """KAT: PurgedWalkForward must reject embargo_days < label_horizon.
+
+    Fault detected: splitter accepting invalid configuration that allows
+    overlapping label windows between train and test.
+
+    Spec STATISTICAL CORRECTIONS: 'enforce embargo_days >= H at construction
+    time and raise otherwise; a smaller embargo defeats the exact overlap it
+    exists to break.'
+    """
+    with pytest.raises(ValueError, match="embargo_days"):
+        PurgedWalkForward(n_splits=3, embargo_days=3, label_horizon=5)
+
+
+def test_embargo_equal_to_horizon_is_valid():
+    """KAT: embargo_days == label_horizon is the minimum valid configuration.
+
+    Fault detected: enforcement too strict (rejecting valid boundary case).
+    """
+    # Should not raise
+    splitter = PurgedWalkForward(n_splits=3, embargo_days=5, label_horizon=5)
+    assert splitter.embargo_days == 5
+
+
+# ---------------------------------------------------------------------------
+# CPCV
+# ---------------------------------------------------------------------------
+
+
+def test_cpcv_generates_correct_number_of_splits():
+    """KAT: CPCV generates C(n_groups, k_test) splits.
+
+    Fault detected: combination enumeration off-by-one or missing entries.
+
+    For n_groups=4, k_test=2: C(4,2) = 6 splits.
+    """
+    from math import comb
+
+    from factorlab.cv import CPurgedCV
+
+    df = synthetic_ohlcv(n_days=600, n_assets=6, seed=0)
+    cpcv = CPurgedCV(n_groups=4, k_test=2, embargo_days=5, label_horizon=5)
+    splits = cpcv.split(df)
+    expected = comb(4, 2)
+    assert len(splits) == expected, f"Expected {expected} CPCV splits (C(4,2)), got {len(splits)}"
+
+
+def test_cpcv_no_train_test_overlap():
+    """KAT: no date appears in both train and test sets for any CPCV split.
+
+    Fault detected: group assignment or purge leaving shared dates.
+    """
+    from factorlab.cv import CPurgedCV
+
+    df = synthetic_ohlcv(n_days=600, n_assets=6, seed=0)
+    cpcv = CPurgedCV(n_groups=4, k_test=2, embargo_days=5, label_horizon=5)
+    splits = cpcv.split(df)
+
+    for spl in splits:
+        train_dates = set(df["date"].iloc[spl.train_idx].unique())
+        test_dates = set(df["date"].iloc[spl.test_idx].unique())
+        overlap = train_dates & test_dates
+        assert (
+            len(overlap) == 0
+        ), f"CPCV split {spl.split_id}: {len(overlap)} dates in both train and test"
+
+
+def test_cpcv_embargo_less_than_horizon_raises():
+    """KAT: CPurgedCV must reject embargo_days < label_horizon.
+
+    Fault detected: CPCV not enforcing the same embargo constraint as PurgedWalkForward.
+    """
+    from factorlab.cv import CPurgedCV
+
+    with pytest.raises(ValueError, match="embargo_days"):
+        CPurgedCV(n_groups=4, k_test=2, embargo_days=3, label_horizon=5)
