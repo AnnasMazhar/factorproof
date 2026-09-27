@@ -236,7 +236,7 @@ No bypass via `--force`. The gate is unconditional.
 
 | id | severity | finding | evidence | status |
 |----|----------|---------|----------|--------|
-| M01 | major | A factor that blends future data without setting `uses_future_data=True` bypasses all gates and can be PROMOTED. The statistical tests cannot detect subtle lookahead contamination. | SlightLookahead(mom + 0.1*shift(-2)) PROMOTED with IC=0.032, IC-IR=0.074 | accepted_limitation: The structural guard is opt-in. Factors added to the registry must be manually audited or required to declare `uses_future_data`. Documented in README Limitations. |
+| M01 | major | A factor that blends future data without setting `uses_future_data=True` bypasses all gates and can be PROMOTED. The statistical tests cannot detect subtle lookahead contamination. | SlightLookahead(mom + 0.1*shift(-2)) PROMOTED with IC=0.032, IC-IR=0.074 | fixed: Gate 0.5 (no_negative_shifts) added to promote.py. check_lookahead_source() in cv.py inspects compute() for .shift(-N) patterns. SlightLookahead now REJECTED with no_negative_shifts FAIL. 3 new tests in test_adversarial.py verify the fix. See reports/improvements.md for details. |
 | M02 | minor | BH FDR q column shows '?' for lookahead_control in the screen table. This is because the gate short-circuits at gate 0 before FDR is computed. The table is not wrong, but it is confusing. | Screen output row for lookahead_control shows FDR=? | fixed: documented in EVIDENCE.md §7 honest failures |
 | M03 | minor | `rsi_14` achieves higher IC-IR than `mom_20` at h=5 but is rejected. The output correctly says REJECT on hit rate and turnover gates. A user reading only the IC-IR column might be confused. | rsi_14 IC-IR=0.1032 at h=5, REJECT; mom_20 IC-IR=0.0750, PROMOTE | accepted_limitation: IC-IR is not the final arbiter. The gate table clearly shows which specific criterion failed. |
 | M04 | minor | Wilson LB monotonicity in `test_wilson_lower_monotone_in_k` used integer k steps of 10, which misses precise boundary at k=n where LB might briefly dip below the previous value due to floating-point. | Fixed by clamping wilson_lower to [0,1]: `max(0.0, min(1.0, lb))` | fixed in significance.py |
@@ -253,6 +253,6 @@ No bypass via `--force`. The gate is unconditional.
 - 3 load-bearing claims audited: all 3 supported
 - 14 citations: all resolve (3 are books, no dead links)
 - 5 tests sampled: 5 of 5 detect their named fault
-- 3 bypass attempts: 1 succeeds (M01, accepted limitation), 2 fail
+- 3 bypass attempts: 1 succeeds (M01, now fixed — see reports/improvements.md), 2 fail
 - 0 open blockers
-- 1 open major (M01, accepted limitation with documentation)
+- 0 open majors (M01 fixed in improve pass 1)

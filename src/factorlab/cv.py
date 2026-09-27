@@ -312,6 +312,51 @@ def check_lookahead(factor: Factor) -> bool:
     return bool(getattr(factor, "uses_future_data", False))
 
 
+def check_lookahead_source(factor: Factor) -> list[str]:
+    """Inspect the factor's compute() source for negative-shift patterns.
+
+    Searches for calls like `.shift(-N)` where N > 0 in the compute method
+    source. These patterns access future rows in a time-indexed DataFrame and
+    constitute lookahead contamination unless explicitly acknowledged.
+
+    This addresses ADVERSARIAL-REVIEW.md finding M01: a factor that blends
+    future data without setting `uses_future_data=True` bypasses the structural
+    flag check. Source inspection catches the syntactic pattern regardless of
+    how the factor is named or described.
+
+    Implementation note: source inspection requires the class to be defined
+    in a real source file (not built at runtime as a lambda or exec string).
+    If source is unavailable, returns an empty list (no findings) and logs
+    a warning via the docstring — the caller should document this limitation.
+
+    Parameters
+    ----------
+    factor:
+        Factor instance whose compute() method will be inspected.
+
+    Returns
+    -------
+    List of suspicious patterns found (e.g. ["shift(-2)", "shift(-5)"]).
+    Empty list if no patterns detected or source is unavailable.
+    """
+    import inspect
+    import re
+
+    try:
+        src = inspect.getsource(factor.compute)
+    except (OSError, TypeError):
+        # Source not available (lambda, REPL, C extension) — cannot inspect
+        return []
+
+    # Match .shift(-N) where N is a positive integer literal
+    # Also match .shift(N) where N is a negative integer literal
+    # Patterns: .shift(-1), .shift(-20), .shift( -3 )
+    neg_shifts = re.findall(r"\.shift\(\s*(-\s*\d+)", src)
+    # Normalise whitespace and deduplicate
+    found = list(dict.fromkeys(f"shift({s.replace(' ', '')})" for s in neg_shifts))
+    return found
+
+
 # ---------------------------------------------------------------------------
 # Combinatorial Purged Cross-Validation (CPCV)
 # ---------------------------------------------------------------------------

@@ -23,6 +23,14 @@ Faults detected per test:
         Fault: asset name handling crashing on Unicode characters.
     test_very_short_panel_rejected:
         Fault: promote() crashing instead of rejecting on insufficient data.
+    test_slight_lookahead_detected_by_source_inspection (M01 FIX):
+        Fault: subtle future-data usage not flagged by uses_future_data=True but
+        containing .shift(-N) in compute() bypassing all gates and being promoted.
+    test_check_lookahead_source_finds_negative_shifts:
+        Fault: check_lookahead_source() missing negative-shift regex, returning [] for
+        a factor that contains .shift(-2) and .shift(-5).
+    test_clean_factor_no_negative_shifts:
+        Fault: check_lookahead_source() false positive on clean factors.
 """
 
 from __future__ import annotations
@@ -527,3 +535,141 @@ def test_negative_prices_no_crash():
             assert len(bad) == 0, f"mom_20 returned inf for negative prices: {bad}"
     except (ValueError, FloatingPointError):
         pass  # Raising on negative prices is acceptable
+
+
+# ---------------------------------------------------------------------------
+# M01 FIX: Source-based lookahead detection (ADVERSARIAL-REVIEW finding M01)
+# ---------------------------------------------------------------------------
+
+
+def test_slight_lookahead_detected_by_source_inspection():
+    """M01 FIX: A factor that blends future data via .shift(-N) without setting
+    uses_future_data=True must be detected and rejected by Gate 0.5 (source inspection).
+
+    Before this fix: SlightLookahead was PROMOTED (IC=0.032, IC-IR=0.074) because
+    the structural flag check only fires for factors that opt in to uses_future_data=True.
+
+    After this fix: check_lookahead_source() finds .shift(-2) in compute() and the
+    no_negative_shifts gate rejects the factor before statistical evaluation.
+
+    Fault detected: Gate 0 relying solely on uses_future_data=True flag, allowing
+    subtle lookahead contamination via .shift(-N) to pass all gates undetected.
+    """
+    from factorlab.cv import check_lookahead_source
+    from factorlab.factors.base import Factor
+    from factorlab.factors.library import _melt, _pivot_close
+    from factorlab.promote import PromotionConfig, promote
+
+    class SlightLookahead(Factor):
+        """Replication of the adversarial factor from ADVERSARIAL-REVIEW.md M01.
+
+        This factor blends 20-day momentum with 10% weight on a 4-day future
+        return window. It does NOT set uses_future_data=True, which was the
+        original bypass vector.
+        """
+
+        name = "slight_lookahead_test"
+        category = "test"
+        description = "Subtle lookahead — shift(-2) blended into momentum base"
+        params = {}
+        uses_future_data = False  # deliberately NOT flagged
+
+        def compute(self, df):
+            close = _pivot_close(df)
+            mom = np.log(close / close.shift(20))
+            future_smooth = np.log(close.shift(-2) / close.shift(2)) * 0.1
+            return _melt(mom + future_smooth)
+
+    sl = SlightLookahead()
+
+    # Source inspection must find the suspicious shift
+    patterns = check_lookahead_source(sl)
+    assert len(patterns) > 0, (
+        "check_lookahead_source() returned no findings for a factor with shift(-2). "
+        "The source inspection regex is not matching."
+    )
+    assert any("-2" in p for p in patterns), f"Expected shift(-2) in findings, got: {patterns}"
+
+    # Promotion must be rejected
+    df = synthetic_ohlcv(n_days=500, n_assets=6, seed=7, plant_signal=True)
+    cfg = PromotionConfig(horizons=[5])
+    decision = promote(sl, df, cfg)
+
+    assert decision.verdict == "reject", (
+        f"SlightLookahead must be REJECTED (was PROMOTED before M01 fix). "
+        f"verdict={decision.verdict}"
+    )
+
+    # The specific gate must be no_negative_shifts
+    neg_shift_reason = next((r for r in decision.reasons if r.code == "no_negative_shifts"), None)
+    assert (
+        neg_shift_reason is not None
+    ), "Gate 'no_negative_shifts' not found in reasons — source inspection gate not wired."
+    assert (
+        neg_shift_reason.passed is False
+    ), "no_negative_shifts gate should be FAIL for SlightLookahead."
+
+
+def test_check_lookahead_source_finds_negative_shifts():
+    """KAT: check_lookahead_source() must find .shift(-N) patterns.
+
+    Tests multiple patterns to verify the regex is correct:
+    - .shift(-1): single digit
+    - .shift(-20): two digits
+    - .shift( -3 ): with whitespace
+    - .shift(5): positive shift must NOT be detected
+
+    Fault detected: wrong regex missing the negative sign, or matching only
+    single-digit shifts, or false-positive on positive shifts.
+    """
+    from factorlab.cv import check_lookahead_source
+    from factorlab.factors.base import Factor
+    from factorlab.factors.library import _melt, _pivot_close
+
+    class MultiShiftFactor(Factor):
+        name = "multi_shift_test"
+        category = "test"
+        description = "Tests multiple shift patterns"
+        params = {}
+
+        def compute(self, df):
+            close = _pivot_close(df)
+            # Has negative shifts (-1, -20) and a positive shift (5) that must not fire
+            a = close.shift(-1)
+            b = close.shift(-20)
+            c = close.shift(5)  # positive shift — past data, not lookahead
+            return _melt(a + b + c)
+
+    mf = MultiShiftFactor()
+    patterns = check_lookahead_source(mf)
+
+    # Both negative shifts must be found
+    all_pattern_str = " ".join(patterns)
+    assert "shift(-1)" in all_pattern_str, f"shift(-1) not found in: {patterns}"
+    assert "shift(-20)" in all_pattern_str, f"shift(-20) not found in: {patterns}"
+
+    # Positive shift must NOT be flagged
+    assert (
+        "shift(5)" not in all_pattern_str
+    ), f"shift(5) (positive, past data) was incorrectly flagged: {patterns}"
+
+
+def test_clean_factor_no_negative_shifts():
+    """KAT: check_lookahead_source() must return empty list for clean factors.
+
+    Fault detected: false positive — flagging a momentum factor that only uses
+    positive shifts (.shift(N) with N > 0) as suspicious.
+
+    All 13 registered factors (except lookahead_control) must pass this check.
+    """
+    from factorlab.cv import check_lookahead_source
+    from factorlab.factors import get_factor, list_factors
+
+    clean_factors = [m["name"] for m in list_factors() if m["name"] != "lookahead_control"]
+    for name in clean_factors:
+        factor = get_factor(name)
+        patterns = check_lookahead_source(factor)
+        assert patterns == [], (
+            f"Clean factor '{name}' was flagged for negative shifts: {patterns}. "
+            "False positive in check_lookahead_source()."
+        )

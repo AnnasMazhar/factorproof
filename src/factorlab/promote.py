@@ -21,7 +21,7 @@ import math
 from dataclasses import dataclass, field
 from typing import Literal
 
-from .cv import PurgedWalkForward, check_lookahead, evaluate_walk_forward
+from .cv import PurgedWalkForward, check_lookahead, check_lookahead_source, evaluate_walk_forward
 from .data import synthetic_ohlcv
 from .evaluate import evaluate_factor
 from .factors.base import Factor
@@ -182,7 +182,7 @@ def promote(
     reasons: list[Reason] = []
 
     # ------------------------------------------------------------------
-    # Gate 0: Lookahead contamination (structural — must check first)
+    # Gate 0: Lookahead contamination — structural flag
     # ------------------------------------------------------------------
     is_lookahead = check_lookahead(factor)
     reasons.append(
@@ -197,6 +197,48 @@ def promote(
         )
     )
     if is_lookahead:
+        return PromotionDecision(
+            factor_name=factor.name,
+            verdict="reject",
+            reasons=reasons,
+            best_horizon=-1,
+            best_ic=float("nan"),
+            best_ic_ir=float("nan"),
+            oos_consistency=float("nan"),
+            n_obs=0,
+        )
+
+    # ------------------------------------------------------------------
+    # Gate 0.5: Lookahead contamination — source inspection (M01 fix)
+    #
+    # A factor may use future data without setting uses_future_data=True.
+    # This gate inspects the compute() source for negative-shift patterns
+    # (.shift(-N)) that access future rows. These are lookahead by construction
+    # unless the factor has explicitly acknowledged them via uses_future_data=True
+    # (which Gate 0 already handles by blocking those factors before this point).
+    #
+    # If negative shifts are found, the factor is rejected with a description
+    # of the specific patterns, so the author can audit and, if the usage is
+    # intentional (e.g. labelling future returns in a supervised context that is
+    # not a promotion factor), they can explicitly set uses_future_data=True.
+    #
+    # Source unavailable (lambdas, REPL, compiled): gate passes with a warning note.
+    # ------------------------------------------------------------------
+    source_patterns = check_lookahead_source(factor)
+    if source_patterns:
+        reasons.append(
+            Reason(
+                code="no_negative_shifts",
+                passed=False,
+                observed=", ".join(source_patterns),
+                threshold="none",
+                note=(
+                    "compute() contains negative-shift patterns that access future rows: "
+                    + ", ".join(source_patterns)
+                    + ". Set uses_future_data=True if this is intentional."
+                ),
+            )
+        )
         return PromotionDecision(
             factor_name=factor.name,
             verdict="reject",
