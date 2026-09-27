@@ -195,6 +195,32 @@ def run_arm(arm: str, df_real, cfg: PromotionConfig) -> dict[str, dict]:
 _DB_PATH = Path("prices.sqlite")
 
 
+def _print_splitter_structure(df) -> None:
+    """Show exactly what the no_purge_embargo arm changes: the TRAIN side only."""
+    purged = PurgedWalkForward(n_splits=5, embargo_days=20, label_horizon=20)
+    nopurge = _NoPurgeWalkForward(n_splits=5, embargo_days=20, label_horizon=20)
+    print("\n=== SPLITTER STRUCTURE (what the no_purge_embargo arm ablates) ===")
+    print(
+        f"{'k':>2} {'purged train':<26} {'n':>4} {'nopurge train':<26} {'n':>4} "
+        f"{'test (both arms)':<26} {'purged':>6} {'embo':>4}"
+    )
+    for a, b in zip(purged.split(df), nopurge.split(df), strict=True):
+        assert a.test_dates == b.test_dates, "test windows must match by construction"
+        ta = f"{a.train_dates[0].date()}..{a.train_dates[1].date()}"
+        tb = f"{b.train_dates[0].date()}..{b.train_dates[1].date()}"
+        te = f"{a.test_dates[0].date()}..{a.test_dates[1].date()}"
+        n_a = df.iloc[a.train_idx]["date"].nunique()
+        n_b = df.iloc[b.train_idx]["date"].nunique()
+        print(
+            f"{a.split_id:>2} {ta:<26} {n_a:>4} {tb:<26} {n_b:>4} "
+            f"{te:<26} {a.n_purged:>6} {a.n_embargoed:>4}"
+        )
+    print(
+        "train differs by purge+embargo days; test windows identical — the arm changes "
+        "only what evaluate_walk_forward never reads (it indexes spl.test_idx only)."
+    )
+
+
 def main(argv: list[str] | None = None) -> int:
     global _DB_PATH
     parser = argparse.ArgumentParser(description="Leakage experiment arms on real data.")
@@ -214,6 +240,7 @@ def main(argv: list[str] | None = None) -> int:
         f"Dataset: {summary['n_coins']} coins, {summary['n_bars_total']:,} bars, "
         f"{summary['date_range']}"
     )
+    _print_splitter_structure(df)
 
     cfg = PromotionConfig()
     all_arms: dict[str, dict[str, dict]] = {}
