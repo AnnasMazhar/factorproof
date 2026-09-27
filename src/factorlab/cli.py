@@ -28,16 +28,21 @@ def _get_data(data_arg: str, seed: int = 7, plant_signal: bool = False):
     seed:
         RNG seed for synthetic data.
     plant_signal:
-        If True and data_arg='synthetic', plant a momentum signal.
+        If True and data_arg='synthetic', plant a momentum signal in the
+        standard-sized panel (n_days=2000, n_assets=20).
+        Has no extra effect when data_arg='signal' because signal mode
+        always plants the signal.
     """
     from .data import load_ohlcv_csv, synthetic_ohlcv
 
     if data_arg == "synthetic":
-        return synthetic_ohlcv(n_days=1500, n_assets=12, seed=seed, plant_signal=plant_signal)
+        return synthetic_ohlcv(n_days=2000, n_assets=20, seed=seed, plant_signal=plant_signal)
     if data_arg == "signal":
-        return synthetic_ohlcv(n_days=1500, n_assets=12, seed=seed, plant_signal=True)
+        # Stronger panel: more assets and days so the positive control clears all
+        # gates at q=0.10 with margin rather than by a hair.
+        return synthetic_ohlcv(n_days=2000, n_assets=20, seed=seed, plant_signal=True)
     if data_arg == "noise":
-        return synthetic_ohlcv(n_days=1500, n_assets=12, seed=seed, plant_noise=True)
+        return synthetic_ohlcv(n_days=2000, n_assets=20, seed=seed, plant_noise=True)
     try:
         return load_ohlcv_csv(data_arg)
     except FileNotFoundError:
@@ -188,6 +193,19 @@ def cmd_promote(args) -> int:
         return 1
 
     df = _get_data(args.data, seed=args.seed, plant_signal=args.plant_signal)
+    if args.plant_signal and args.data == "signal":
+        print(
+            "Note: --plant-signal has no effect when --data=signal "
+            "(signal mode always plants the momentum signal). "
+            "Use --data synthetic --plant-signal to plant the signal in the base panel.",
+            file=sys.stderr,
+        )
+    elif args.plant_signal and args.data not in ("synthetic", "signal"):
+        print(
+            "Warning: --plant-signal is only valid with --data synthetic or --data signal; "
+            f"ignored for --data {args.data!r}.",
+            file=sys.stderr,
+        )
     cfg = PromotionConfig()
     decision = promote(factor=factor, df=df, cfg=cfg)
     print(decision)
@@ -260,7 +278,11 @@ def _build_parser() -> argparse.ArgumentParser:
     p_promote.add_argument(
         "--plant-signal",
         action="store_true",
-        help="Plant a known predictive signal in synthetic data.",
+        help=(
+            "Plant a known momentum signal in synthetic data "
+            "(only effective with --data synthetic; "
+            "--data signal always plants the signal regardless of this flag)."
+        ),
     )
 
     # report
