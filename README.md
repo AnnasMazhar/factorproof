@@ -163,9 +163,11 @@ and every number is reproducible from this repository alone, under MIT.
 
 ## Limitations
 
-- **Real-data results pending.** The pipeline runs end-to-end on a private multi-year daily
-  OHLCV dataset (14 assets, 2021→present) locally, and that proof is being produced now.
-  Until `reports/real-data-proof.md` exists, no real-market performance is claimed here.
+- **Real-data proof in progress.** The pipeline has been run against a private multi-year
+  daily OHLCV dataset (daily crypto bars, 2021→present) and the proof is being produced.
+  Until `reports/real-data-proof.md` is committed with all F2/F3 sections verified by
+  `scripts/check_real_data_proof.py`, no real-market performance is claimed here.
+  The demo in this README uses synthetic data only.
 - **Single asset class.** The evaluation framework is crypto-daily-centric; no
   cross-asset correlation is modelled.
 - **No transaction cost model in v0.1.** The turnover gate penalises high turnover

@@ -37,3 +37,6 @@ jobs:
 
       - name: Test (pytest)
         run: pytest -q
+
+      - name: Check no internal references
+        run: python scripts/check_no_internal_refs.py
