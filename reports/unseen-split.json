@@ -1,0 +1,757 @@
+{
+  "generated_at": "2026-09-27T16:07:03Z",
+  "command": "python scripts/unseen_split_check.py --db <prices.sqlite> --n-splits 5",
+  "dataset": {
+    "n_coins": 14,
+    "n_bars_total": 21128,
+    "date_range": "2021-04-29 to 2026-09-27"
+  },
+  "boundaries": [
+    {
+      "split": 0,
+      "train": "2021-04-29..2022-02-12",
+      "train_dates": 290,
+      "test": "2022-03-24..2023-02-15",
+      "test_dates": 329,
+      "n_purged": 19,
+      "n_embargoed": 20
+    },
+    {
+      "split": 1,
+      "train": "2021-04-29..2023-01-07",
+      "train_dates": 619,
+      "test": "2023-02-16..2024-01-10",
+      "test_dates": 329,
+      "n_purged": 19,
+      "n_embargoed": 20
+    },
+    {
+      "split": 2,
+      "train": "2021-04-29..2023-12-02",
+      "train_dates": 948,
+      "test": "2024-01-11..2024-12-04",
+      "test_dates": 329,
+      "n_purged": 19,
+      "n_embargoed": 20
+    },
+    {
+      "split": 3,
+      "train": "2021-04-29..2024-10-26",
+      "train_dates": 1277,
+      "test": "2024-12-05..2025-10-29",
+      "test_dates": 329,
+      "n_purged": 19,
+      "n_embargoed": 20
+    },
+    {
+      "split": 4,
+      "train": "2021-04-29..2025-09-20",
+      "train_dates": 1606,
+      "test": "2025-10-30..2026-09-27",
+      "test_dates": 333,
+      "n_purged": 19,
+      "n_embargoed": 20
+    }
+  ],
+  "counts": {
+    "MISSED_SIGNAL": 23,
+    "CORRECT_REFUSAL": 36,
+    "N/A_STRUCTURAL": 5,
+    "FALSE_PROMOTION": 1
+  },
+  "n_promoted": 1,
+  "n_decided": 60,
+  "rows": [
+    {
+      "split": 0,
+      "factor": "mom_20",
+      "train_verdict": "reject",
+      "horizon": 20,
+      "ic_train": 0.001,
+      "ic_test": 0.0655,
+      "n_train": 250,
+      "n_test_obs": 309,
+      "outcome": "MISSED_SIGNAL"
+    },
+    {
+      "split": 0,
+      "factor": "mom_60",
+      "train_verdict": "reject",
+      "horizon": 20,
+      "ic_train": 0.0708,
+      "ic_test": -0.0778,
+      "n_train": 210,
+      "n_test_obs": 309,
+      "outcome": "CORRECT_REFUSAL"
+    },
+    {
+      "split": 0,
+      "factor": "rev_5",
+      "train_verdict": "reject",
+      "horizon": 5,
+      "ic_train": 0.085,
+      "ic_test": -0.0425,
+      "n_train": 280,
+      "n_test_obs": 324,
+      "outcome": "CORRECT_REFUSAL"
+    },
+    {
+      "split": 0,
+      "factor": "vol_20",
+      "train_verdict": "reject",
+      "horizon": 1,
+      "ic_train": -0.0518,
+      "ic_test": -0.0478,
+      "n_train": 269,
+      "n_test_obs": 328,
+      "outcome": "MISSED_SIGNAL"
+    },
+    {
+      "split": 0,
+      "factor": "atr_norm_14",
+      "train_verdict": "reject",
+      "horizon": 1,
+      "ic_train": -0.0301,
+      "ic_test": -0.0394,
+      "n_train": 275,
+      "n_test_obs": 328,
+      "outcome": "MISSED_SIGNAL"
+    },
+    {
+      "split": 0,
+      "factor": "rsi_14",
+      "train_verdict": "reject",
+      "horizon": 20,
+      "ic_train": -0.0084,
+      "ic_test": 0.0424,
+      "n_train": 256,
+      "n_test_obs": 309,
+      "outcome": "CORRECT_REFUSAL"
+    },
+    {
+      "split": 0,
+      "factor": "volume_z_20",
+      "train_verdict": "reject",
+      "horizon": 5,
+      "ic_train": -0.0381,
+      "ic_test": 0.0108,
+      "n_train": 266,
+      "n_test_obs": 324,
+      "outcome": "CORRECT_REFUSAL"
+    },
+    {
+      "split": 0,
+      "factor": "amihud_illiq_20",
+      "train_verdict": "reject",
+      "horizon": 1,
+      "ic_train": -0.039,
+      "ic_test": -0.0067,
+      "n_train": 269,
+      "n_test_obs": 328,
+      "outcome": "CORRECT_REFUSAL"
+    },
+    {
+      "split": 0,
+      "factor": "skew_60",
+      "train_verdict": "reject",
+      "horizon": 5,
+      "ic_train": 0.0421,
+      "ic_test": -0.0005,
+      "n_train": 225,
+      "n_test_obs": 324,
+      "outcome": "CORRECT_REFUSAL"
+    },
+    {
+      "split": 0,
+      "factor": "autocorr_5",
+      "train_verdict": "reject",
+      "horizon": 20,
+      "ic_train": 0.0233,
+      "ic_test": 0.0302,
+      "n_train": 265,
+      "n_test_obs": 309,
+      "outcome": "MISSED_SIGNAL"
+    },
+    {
+      "split": 0,
+      "factor": "deflated_mom",
+      "train_verdict": "reject",
+      "horizon": 20,
+      "ic_train": 0.055,
+      "ic_test": -0.0386,
+      "n_train": 210,
+      "n_test_obs": 309,
+      "outcome": "CORRECT_REFUSAL"
+    },
+    {
+      "split": 0,
+      "factor": "noise_control",
+      "train_verdict": "reject",
+      "horizon": 20,
+      "ic_train": -0.0096,
+      "ic_test": 0.0194,
+      "n_train": 270,
+      "n_test_obs": 309,
+      "outcome": "CORRECT_REFUSAL"
+    },
+    {
+      "split": 0,
+      "factor": "lookahead_control",
+      "train_verdict": "reject",
+      "outcome": "N/A_STRUCTURAL"
+    },
+    {
+      "split": 1,
+      "factor": "mom_20",
+      "train_verdict": "reject",
+      "horizon": 5,
+      "ic_train": -0.0077,
+      "ic_test": -0.0299,
+      "n_train": 594,
+      "n_test_obs": 324,
+      "outcome": "MISSED_SIGNAL"
+    },
+    {
+      "split": 1,
+      "factor": "mom_60",
+      "train_verdict": "reject",
+      "horizon": 20,
+      "ic_train": 0.0052,
+      "ic_test": 0.1182,
+      "n_train": 539,
+      "n_test_obs": 309,
+      "outcome": "MISSED_SIGNAL"
+    },
+    {
+      "split": 1,
+      "factor": "rev_5",
+      "train_verdict": "reject",
+      "horizon": 1,
+      "ic_train": 0.057,
+      "ic_test": 0.0195,
+      "n_train": 613,
+      "n_test_obs": 328,
+      "outcome": "CORRECT_REFUSAL"
+    },
+    {
+      "split": 1,
+      "factor": "vol_20",
+      "train_verdict": "reject",
+      "horizon": 1,
+      "ic_train": -0.0557,
+      "ic_test": 0.0004,
+      "n_train": 598,
+      "n_test_obs": 328,
+      "outcome": "CORRECT_REFUSAL"
+    },
+    {
+      "split": 1,
+      "factor": "atr_norm_14",
+      "train_verdict": "reject",
+      "horizon": 1,
+      "ic_train": -0.0399,
+      "ic_test": -0.0002,
+      "n_train": 604,
+      "n_test_obs": 328,
+      "outcome": "CORRECT_REFUSAL"
+    },
+    {
+      "split": 1,
+      "factor": "rsi_14",
+      "train_verdict": "reject",
+      "horizon": 20,
+      "ic_train": -0.0073,
+      "ic_test": 0.002,
+      "n_train": 585,
+      "n_test_obs": 309,
+      "outcome": "CORRECT_REFUSAL"
+    },
+    {
+      "split": 1,
+      "factor": "volume_z_20",
+      "train_verdict": "reject",
+      "horizon": 5,
+      "ic_train": -0.0281,
+      "ic_test": -0.0022,
+      "n_train": 595,
+      "n_test_obs": 324,
+      "outcome": "CORRECT_REFUSAL"
+    },
+    {
+      "split": 1,
+      "factor": "amihud_illiq_20",
+      "train_verdict": "reject",
+      "horizon": 1,
+      "ic_train": -0.0386,
+      "ic_test": -0.0204,
+      "n_train": 598,
+      "n_test_obs": 328,
+      "outcome": "MISSED_SIGNAL"
+    },
+    {
+      "split": 1,
+      "factor": "skew_60",
+      "train_verdict": "reject",
+      "horizon": 5,
+      "ic_train": 0.0204,
+      "ic_test": 0.0192,
+      "n_train": 554,
+      "n_test_obs": 324,
+      "outcome": "CORRECT_REFUSAL"
+    },
+    {
+      "split": 1,
+      "factor": "autocorr_5",
+      "train_verdict": "reject",
+      "horizon": 20,
+      "ic_train": 0.0213,
+      "ic_test": -0.0067,
+      "n_train": 594,
+      "n_test_obs": 309,
+      "outcome": "CORRECT_REFUSAL"
+    },
+    {
+      "split": 1,
+      "factor": "deflated_mom",
+      "train_verdict": "reject",
+      "horizon": 20,
+      "ic_train": 0.0124,
+      "ic_test": 0.1459,
+      "n_train": 539,
+      "n_test_obs": 309,
+      "outcome": "MISSED_SIGNAL"
+    },
+    {
+      "split": 1,
+      "factor": "noise_control",
+      "train_verdict": "reject",
+      "horizon": 20,
+      "ic_train": -0.0057,
+      "ic_test": -0.0106,
+      "n_train": 599,
+      "n_test_obs": 309,
+      "outcome": "CORRECT_REFUSAL"
+    },
+    {
+      "split": 1,
+      "factor": "lookahead_control",
+      "train_verdict": "reject",
+      "outcome": "N/A_STRUCTURAL"
+    },
+    {
+      "split": 2,
+      "factor": "mom_20",
+      "train_verdict": "reject",
+      "horizon": 20,
+      "ic_train": 0.0074,
+      "ic_test": 0.081,
+      "n_train": 908,
+      "n_test_obs": 309,
+      "outcome": "MISSED_SIGNAL"
+    },
+    {
+      "split": 2,
+      "factor": "mom_60",
+      "train_verdict": "reject",
+      "horizon": 20,
+      "ic_train": 0.0054,
+      "ic_test": 0.1348,
+      "n_train": 868,
+      "n_test_obs": 309,
+      "outcome": "MISSED_SIGNAL"
+    },
+    {
+      "split": 2,
+      "factor": "rev_5",
+      "train_verdict": "reject",
+      "horizon": 1,
+      "ic_train": 0.0496,
+      "ic_test": 0.0394,
+      "n_train": 942,
+      "n_test_obs": 328,
+      "outcome": "MISSED_SIGNAL"
+    },
+    {
+      "split": 2,
+      "factor": "vol_20",
+      "train_verdict": "reject",
+      "horizon": 1,
+      "ic_train": -0.0386,
+      "ic_test": -0.025,
+      "n_train": 927,
+      "n_test_obs": 328,
+      "outcome": "MISSED_SIGNAL"
+    },
+    {
+      "split": 2,
+      "factor": "atr_norm_14",
+      "train_verdict": "reject",
+      "horizon": 5,
+      "ic_train": -0.0097,
+      "ic_test": 0.0046,
+      "n_train": 929,
+      "n_test_obs": 324,
+      "outcome": "CORRECT_REFUSAL"
+    },
+    {
+      "split": 2,
+      "factor": "rsi_14",
+      "train_verdict": "reject",
+      "horizon": 5,
+      "ic_train": -0.0098,
+      "ic_test": 0.0136,
+      "n_train": 929,
+      "n_test_obs": 324,
+      "outcome": "CORRECT_REFUSAL"
+    },
+    {
+      "split": 2,
+      "factor": "volume_z_20",
+      "train_verdict": "reject",
+      "horizon": 5,
+      "ic_train": -0.0105,
+      "ic_test": -0.0378,
+      "n_train": 924,
+      "n_test_obs": 324,
+      "outcome": "MISSED_SIGNAL"
+    },
+    {
+      "split": 2,
+      "factor": "amihud_illiq_20",
+      "train_verdict": "reject",
+      "horizon": 5,
+      "ic_train": -0.0056,
+      "ic_test": -0.0879,
+      "n_train": 923,
+      "n_test_obs": 324,
+      "outcome": "MISSED_SIGNAL"
+    },
+    {
+      "split": 2,
+      "factor": "skew_60",
+      "train_verdict": "reject",
+      "horizon": 5,
+      "ic_train": 0.0194,
+      "ic_test": 0.0134,
+      "n_train": 883,
+      "n_test_obs": 324,
+      "outcome": "CORRECT_REFUSAL"
+    },
+    {
+      "split": 2,
+      "factor": "autocorr_5",
+      "train_verdict": "reject",
+      "horizon": 20,
+      "ic_train": 0.0244,
+      "ic_test": -0.0522,
+      "n_train": 923,
+      "n_test_obs": 309,
+      "outcome": "CORRECT_REFUSAL"
+    },
+    {
+      "split": 2,
+      "factor": "deflated_mom",
+      "train_verdict": "reject",
+      "horizon": 5,
+      "ic_train": -0.0025,
+      "ic_test": 0.0666,
+      "n_train": 883,
+      "n_test_obs": 324,
+      "outcome": "CORRECT_REFUSAL"
+    },
+    {
+      "split": 2,
+      "factor": "noise_control",
+      "train_verdict": "reject",
+      "horizon": 5,
+      "ic_train": -0.0069,
+      "ic_test": -0.0174,
+      "n_train": 943,
+      "n_test_obs": 324,
+      "outcome": "CORRECT_REFUSAL"
+    },
+    {
+      "split": 2,
+      "factor": "lookahead_control",
+      "train_verdict": "reject",
+      "outcome": "N/A_STRUCTURAL"
+    },
+    {
+      "split": 3,
+      "factor": "mom_20",
+      "train_verdict": "reject",
+      "horizon": 20,
+      "ic_train": 0.0181,
+      "ic_test": 0.1108,
+      "n_train": 1237,
+      "n_test_obs": 309,
+      "outcome": "MISSED_SIGNAL"
+    },
+    {
+      "split": 3,
+      "factor": "mom_60",
+      "train_verdict": "reject",
+      "horizon": 1,
+      "ic_train": -0.003,
+      "ic_test": -0.0101,
+      "n_train": 1216,
+      "n_test_obs": 328,
+      "outcome": "CORRECT_REFUSAL"
+    },
+    {
+      "split": 3,
+      "factor": "rev_5",
+      "train_verdict": "reject",
+      "horizon": 1,
+      "ic_train": 0.0439,
+      "ic_test": 0.0359,
+      "n_train": 1271,
+      "n_test_obs": 328,
+      "outcome": "MISSED_SIGNAL"
+    },
+    {
+      "split": 3,
+      "factor": "vol_20",
+      "train_verdict": "reject",
+      "horizon": 1,
+      "ic_train": -0.0355,
+      "ic_test": -0.0617,
+      "n_train": 1256,
+      "n_test_obs": 328,
+      "outcome": "MISSED_SIGNAL"
+    },
+    {
+      "split": 3,
+      "factor": "atr_norm_14",
+      "train_verdict": "reject",
+      "horizon": 5,
+      "ic_train": -0.0068,
+      "ic_test": -0.1139,
+      "n_train": 1258,
+      "n_test_obs": 324,
+      "outcome": "MISSED_SIGNAL"
+    },
+    {
+      "split": 3,
+      "factor": "rsi_14",
+      "train_verdict": "reject",
+      "horizon": 5,
+      "ic_train": -0.0075,
+      "ic_test": 0.0421,
+      "n_train": 1258,
+      "n_test_obs": 324,
+      "outcome": "CORRECT_REFUSAL"
+    },
+    {
+      "split": 3,
+      "factor": "volume_z_20",
+      "train_verdict": "reject",
+      "horizon": 5,
+      "ic_train": -0.0239,
+      "ic_test": 0.0204,
+      "n_train": 1253,
+      "n_test_obs": 324,
+      "outcome": "CORRECT_REFUSAL"
+    },
+    {
+      "split": 3,
+      "factor": "amihud_illiq_20",
+      "train_verdict": "reject",
+      "horizon": 1,
+      "ic_train": -0.0346,
+      "ic_test": -0.044,
+      "n_train": 1256,
+      "n_test_obs": 328,
+      "outcome": "MISSED_SIGNAL"
+    },
+    {
+      "split": 3,
+      "factor": "skew_60",
+      "train_verdict": "reject",
+      "horizon": 20,
+      "ic_train": 0.036,
+      "ic_test": -0.0363,
+      "n_train": 1197,
+      "n_test_obs": 309,
+      "outcome": "CORRECT_REFUSAL"
+    },
+    {
+      "split": 3,
+      "factor": "autocorr_5",
+      "train_verdict": "reject",
+      "horizon": 20,
+      "ic_train": 0.0099,
+      "ic_test": -0.0295,
+      "n_train": 1252,
+      "n_test_obs": 309,
+      "outcome": "CORRECT_REFUSAL"
+    },
+    {
+      "split": 3,
+      "factor": "deflated_mom",
+      "train_verdict": "reject",
+      "horizon": 1,
+      "ic_train": -0.0033,
+      "ic_test": 0.0065,
+      "n_train": 1216,
+      "n_test_obs": 328,
+      "outcome": "CORRECT_REFUSAL"
+    },
+    {
+      "split": 3,
+      "factor": "noise_control",
+      "train_verdict": "reject",
+      "horizon": 1,
+      "ic_train": -0.0089,
+      "ic_test": -0.0122,
+      "n_train": 1276,
+      "n_test_obs": 328,
+      "outcome": "CORRECT_REFUSAL"
+    },
+    {
+      "split": 3,
+      "factor": "lookahead_control",
+      "train_verdict": "reject",
+      "outcome": "N/A_STRUCTURAL"
+    },
+    {
+      "split": 4,
+      "factor": "mom_20",
+      "train_verdict": "promote",
+      "horizon": 20,
+      "ic_train": 0.0426,
+      "ic_test": -0.062,
+      "n_train": 1566,
+      "n_test_obs": 313,
+      "outcome": "FALSE_PROMOTION"
+    },
+    {
+      "split": 4,
+      "factor": "mom_60",
+      "train_verdict": "reject",
+      "horizon": 1,
+      "ic_train": -0.0042,
+      "ic_test": 0.0037,
+      "n_train": 1545,
+      "n_test_obs": 332,
+      "outcome": "CORRECT_REFUSAL"
+    },
+    {
+      "split": 4,
+      "factor": "rev_5",
+      "train_verdict": "reject",
+      "horizon": 1,
+      "ic_train": 0.0413,
+      "ic_test": -0.0057,
+      "n_train": 1600,
+      "n_test_obs": 332,
+      "outcome": "CORRECT_REFUSAL"
+    },
+    {
+      "split": 4,
+      "factor": "vol_20",
+      "train_verdict": "reject",
+      "horizon": 1,
+      "ic_train": -0.036,
+      "ic_test": -0.0535,
+      "n_train": 1585,
+      "n_test_obs": 332,
+      "outcome": "MISSED_SIGNAL"
+    },
+    {
+      "split": 4,
+      "factor": "atr_norm_14",
+      "train_verdict": "reject",
+      "horizon": 1,
+      "ic_train": -0.0316,
+      "ic_test": -0.076,
+      "n_train": 1591,
+      "n_test_obs": 332,
+      "outcome": "MISSED_SIGNAL"
+    },
+    {
+      "split": 4,
+      "factor": "rsi_14",
+      "train_verdict": "reject",
+      "horizon": 1,
+      "ic_train": -0.0081,
+      "ic_test": 0.0144,
+      "n_train": 1591,
+      "n_test_obs": 332,
+      "outcome": "CORRECT_REFUSAL"
+    },
+    {
+      "split": 4,
+      "factor": "volume_z_20",
+      "train_verdict": "reject",
+      "horizon": 5,
+      "ic_train": -0.0106,
+      "ic_test": -0.0001,
+      "n_train": 1582,
+      "n_test_obs": 328,
+      "outcome": "CORRECT_REFUSAL"
+    },
+    {
+      "split": 4,
+      "factor": "amihud_illiq_20",
+      "train_verdict": "reject",
+      "horizon": 1,
+      "ic_train": -0.0345,
+      "ic_test": -0.0026,
+      "n_train": 1585,
+      "n_test_obs": 332,
+      "outcome": "CORRECT_REFUSAL"
+    },
+    {
+      "split": 4,
+      "factor": "skew_60",
+      "train_verdict": "reject",
+      "horizon": 1,
+      "ic_train": 0.0085,
+      "ic_test": 0.0602,
+      "n_train": 1545,
+      "n_test_obs": 332,
+      "outcome": "MISSED_SIGNAL"
+    },
+    {
+      "split": 4,
+      "factor": "autocorr_5",
+      "train_verdict": "reject",
+      "horizon": 1,
+      "ic_train": -0.0046,
+      "ic_test": 0.0216,
+      "n_train": 1600,
+      "n_test_obs": 332,
+      "outcome": "CORRECT_REFUSAL"
+    },
+    {
+      "split": 4,
+      "factor": "deflated_mom",
+      "train_verdict": "reject",
+      "horizon": 1,
+      "ic_train": -0.0016,
+      "ic_test": -0.0084,
+      "n_train": 1545,
+      "n_test_obs": 332,
+      "outcome": "CORRECT_REFUSAL"
+    },
+    {
+      "split": 4,
+      "factor": "noise_control",
+      "train_verdict": "reject",
+      "horizon": 20,
+      "ic_train": 0.0068,
+      "ic_test": 0.0244,
+      "n_train": 1586,
+      "n_test_obs": 313,
+      "outcome": "MISSED_SIGNAL"
+    },
+    {
+      "split": 4,
+      "factor": "lookahead_control",
+      "train_verdict": "reject",
+      "outcome": "N/A_STRUCTURAL"
+    }
+  ],
+  "elapsed_s": 669.3
+}

@@ -215,10 +215,19 @@ def _evaluate_all_factors(
 
         cv = PurgedWalkForward(n_splits=5, embargo_days=max(horizons), label_horizon=best.horizon)
         try:
+            splits = list(cv.split(df))
+            # NOTE: evaluate_walk_forward takes the *splitter*, not a materialised
+            # split list (passing a list raised AttributeError, silently yielding
+            # NaN OOS IC in earlier runs) and returns WalkForwardResult objects.
             wf = evaluate_walk_forward(factor, df, cv, [best.horizon])
-            oos_ic = float(np.mean([m.ic_pearson for m in wf if not math.isnan(m.ic_pearson)]))
-        except Exception:
+            oos_ic = float(wf[0].oos_mean_ic) if wf else float("nan")
+            oos_n_splits = int(wf[0].n_splits) if wf else 0
+            oos_n_test_obs = int(sum(len(s.test_idx) for s in splits))
+        except Exception as exc:
             oos_ic = float("nan")
+            oos_n_splits = 0
+            oos_n_test_obs = 0
+            print(f"  WARN: walk-forward failed for {name}: {exc}")
 
         # Deflated Sharpe (using IC as SR proxy, n_trials = registry size)
         try:
@@ -241,6 +250,8 @@ def _evaluate_all_factors(
                 "t_hac": best.ic_tstat,
                 "p_raw": p_raw,
                 "oos_ic": oos_ic,
+                "oos_n_splits": oos_n_splits,
+                "oos_n_test_obs": oos_n_test_obs,
                 "deflated_sharpe": dsr,
                 "n_obs": int(best.n_obs),
             }
@@ -253,6 +264,7 @@ def _evaluate_all_factors(
         bh_mask = benjamini_hochberg(p_vals, q=0.15)
         for row, passed in zip(valid, bh_mask):
             row["bh_fdr_pass"] = bool(passed)
+            row["bh_m"] = len(p_vals)
     for row in real_rows:
         if "bh_fdr_pass" not in row:
             row["bh_fdr_pass"] = False
@@ -288,6 +300,7 @@ def _evaluate_all_factors(
                 "ic_ir": best.ic_ir,
                 "t_hac": best.ic_tstat,
                 "p_raw": p_raw,
+                "n_obs": int(best.n_obs),
                 "seed": noise_seed,
             }
         )
@@ -598,6 +611,51 @@ def write_report(
     print(f"Wrote {output_json.relative_to(_REPO_ROOT)}")
 
 
+def _print_raw_results(real_rows: list[dict], noise_rows: list[dict], stability) -> None:
+    """Print the full per-factor table (with sample sizes) as raw stdout."""
+    print("\n=== PER-FACTOR RESULTS (real data, n stated for every number) ===")
+    print(
+        f"{'factor':<18} {'h':>2} {'n_obs':>6} {'IC':>8} {'ICIR':>7} {'tHAC':>7} "
+        f"{'p_raw':>8} {'OOS_IC':>7} {'nSp':>3} {'nTe':>6} {'DSR':>7} {'BH':>3} verdict"
+    )
+    for row in sorted(real_rows, key=lambda r: abs(r.get("ic_ir", 0) or 0), reverse=True):
+        if "error" in row:
+            print(f"{row['factor']:<18} ERROR: {row['error']}")
+            continue
+        print(
+            f"{row['factor']:<18} {row['horizon']:>2} {row['n_obs']:>6} "
+            f"{row['ic']:>8.4f} {row['ic_ir']:>7.4f} {row['t_hac']:>7.3f} "
+            f"{row['p_raw']:>8.4f} {row['oos_ic']:>7.4f} {row['oos_n_splits']:>3} "
+            f"{row['oos_n_test_obs']:>6} {row['deflated_sharpe']:>7.4f} "
+            f"{'Y' if row['bh_fdr_pass'] else 'N':>3} {row['verdict']}"
+        )
+    print(
+        "\n(n_obs = cross-sectional dates with factor+label; OOS_IC = purged walk-forward "
+        "mean test IC over nSp splits, nTe = test (date,asset) rows; DSR = deflated Sharpe "
+        "probability, inputs n_obs x n_trials="
+        + str(len(REGISTRY))
+        + "; BH = Benjamini-Hochberg q=0.15 across m="
+        + str(next((r.get("bh_m", 0) for r in real_rows if "bh_m" in r), 0))
+        + " family p-values)"
+    )
+    print("\n=== SEEDED NOISE CONTROLS (promote() verdict) ===")
+    for row in noise_rows:
+        if "error" in row:
+            print(f"{row['factor']:<14} ERROR: {row['error']}")
+            continue
+        bh = "Y" if row.get("bh_fdr_pass") else "N"
+        print(
+            f"{row['factor']:<14} h={row['horizon']:>2} n={row['n_obs']:>6} "
+            f"tHAC={row['t_hac']:>7.3f} p={row['p_raw']:>8.4f} BH={bh} {row['verdict']}"
+        )
+    print(f"\nstability flips on promoted set: {stability[0]} {stability[1]}")
+    print(
+        "promoted: "
+        + str(sum(1 for r in real_rows if r.get("verdict") == "promote"))
+        + f"/{sum(1 for r in real_rows if 'error' not in r)}"
+    )
+
+
 # ---------------------------------------------------------------------------
 # Entry point
 # ---------------------------------------------------------------------------
@@ -660,6 +718,8 @@ def main(argv: list[str] | None = None) -> int:
     # Stability check on promoted factors
     promoted_names = [r["factor"] for r in real_rows if r.get("verdict") == "promote"]
     stability = _stability_check(promoted_names, df)
+
+    _print_raw_results(real_rows, noise_rows, stability)
 
     command = (
         f"python scripts/prove_on_real_data.py "
