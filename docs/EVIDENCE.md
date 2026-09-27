@@ -1,7 +1,6 @@
 # EVIDENCE.md — LANE factorproof-polish pass
 
-Branch: `polish/recruiter`. Commands run on 2026-09-27 in worktree
-`/home/openclaw/worktrees/factorproof-polish`.
+Branch: `polish/recruiter`. Commands run on 2026-09-27 in a repository worktree.
 
 Prior evidence (install, pytest, HAC proofs, real-data proof, eval-findings fix) is
 in `EVIDENCE.md` at the repository root (sections 1–12).
