@@ -32,8 +32,15 @@ jobs:
           name: python-package-distributions
           path: dist/
 
+  # Publishing to PyPI is OPT-IN. It stays skipped until a trusted publisher exists for this repo on
+  # PyPI (PyPI → project → Publishing → add publisher: repository=AnnasMazhar/factorproof,
+  # workflow=release.yml, environment=pypi). Until that exists the job fails with
+  # `invalid-publisher`, which turns every tag red for a pure configuration reason.
+  # Enable it by setting the repository variable PYPI_PUBLISH=true (Settings → Secrets and
+  # variables → Actions → Variables).
   publish-to-pypi:
     name: Publish to PyPI
+    if: vars.PYPI_PUBLISH == 'true'
     needs: build
     runs-on: ubuntu-latest
     environment:
