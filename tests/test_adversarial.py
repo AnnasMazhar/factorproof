@@ -673,3 +673,75 @@ def test_clean_factor_no_negative_shifts():
             f"Clean factor '{name}' was flagged for negative shifts: {patterns}. "
             "False positive in check_lookahead_source()."
         )
+
+
+def test_closure_lookahead_rejected_by_runtime_check():
+    """F-A3 FIX: A factor that hides the shift amount in a closure variable must be
+    detected and rejected by the runtime lookahead check (Gate 0.75).
+
+    Fault detected: source inspection (Gate 0.5) cannot see closure variables.
+    The source code `close.shift(shift_amount)` where `shift_amount = -5` is
+    declared outside compute() does not contain a literal negative number.
+
+    The runtime check correlates factor values with FUTURE returns and rejects
+    if correlation exceeds threshold (0.30). A legitimate factor has IC ~0.02-0.10;
+    a lookahead factor (even smoothed) has IC ~0.30+.
+    """
+    from factorlab.cv import check_lookahead_runtime
+    from factorlab.data import synthetic_ohlcv
+    from factorlab.factors.base import Factor
+
+    # Test the runtime check directly (not via promote(), since promote() may
+    # also catch via source inspection for class-defined factors)
+    shift_amount = -5
+
+    class ClosureLookaheadFactor(Factor):
+        name = "closure_lookahead"
+        category = "attack"
+        description = "Lookahead hidden via closure variable"
+        params = {}
+        uses_future_data = False
+
+        def compute(self, df):
+            close = df.pivot(index="date", columns="asset", values="close")
+            future_ret = close.shift(shift_amount) / close - 1
+            smoothed = future_ret.rolling(window=10, min_periods=1).mean()
+            factor_vals = smoothed.stack()
+            factor_vals.index.names = ["date", "asset"]
+            return factor_vals
+
+    df = synthetic_ohlcv(n_days=1500, n_assets=12, seed=7, plant_signal=True)
+    factor = ClosureLookaheadFactor()
+
+    # Runtime check should detect high correlation with future returns
+    is_lookahead, reason = check_lookahead_runtime(factor, df, threshold=0.30)
+
+    assert is_lookahead, (
+        f"Closure lookahead factor NOT detected by runtime check! Reason: {reason}. "
+        "Runtime check (threshold=0.30) should detect correlation with future returns."
+    )
+    assert (
+        "correlated with future returns" in reason.lower()
+    ), f"Runtime check returned unexpected reason: {reason}"
+
+
+def test_legitimate_factor_passes_runtime_check():
+    """F-A3 FIX counterpart: legitimate factors must NOT be flagged by the runtime
+    lookahead check.
+
+    A momentum factor (mom_20) on planted-signal data has IC ~0.025, well below
+    the threshold of 0.30. It must pass the runtime check.
+    """
+    from factorlab.cv import check_lookahead_runtime
+    from factorlab.data import synthetic_ohlcv
+    from factorlab.factors import get_factor
+
+    df = synthetic_ohlcv(n_days=1500, n_assets=12, seed=7, plant_signal=True)
+    factor = get_factor("mom_20")
+
+    is_lookahead, reason = check_lookahead_runtime(factor, df, threshold=0.30)
+
+    assert not is_lookahead, (
+        f"Legitimate factor mom_20 flagged as lookahead! Reason: {reason}. "
+        "Runtime check threshold may be too sensitive."
+    )

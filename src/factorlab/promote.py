@@ -21,7 +21,13 @@ import math
 from dataclasses import dataclass, field
 from typing import Literal
 
-from .cv import PurgedWalkForward, check_lookahead, check_lookahead_source, evaluate_walk_forward
+from .cv import (
+    PurgedWalkForward,
+    check_lookahead,
+    check_lookahead_runtime,
+    check_lookahead_source,
+    evaluate_walk_forward,
+)
 from .data import synthetic_ohlcv
 from .evaluate import evaluate_factor
 from .factors.base import Factor
@@ -237,6 +243,42 @@ def promote(
                     + ", ".join(source_patterns)
                     + ". Set uses_future_data=True if this is intentional."
                 ),
+            )
+        )
+        return PromotionDecision(
+            factor_name=factor.name,
+            verdict="reject",
+            reasons=reasons,
+            best_horizon=-1,
+            best_ic=float("nan"),
+            best_ic_ir=float("nan"),
+            oos_consistency=float("nan"),
+            n_obs=0,
+        )
+
+    # ------------------------------------------------------------------
+    # Gate 0.75: Lookahead contamination — runtime detection (F-A3 fix)
+    #
+    # Source inspection can be bypassed by hiding the shift amount in a
+    # closure variable (e.g. `shift_amount = -5; close.shift(shift_amount)`).
+    # Runtime detection checks if the factor is highly correlated with FUTURE
+    # returns, which is impossible without lookahead.
+    #
+    # A legitimate factor predicting future returns will have IC ~0.02-0.10.
+    # A factor using future data (even smoothed) will have IC ~0.30+.
+    # Threshold 0.30 catches lookahead while allowing legitimately predictive
+    # factors. This is more sensitive than 0.80 because smoothing can dilute
+    # a perfect lookahead signal.
+    # ------------------------------------------------------------------
+    is_runtime_lookahead, runtime_reason = check_lookahead_runtime(factor, df, threshold=0.30)
+    if is_runtime_lookahead:
+        reasons.append(
+            Reason(
+                code="no_future_correlation",
+                passed=False,
+                observed="high",
+                threshold="< 0.30",
+                note=runtime_reason,
             )
         )
         return PromotionDecision(

@@ -365,6 +365,96 @@ def check_lookahead_source(factor: Factor) -> list[str]:
     return found
 
 
+def check_lookahead_runtime(
+    factor: Factor,
+    df: pd.DataFrame,
+    threshold: float = 0.80,
+    horizons: list[int] | None = None,
+) -> tuple[bool, str]:
+    """Runtime detection of lookahead contamination.
+
+    Source inspection (check_lookahead_source) cannot detect all forms of
+    lookahead — e.g. when the shift amount is in a closure variable. This
+    function runs an empirical test:
+
+    1. Compute forward returns at each horizon h: ret_t+h
+    2. Compute factor values at time t
+    3. If correlation(factor_t, ret_t+h) > threshold for any h, flag as lookahead
+
+    A legitimate factor should NOT be highly correlated with future returns
+    (that would be time-travel). A factor that IS highly correlated is either:
+    - Using future data directly (lookahead)
+    - Impossibly predictive (also suspicious, warrants manual audit)
+
+    The threshold of 0.80 is conservative: legitimate momentum factors rarely
+    exceed 0.10 correlation with future returns. A factor at 0.80+ is almost
+    certainly leaking future information.
+
+    Parameters
+    ----------
+    factor:
+        Factor instance to test.
+    df:
+        OHLCV panel (tidy long format).
+    threshold:
+        Correlation threshold above which lookahead is flagged. Default 0.80.
+    horizons:
+        List of forward-return horizons to test. Default [1, 5, 10, 20].
+
+    Returns
+    -------
+    Tuple of (is_lookahead: bool, reason: str).
+    """
+    import numpy as np
+
+    if horizons is None:
+        horizons = [1, 5, 10, 20]
+
+    try:
+        factor_vals = factor.compute(df)
+    except Exception as e:
+        return (False, f"factor.compute() raised: {e}")
+
+    # Pivot to wide format for correlation calculation
+    close = df.pivot(index="date", columns="asset", values="close")
+
+    for h in horizons:
+        # Future returns: ret_{t+h} = close_{t+h} / close_t - 1
+        future_ret = close.shift(-h) / close - 1
+
+        # Stack to match factor format
+        future_ret_stacked = future_ret.stack()
+        future_ret_stacked.index.names = ["date", "asset"]
+
+        # Align
+        common_idx = factor_vals.index.intersection(future_ret_stacked.index)
+        if len(common_idx) < 30:  # noqa: PLR2004
+            continue
+
+        fv = factor_vals.loc[common_idx].values
+        fr = future_ret_stacked.loc[common_idx].values
+
+        # Drop NaN pairs
+        mask = ~(np.isnan(fv) | np.isnan(fr))
+        fv, fr = fv[mask], fr[mask]
+
+        if len(fv) < 30:  # noqa: PLR2004
+            continue
+
+        # Pearson correlation
+        corr = np.corrcoef(fv, fr)[0, 1]
+
+        if abs(corr) > threshold:
+            return (
+                True,
+                f"Factor highly correlated with future returns at h={h} "
+                f"(corr={corr:.4f} > threshold={threshold}). "
+                f"This indicates lookahead contamination.",
+            )
+
+    return (False, "")
+
+
 # ---------------------------------------------------------------------------
 # Combinatorial Purged Cross-Validation (CPCV)
 # ---------------------------------------------------------------------------
