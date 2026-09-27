@@ -155,19 +155,18 @@ distribution leaking through adjacency.
 
 ## What this proves
 
-This is the same evidence discipline applied to a live 13-factor trading system
-(Olympus V3). The production system uses IC gates, Wilson LB on hit rate, FDR
-correction, and walk-forward CV to decide which factors to deploy. factor-lab
-makes the same machinery available standalone, under MIT, inspectable.
-
-The pipeline is designed to reject the author's own favourite factors. That is
-the point.
+The pipeline is designed to reject the author's favourite factors. That is the point:
+IC gates, Wilson lower bounds on hit rate, Benjamini-Hochberg FDR correction across the
+factor family, deflated Sharpe for the number of trials actually run, and purged
+walk-forward cross-validation with an embargo. Every part of the decision is inspectable
+and every number is reproducible from this repository alone, under MIT.
 
 ## Limitations
 
-- **Synthetic data only in this demo.** No real-market results are shown. Performance
-  on real data is unknown and not claimed.
-- **Single asset class.** The evaluation framework is equity-centric; no
+- **Real-data results pending.** The pipeline runs end-to-end on a private multi-year daily
+  OHLCV dataset (14 assets, 2021→present) locally, and that proof is being produced now.
+  Until `reports/real-data-proof.md` exists, no real-market performance is claimed here.
+- **Single asset class.** The evaluation framework is crypto-daily-centric; no
   cross-asset correlation is modelled.
 - **No transaction cost model in v0.1.** The turnover gate penalises high turnover
   but does not compute net-of-cost returns.
