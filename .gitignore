@@ -12,3 +12,6 @@ htmlcov/
 *.duckdb
 *.sqlite
 .DS_Store
+.hypothesis/
+.mutmut-cache
+uv.lock
