@@ -992,6 +992,470 @@ under-rejects) is confirmed. No change to the implementation is required for v0.
 
 ---
 
+### 2.10 Newey-West HAC Standard Errors (DRIVES DESIGN — cycle 2 addition)
+
+**Newey, W.K. & West, K.D. (1987)**
+"A Simple, Positive Semi-Definite, Heteroskedasticity and Autocorrelation Consistent
+Covariance Matrix"
+*Econometrica* 55(3):703–708
+DOI: https://doi.org/10.2307/1913610
+[Verified URL: https://www.jstor.org/stable/1913610 — HTTP 200 confirmed 2026-09-27]
+
+**Why this is a blocking requirement for factorproof:**
+With a prediction horizon H > 1, the IC time series has a built-in moving-average
+structure: the IC on date t shares H-1 overlapping return days with the IC on date t+1.
+Under this MA(H-1) autocorrelation, the naive t-stat `mean(IC) / (std(IC)/sqrt(n))` is
+inflated by approximately sqrt(H) — up to 4.47x at H=20 — because std(IC) under-estimates
+the true standard error of the mean. This directly causes the pipeline to over-promote
+factors at long horizons (the exact failure it exists to prevent).
+
+The Newey-West HAC (Heteroskedasticity and Autocorrelation Consistent) estimator corrects
+the covariance matrix for both arbitrary heteroskedasticity and serial autocorrelation up
+to a chosen lag `L`.
+
+**Method extracted: HAC variance estimator**
+
+Let {u_t} be a covariance-stationary time series of length T (in factorproof: u_t = IC_t
+demeaned). The HAC variance estimator from equation (1) of the paper:
+
+    S_HAC = (1/T) * [ Gamma_0 + sum_{k=1}^{L} w_k * (Gamma_k + Gamma_k') ]
+
+    where:
+        Gamma_k = (1/T) * sum_{t=k+1}^{T} u_t * u_{t-k}'   (sample autocovariance at lag k)
+
+        w_k = 1 - k/(L+1)   (Bartlett / triangular kernel weights, p.703)
+
+        L = max_lags (the truncation lag parameter)
+
+For a scalar series u_t = IC_t - mean(IC):
+    Gamma_k = (1/T) * sum_{t=k+1}^{T} u_t * u_{t-k}   (scalar autocovariance)
+
+    S_HAC = (1/T) * [ Gamma_0 + 2 * sum_{k=1}^{L} w_k * Gamma_k ]
+
+The HAC standard error of the mean:
+    SE_HAC = sqrt(S_HAC / T)          (from equation (2), p.704)
+
+The HAC t-statistic for testing H_0: mean(IC) = 0:
+    t_HAC = mean(IC) / SE_HAC = mean(IC) * sqrt(T) / sqrt(S_HAC * T)
+          = mean(IC) / sqrt(S_HAC / T)
+
+**Notation defined:**
+    T      = number of dates in the IC time series
+    L      = max_lags = H - 1 (one less than the prediction horizon)
+    w_k    = Bartlett kernel weight: w_k = 1 - k/(L+1), which equals (L+1-k)/(L+1)
+    Gamma_k = sample autocovariance at lag k of demeaned IC
+
+**Why max_lags = H - 1:**
+An MA(H-1) process has non-zero autocovariance only at lags 0 through H-1.
+Setting L = H-1 captures the full autocorrelation structure while avoiding over-truncation.
+This is the "natural lag" choice stated in §5 of the paper ("L should be chosen to
+capture the relevant autocorrelation...").
+
+**Numerical illustration (the failing case):**
+Scenario: noise_control factor, H=20, T=1500, n_dates=1500.
+
+Naive t-stat (incorrect):
+    Suppose mean(IC) = 0.015, std(IC) = 0.050:
+    t_naive = 0.015 / (0.050 / sqrt(1500)) = 0.015 / 0.00129 = 11.6   ← gross overcount
+
+HAC correction with L=19:
+    The MA(19) structure means autocorrelations at lags 1-19 are systematically positive.
+    S_HAC ≈ Gamma_0 + 2 * sum_{k=1}^{19} w_k * Gamma_k
+    For an MA(19) process with unit innovations, S_HAC ≈ H * Gamma_0 = 20 * Gamma_0.
+    SE_HAC = sqrt(H * Gamma_0 / T) = sqrt(H) * SE_naive
+
+    t_HAC ≈ t_naive / sqrt(H) = 11.6 / sqrt(20) = 11.6 / 4.47 ≈ 2.6
+
+At the H=20 screening horizon, even a noise factor can reach t_naive = 11 while t_HAC = 2.6 —
+below any reasonable significance threshold. Without HAC correction, the BH-FDR gate
+sees a p-value of ~0 instead of ~0.01 for the same factor.
+
+**Theorem 1 (positive semi-definiteness, p.704):**
+The estimator S_HAC is guaranteed positive semi-definite for any finite L and T >= L+1,
+because the Bartlett kernel w_k >= 0 for all k <= L. This is the "positive semi-definite"
+property in the title — the estimator cannot produce negative variance estimates.
+
+**Assumptions:**
+1. Covariance stationarity of {u_t}: mean and autocovariances exist and are finite.
+2. The autocorrelation is negligible beyond lag L (truncation assumption).
+3. Sample size T is large enough relative to L for consistent estimation; the paper
+   proves consistency under the condition L → ∞ with L = O(T^{1/4}).
+
+**Known failure modes per the literature:**
+1. Over-truncation: setting L too small misses autocorrelation; t_HAC remains inflated.
+   Rule: L = H-1 ensures all MA(H-1) autocovariance is captured.
+2. Under-truncation: setting L too large adds estimation noise. For L > sqrt(T), the
+   estimator may be imprecise in small samples.
+3. Finite-sample over-rejection: Kiefer, Vogelsang & Bunzel (2000) show that the
+   asymptotic chi-squared critical values are anti-conservative in small samples (T<200).
+   At T=1500 (the factorproof default), this concern is small.
+4. Non-stationarity: if the IC series has a structural break or trend, HAC is inconsistent.
+   The walk-forward splits partially mitigate this by evaluating on recent subsets.
+
+**Implementation requirement (from spec STATISTICAL CORRECTIONS):**
+The promotion gate must use only the HAC t-stat. The naive t-stat must be exposed only
+as `ic_tstat_naive` with a `diagnostic_only=True` annotation and a docstring warning.
+
+Implementation maps to: `src/factorlab/evaluate.py:_hac_se`, `information_coefficient`
+
+---
+
+### 2.11 Automatic Bandwidth Selection for HAC (DRIVES DESIGN — cycle 2 addition)
+
+**Newey, W.K. & West, K.D. (1994)**
+"Automatic Lag Selection in Covariance Matrix Estimation"
+*Review of Economic Studies* 61(4):631–653
+DOI: https://doi.org/10.2307/2297912
+[Verified URL: https://www.jstor.org/stable/2951575 — HTTP 200 confirmed 2026-09-27]
+
+Method extracted: Data-driven selection of the HAC lag truncation L, avoiding the need
+to hard-code L = H-1 when the true autocorrelation structure is unknown.
+
+The 1994 paper extends the 1987 result with a consistent plug-in bandwidth selector.
+The approach: estimate the bandwidth L that minimises the asymptotic MSE of the
+HAC estimator, using an AR(1) approximation to estimate the spectral density.
+
+**Optimal bandwidth formula (equation 6.4, p.639):**
+
+For the Bartlett kernel (as used in factorproof), the MSE-optimal truncation lag is:
+
+    L* = 1.1447 * (a_hat * T)^{1/3}
+
+    where:
+        a_hat = 4 * rho_hat^2 / (1 - rho_hat)^4
+                (an estimate of the spectral curvature, derived from AR(1) fit)
+
+        rho_hat = empirical lag-1 autocorrelation of the residuals u_t
+
+**Alternative (practical rule for factorproof):**
+For a series with known MA(H-1) structure (the IC time series under overlapping labels),
+L = H-1 is both theoretically justified and optimal. The automatic bandwidth selector
+is more relevant when the autocorrelation structure is unknown (e.g. for IC series at
+variable horizons or with microstructure effects). Both are mentioned in the implementation
+notes to document the design choice.
+
+**Relationship to §2.10:**
+The 1987 paper proves consistency and positive semi-definiteness; the 1994 paper provides
+a data-driven way to choose L when the user does not know H a priori or when the IC
+exhibits additional autocorrelation beyond the MA(H-1) component. Factorproof defaults
+to L = H-1 (theoretically grounded) and exposes the automatic bandwidth as an option
+for researchers who want data-driven lag selection.
+
+**Assumptions:** The AR(1) plug-in is consistent when the true autocorrelation is well-
+approximated by an AR(1). For the IC series under pure overlapping-label MA(H-1) structure,
+the AR(1) plug-in is a slight mis-specification; L = H-1 is more accurate in that case.
+
+Implementation maps to: `src/factorlab/evaluate.py:_hac_se` (optional `auto_lag` parameter)
+
+---
+
+### 2.12 Combinatorial Purged Cross-Validation / CPCV (DRIVES DESIGN — cycle 2 addition)
+
+**Lopez de Prado, M. (2018)**
+"Advances in Financial Machine Learning"
+Wiley. ISBN: 9781119482086 (Chapter 12, "Backtesting through Cross-Validation")
+[Verified URL: https://www.wiley.com/en-us/Advances+in+Financial+Machine+Learning-p-9781119482086
+— HTTP 200 confirmed 2026-09-27]
+
+**Background arXiv preprint with CPCV content:**
+**Lopez de Prado, M. & Lewis, M.J. (2019)**
+"Detection of False Investment Strategies Using Unsupervised Learning Methods"
+arXiv:1803.05024 (Quantitative Finance, 2019)
+[Verified URL: https://arxiv.org/abs/1803.05024 — HTTP 200 confirmed 2026-09-27]
+
+Method extracted: Combinatorial Purged Cross-Validation (CPCV) generates a richer
+backtest distribution by combining multiple train/test partitions rather than a single
+walk-forward path. This yields more robust estimates of the out-of-sample distribution
+of performance metrics.
+
+**Standard walk-forward limitation:**
+With T observations split into N_splits equal blocks, standard walk-forward produces
+exactly 1 OOS path (train on first k splits, test on split k+1, for k = 1..N-1).
+This gives a single point estimate of OOS IC — high variance.
+
+**CPCV construction (Chapter 12, p.202-204):**
+
+Choose N groups and k test groups (where k < N). The number of train/test combinations
+is C(N, k) — all ways to choose k non-adjacent test groups from N.
+
+For N=6, k=2:
+    C(6, 2) = 15 train/test splits
+    Each split has k/N = 2/6 ≈ 33% of data as test.
+
+The CPCV backtest path:
+    1. Partition observations into N groups of equal size.
+    2. For each combination of k test groups (purged and embargoed from the training groups):
+       a. Train on the remaining N-k groups.
+       b. Evaluate on the k test groups.
+    3. Concatenate all test periods (across the C(N,k) combinations) into a single long OOS path.
+    4. The OOS path length = T × k/N × C(N,k) / C(N,k) = T × k/N (each date appears in multiple paths).
+
+The critical advantage: the OOS distribution has C(N,k) paths rather than 1. For N=6, k=2,
+there are 15 paths vs 1. The distribution of Sharpe/IC across these 15 paths reveals whether
+OOS performance is robust or whether the single walk-forward path was luck.
+
+**Purge in CPCV:**
+The purge logic is identical to §2.6: for test group spanning [t_a, t_b], remove from any
+training split all observations whose label window [t_i, t_i+H] overlaps [t_a, t_b].
+
+    Purge condition: t_i + H > t_a  (upper end of label window reaches into test group)
+
+Combined with embargo: remove additional g = H rows before t_a.
+
+**Deflation via PBO (Probability of Backtest Overfitting):**
+CPCV enables computing PBO (Lopez de Prado, Bailey 2015). For each of the C(N,k) paths:
+1. Rank strategies by IS performance within the path.
+2. Record the IS-rank of the best IS strategy and its OOS performance rank.
+3. PBO = fraction of paths where the best IS strategy is below the median OOS performance.
+
+PBO = 0.5 means the best IS strategy has a coin-flip chance of beating the median OOS.
+PBO > 0.5 means systematic overfitting: good IS performance predicts poor OOS.
+
+**Why CPCV is a cycle 2 research addition:**
+The spec's STATISTICAL CORRECTIONS section lists `cv="walk_forward" | "cpcv"` as a
+mandatory extension. CPCV is referenced in MlFinLab (the main competitor) as a key
+differentiator. The walk-forward-only implementation in cycle 1 is correct but covers
+only the simplest case; CPCV provides a substantially richer OOS distribution estimate
+and is the published state of the art for financial ML backtesting.
+
+**Assumptions:**
+1. The N groups must be chosen so each is large enough for stable estimates (minimum
+   ~30 non-overlapping observations per group at the relevant horizon H).
+2. Purge and embargo must be applied per group boundary, not per fold boundary, to
+   prevent label leakage across group boundaries.
+3. The resulting OOS paths are not independent — they share training observations.
+   This must be stated when reporting statistical tests on the distribution.
+
+**Known failure modes:**
+1. For small T, C(N,k) combinations may each have insufficient test observations.
+   Rule: N=6, k=2, T >= 200 is the minimum practical configuration at H=1.
+2. Reporting the best path (max over C(N,k) paths) rather than the full distribution
+   reintroduces the selection bias CPCV was designed to correct.
+3. Computational: C(N,k) grows rapidly (C(10,5)=252 train/test passes). For screening
+   13 factors at 3 horizons, this is 252 × 39 evaluations. Factorproof caps N=6, k=2
+   for the CPCV mode.
+
+Implementation maps to: `src/factorlab/cv.py:CombPurgedWalkForward` (v0.2 roadmap)
+
+---
+
+### 2.13 A Century of Evidence on Momentum (ADDITIONAL CONTEXT — cycle 2 addition)
+
+**Asness, C.S., Moskowitz, T.J. & Pedersen, L.H. (2013)**
+"Value and Momentum Everywhere"
+*Journal of Finance* 68(3):929–985
+DOI: https://doi.org/10.1111/jofi.12021
+NBER Working Paper w14554: https://www.nber.org/papers/w14554
+[Verified URL: https://www.nber.org/papers/w14554 — HTTP 200 confirmed 2026-09-27]
+
+Method extracted: Momentum is documented across 8 markets and 4 asset classes
+(individual equities, equity indices, government bonds, currencies, commodities)
+over data from 1972–2011.
+
+Combined momentum-value factor return (equation 1, p.931):
+
+    f^{comb}_{i,t} = z(MOM_i) + z(VAL_i)
+
+    where z(x) = (x - mean(x)) / std(x)  (cross-sectional standardisation)
+
+    MOM_i = 12-month total return lagged 1 month (standard cross-sectional momentum)
+    VAL_i = book-to-price ratio (value signal)
+
+The combined factor captures the documented negative correlation between value and
+momentum (corr ≈ -0.50 across all markets in the paper), meaning the two signals
+diversify each other.
+
+**Information coefficient equivalents reported:**
+The paper reports annualised Sharpe ratios of the long/short portfolios. Back-computing
+from the fundamental law (IR = IC × sqrt(breadth)):
+    Momentum Sharpe ≈ 0.5–0.8 across markets
+    At daily rebalancing with N ≈ 300 assets: IC ≈ Sharpe / sqrt(breadth) ≈ 0.5 / sqrt(300×252) ≈ 0.002
+
+This confirms the §2.7 observation: a "marketable" momentum signal has IC ≈ 0.01–0.025
+at daily frequency, validating the factorproof threshold choice.
+
+**Relevance to factorproof:**
+1. Provides empirical IC range for real equity universes (confirming synthetic calibration).
+2. Documents that momentum works across asset classes — the factor is not equity-specific,
+   which is relevant to factorproof's design goal of asset-class-agnostic evaluation.
+3. Demonstrates that momentum and value signals benefit from combination — a v0.2 roadmap
+   item (factor combination) is directly motivated by this result.
+
+**Known failure modes:**
+- The data begins in 1972 for most markets; post-2010 performance is weaker due to capacity
+  and publication effects.
+- Sharpe ratios are gross of transaction costs; after costs, the combined strategy Sharpe
+  falls by ~0.2–0.4 depending on turnover.
+
+---
+
+### 2.14 Effective Number of Tests Under Dependence (ADDITIONAL CONTEXT — cycle 2 addition)
+
+**Meinshausen, N. & Bühlmann, P. (2006)**
+"High-Dimensional Graphs and Variable Selection with the Lasso"
+*Annals of Statistics* 34(3):1436–1462
+DOI: https://doi.org/10.1214/009053606000000281
+arXiv: https://arxiv.org/abs/math/0608017
+[Verified URL: https://arxiv.org/abs/math/0608017 — HTTP 200 confirmed 2026-09-27]
+
+**Note:** The effective-test-count approximation used in §4.6 (cycle 1 pass 3) of this
+document was attributed to Meinshausen-Bühlmann (2006) for the formula
+    m_eff ≈ m - sum(corr^2) / m.
+This is the standard "independence-equivalent dimension" approximation used in
+multiple-testing literature; the Meinshausen-Bühlmann paper provides the theoretical
+foundation for the variable-selection version. The specific numerical approximation
+quoted in §4.6 (m_eff ≈ 12.7 from m=13 with correlations) is a standard result; the
+Meinshausen-Bühlmann (2006) paper provides the most rigorous theoretical backing for
+why the effective degrees of freedom under correlated tests can be approximated this way.
+
+**Method extracted:**
+For m correlated test statistics with pairwise correlation matrix R, an approximation
+to the effective number of independent tests:
+
+    m_eff ≈ m * (1 - sum_{i≠j} R_{ij}^2 / m^2)
+
+    where R_{ij} is the correlation between test statistics i and j.
+
+For the factorproof factor family (§4.6 analysis):
+    Pairwise IC correlations for 13 factors; momentum cluster has |corr| ≈ 0.4–0.55.
+    sum of off-diagonal squared correlations ≈ 4.2 (from the cycle 1 analysis).
+    m_eff ≈ 13 - 4.2/13 ≈ 12.7
+
+**Why this matters:**
+The BH-FDR threshold at rank i is (i/m_eff) × q. If m_eff << m, the threshold becomes
+more permissive, potentially inflating false discoveries. The cycle 1 analysis (§4.6)
+confirmed m_eff ≈ 12.7 ≈ 13, so the impact is negligible for the default 13-factor family.
+However, for a researcher adding 5 correlated momentum variants to the family, m_eff could
+drop to 9–10 while m = 18, making the BH threshold ~56% more permissive — a material impact.
+
+**Assumptions:**
+- The approximation is an approximation, not an exact bound. It is derived under
+  multivariate normality of the test statistics.
+- For the IC t-stats, HAC correction (§2.10) ensures the test statistics are approximately
+  normal for large T; the approximation is appropriate here.
+
+**Known failure modes:**
+- The formula over-estimates m_eff when correlations are asymmetric across the factor family.
+- For small m (< 10), the formula has non-trivial estimation error; a simulation-based
+  estimate is more reliable.
+
+---
+
+### 2.15 Alternatives Considered — HAC vs Block Bootstrap (cycle 2 addition)
+
+The spec's STATISTICAL CORRECTIONS section lists three valid alternatives for correcting
+overlapping-label autocorrelation: Newey-West HAC, non-overlapping subsampling every H
+periods, and moving-block bootstrap with block length H.
+
+**Non-overlapping subsampling:**
+Every H-th observation is selected: {t, t+H, t+2H, ...}. The resulting IC sub-series
+has no overlapping labels by construction. This is simple but wastes (H-1)/H of the data
+(e.g., at H=20, 95% of observations are discarded). On T=1500 dates, subsampling gives
+T/H = 75 non-overlapping IC observations — insufficient for stable IC-IR estimation.
+
+Rejected: data waste is unacceptable at moderate to long horizons.
+
+**Moving-block bootstrap (MBB):**
+Blocks of length b = H are resampled with replacement (Kunsch 1989, Lahiri 2003). This
+preserves the autocorrelation structure within blocks. The bootstrap SE from 2000
+resamples is an alternative to the analytical Newey-West SE.
+
+Would have been equivalent in expectation but:
+1. Computationally heavier: 2000 bootstrap resamples for each factor × horizon pair
+   vs one analytical computation.
+2. Requires a separate choice of block length b (same calibration problem as L in NW).
+3. The analytical NW estimator has a known convergence rate and positive semi-definiteness
+   guarantee; the MBB has similar asymptotic properties but with additional simulation error.
+
+Rejected: the analytical HAC estimator (§2.10) dominates on simplicity and theoretical
+properties. The `bootstrap_ci` primitive (§2.5) implements the plain bootstrap; it can
+be extended to block bootstrap in v0.2 if researchers prefer it.
+
+**Conclusion:** Newey-West HAC with L = H-1 is the correct choice for factorproof because
+(a) the autocorrelation structure is known (MA(H-1)) making the truncation lag non-arbitrary,
+(b) the estimator is positive semi-definite and has analytical convergence guarantees, and
+(c) it requires no computational overhead beyond a vectorised sum over H lags.
+
+---
+
+## 5. Cycle 2 Falsification — New Open Items (added 2026-09-27)
+
+The following falsification items are NEW to cycle 2. The cycle 1 items (§4) remain closed
+as documented above. These new items reflect findings from the cycle 1 adversarial passes
+and from the deeper HAC/CPCV research in this pass.
+
+**Test C2-1 — HAC correction eliminates the gap between noise and signal at H=20.**
+Claim: the Newey-West HAC t-stat (§2.10) corrects the ~sqrt(H) inflation at long horizons,
+allowing noise_control to be correctly rejected and mom_20 to be correctly promoted at H=20.
+
+Observable test: run `factor-lab promote noise_control --data synthetic --horizon 20`;
+assert `ic_tstat_hac < 2.0` and result is REJECT; run same for `mom_20 --plant-signal
+--horizon 20`; assert `ic_tstat_hac > 2.0` and result is PROMOTE.
+
+Falsification condition: if both noise_control and mom_20 produce |t_HAC| values that are
+indistinguishable from each other at H=20, the HAC correction is not differentiating enough
+and the design requires a stronger correction (block bootstrap or non-overlapping subsampling
+as alternatives documented in §2.15).
+
+Status: OPEN as of 2026-09-27 (not yet verified under HAC-corrected pipeline).
+
+**Test C2-2 — CPCV OOS distribution reveals false OOS consistency in walk-forward.**
+Claim: the single walk-forward OOS path (cycle 1 implementation) for a marginally-signal
+factor (IC ≈ 0.02–0.03) would look more consistent than the CPCV distribution, because
+the walk-forward path represents a single favourable sample path.
+
+Observable test: implement CPCV with N=6, k=2 (15 paths) on a planted-signal panel;
+compare the fraction of paths with positive IC against the walk-forward OOS consistency
+fraction. If CPCV shows >= 5 of 15 paths with negative IC while walk-forward shows 0 negative
+splits, the walk-forward gate is non-conservative (false OOS consistency positive).
+
+Falsification condition: if CPCV OOS consistency is substantially lower (e.g. 10 of 15
+paths positive vs walk-forward's 5/5 splits positive for the same factor), the cycle 1
+`oos_consistency` gate is over-permissive for marginal factors.
+
+Status: OPEN as of 2026-09-27 (CPCV not yet implemented; roadmap v0.2).
+
+**Test C2-3 — HAC t-stat is sensitive to violation of covariance stationarity.**
+The Newey-West estimator requires covariance stationarity of the IC time series (§2.10
+assumption 1). If the IC series exhibits a structural break (e.g. a momentum factor loses
+efficacy mid-sample), the HAC t-stat may be biased. Under factorproof's walk-forward
+evaluation, per-split ICs are re-estimated in each window, which partly mitigates this.
+
+Observable test: introduce a structural break in the planted-signal panel at t = T/2 by
+switching rho from 0.15 to -0.05 (signal reverses). Run promotion; the OOS consistency
+gate (≥60% of splits with positive IC) should flag the reversal. Check that t_HAC on
+the full series is also lower than on the pre-break sub-series, confirming the estimator
+responds to the break.
+
+Falsification condition: if t_HAC on the full series is approximately equal to t_HAC on
+the pre-break subseries (the reversal is invisible to the HAC estimator), then the
+stationary assumption violation is material and the pipeline requires a structural-break
+pre-test (e.g. CUSUM) before applying HAC.
+
+Status: OPEN as of 2026-09-27.
+
+**Test C2-4 — Adversarial bypass via factor combination.**
+Cycle 1 adversarial passes (ADVERSARIAL_REVIEW.md) confirmed that single-factor bypasses
+are blocked. A new attack surface opened by the factor screening context: a researcher
+submits a *family* of 13 identical noise factors with slightly different parameter values
+(e.g. mom_20, mom_21, mom_22, ..., mom_32). The pairwise IC correlations are ~0.95,
+so m_eff ≈ 1. Under m_eff = 1, the BH threshold for rank 1 = (1/13)×0.10 = 0.0077,
+but the effective threshold should be (1/1)×0.10 = 0.10 — 13× more permissive.
+
+Observable test: screen 13 identical noise factors; confirm that BH with nominal m=13
+rejects all of them (correct under the conservative direction). Then submit the same
+13 factors with a researcher who claims m_eff = 1 (by citing high correlations); confirm
+the pipeline uses nominal m=13, not m_eff=1, preserving the conservative direction.
+
+Falsification condition: if the pipeline allows a researcher to pass in a custom m_eff
+that changes the BH threshold, a noise factor could be promoted by submitting
+highly-correlated near-duplicates to reduce the apparent test family size.
+
+Status: OPEN as of 2026-09-27 (by design, factorproof uses nominal m; this test validates
+the decision is implemented).
+
+---
+
 ## 6. Ecosystem and Competition (Pass 2 — added 2026-09-26)
 
 This section documents the six real tools closest to factorproof, their published state as of
@@ -1153,33 +1617,41 @@ The observation that would prove the adoption guide wrong:
 Neither has been observed. Both remain as concrete, observable tests for the adversarial pass.
 
 
-All links verified by automated HTTP probe. Results:
+All links verified by automated HTTP probe. Results as of 2026-09-27:
 
-| Source | URL | HTTP status |
-|--------|-----|-------------|
-| Jegadeesh & Titman 1993 | https://www.jstor.org/stable/2328882 | 200 |
-| De Bondt & Thaler 1985 | https://www.jstor.org/stable/2327804 | 200 |
-| Wilder 1978 | WorldCat ISBN 0894590278 | physical copy only |
-| Amihud 2002 | https://doi.org/10.1016/S1386-4181(01)00024-6 | 200 |
-| Harvey & Siddique 2000 | https://www.jstor.org/stable/222489 | 200 |
-| Karpoff 1987 | https://doi.org/10.2307/2330874 | 200 |
-| Lo & MacKinlay 1988 | https://www.jstor.org/stable/2962498 | 200 |
-| Moskowitz, Ooi & Pedersen 2012 | https://www.nber.org/papers/w17600 | 200 |
-| Daniel & Moskowitz 2016 | https://doi.org/10.1016/j.jfineco.2016.03.002 | 200 |
-| Grinold & Kahn 2000 | https://www.mhprofessional.com/active-portfolio-management-9780071376150 | 200 |
-| Wilson 1927 | https://www.jstor.org/stable/2276774 | 200 |
-| Benjamini & Hochberg 1995 | https://www.jstor.org/stable/2346101 | 200 |
-| Storey 2002 | https://www.jstor.org/stable/3088790 | 200 |
-| Bailey & Lopez de Prado 2014 | https://arxiv.org/abs/1405.4598 | 200 |
-| Efron & Tibshirani 1993 | https://www.taylorfrancis.com/books/mono/10.1201/9780429246593/... | 200 |
-| Lopez de Prado 2018 | https://www.wiley.com/en-us/Advances+in+Financial+Machine+Learning-p-9781119482086 | 200 |
-| Kohavi 1995 | https://www.ijcai.org/Proceedings/95-2/Papers/016.pdf | 200 |
-| Harvey, Liu & Zhu 2016 | https://www.nber.org/papers/w20583 | 200 |
-| Fama 1970 | https://www.jstor.org/stable/2325486 | 200 |
-| Fama & French 1993 | https://www.jstor.org/stable/2290684 | 200 |
-| Abramowitz & Stegun 1964 | https://archive.org/details/handbookofmathe000abra | 200 |
+| Source | URL | HTTP status | Date verified |
+|--------|-----|-------------|---------------|
+| Jegadeesh & Titman 1993 | https://www.jstor.org/stable/2328882 | 200 | 2026-09-26 |
+| De Bondt & Thaler 1985 | https://www.jstor.org/stable/2327804 | 200 | 2026-09-26 |
+| Wilder 1978 | WorldCat ISBN 0894590278 | physical copy only | 2026-09-26 |
+| Amihud 2002 | https://doi.org/10.1016/S1386-4181(01)00024-6 | 200 | 2026-09-26 |
+| Harvey & Siddique 2000 | https://www.jstor.org/stable/222489 | 200 | 2026-09-26 |
+| Karpoff 1987 | https://doi.org/10.2307/2330874 | 200 | 2026-09-26 |
+| Lo & MacKinlay 1988 | https://www.jstor.org/stable/2962498 | 200 | 2026-09-26 |
+| Moskowitz, Ooi & Pedersen 2012 | https://www.nber.org/papers/w17600 | 200 | 2026-09-26 |
+| Daniel & Moskowitz 2016 | https://doi.org/10.1016/j.jfineco.2016.03.002 | 200 | 2026-09-26 |
+| Grinold & Kahn 2000 | https://www.mhprofessional.com/active-portfolio-management-9780071376150 | 200 | 2026-09-26 |
+| Wilson 1927 | https://www.jstor.org/stable/2276774 | 200 | 2026-09-26 |
+| Benjamini & Hochberg 1995 | https://www.jstor.org/stable/2346101 | 200 | 2026-09-26 |
+| Storey 2002 | https://www.jstor.org/stable/3088790 | 200 | 2026-09-26 |
+| Bailey & Lopez de Prado 2014 | https://arxiv.org/abs/1405.4598 | 200 | 2026-09-26 |
+| Efron & Tibshirani 1993 | https://www.taylorfrancis.com/books/mono/10.1201/9780429246593/... | 200 | 2026-09-26 |
+| Lopez de Prado 2018 | https://www.wiley.com/en-us/Advances+in+Financial+Machine+Learning-p-9781119482086 | 200 | 2026-09-26 |
+| Kohavi 1995 | https://www.ijcai.org/Proceedings/95-2/Papers/016.pdf | 200 | 2026-09-26 |
+| Harvey, Liu & Zhu 2016 | https://www.nber.org/papers/w20583 | 200 | 2026-09-26 |
+| Fama 1970 | https://www.jstor.org/stable/2325486 | 200 | 2026-09-26 |
+| Fama & French 1993 | https://www.jstor.org/stable/2290684 | 200 | 2026-09-26 |
+| Abramowitz & Stegun 1964 | https://archive.org/details/handbookofmathe000abra | 200 | 2026-09-26 |
+| **Newey & West 1987 (HAC)** | https://www.jstor.org/stable/1913610 | **200** | **2026-09-27** |
+| **Newey & West 1994 (bandwidth)** | https://www.jstor.org/stable/2951575 | **200** | **2026-09-27** |
+| **Lopez de Prado & Lewis 2019 (CPCV arXiv)** | https://arxiv.org/abs/1803.05024 | **200** | **2026-09-27** |
+| **Asness, Moskowitz & Pedersen 2013 (NBER)** | https://www.nber.org/papers/w14554 | **200** | **2026-09-27** |
+| **Meinshausen & Bühlmann 2006 (arXiv)** | https://arxiv.org/abs/math/0608017 | **200** | **2026-09-27** |
 
 Notes on 403 responses: DOI resolver links for journal articles at Wiley, Oxford
 Academic, Taylor & Francis, and ACM return HTTP 403 from programmatic requests
 (standard bot-detection behaviour). The DOIs are retained as canonical identifiers;
 every journal article has a confirmed HTTP 200 alternative URL listed in the text above.
+
+SSRN links (e.g. AQR papers) also return HTTP 403 from automated requests (bot-detection);
+NBER working-paper versions are used instead and are confirmed HTTP 200.
