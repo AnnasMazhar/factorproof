@@ -2,6 +2,7 @@
 
 Verbatim terminal output from commands run on 2026-09-27.
 Every command listed was actually run; output is pasted without editing.
+The only redaction is host paths: absolute home directories are shown as `/build/`.
 
 ---
 
@@ -13,12 +14,12 @@ $ uv pip install -e '.[dev]'
 
 ```
 Resolved 30 packages in 544ms
-   Building factor-lab @ file:///home/openclaw/portfolio/factor-lab
-      Built factor-lab @ file:///home/openclaw/portfolio/factor-lab
+   Building factor-lab @ file:///build/portfolio/factor-lab
+      Built factor-lab @ file:///build/portfolio/factor-lab
 Prepared 1 package in 1.21s
 Uninstalled 1 package in 0.90ms
 Installed 1 package in 1ms
- ~ factor-lab==0.1.0 (from file:///home/openclaw/portfolio/factor-lab)
+ ~ factor-lab==0.1.0 (from file:///build/portfolio/factor-lab)
 ```
 
 ---
@@ -32,7 +33,7 @@ $ uv run pytest -v
 ```
 ============================= test session starts ==============================
 platform linux -- Python 3.13.12, pytest-8.2.2, pluggy-1.6.0
-rootdir: /home/openclaw/portfolio/factor-lab
+rootdir: /build/portfolio/factor-lab
 configfile: pyproject.toml
 testpaths: tests
 plugins: hypothesis-6.112.1, cov-5.0.0

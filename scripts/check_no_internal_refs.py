@@ -71,10 +71,6 @@ SKIP_NAMES: set[str] = {
     "check_no_internal_refs.py",  # this script itself names the tokens
     "uv.lock",
     "SOURCES.txt",
-    "EVIDENCE.md",  # verbatim terminal output — host paths are expected in pasted logs
-    "eval-c1-p6.json",  # historical cycle-1 eval artifact with captured tool output
-    "eval-c1-p7.json",  # historical cycle-1 eval artifact with captured tool output
-    "mutation-c1.json",  # historical cycle-1 mutation report with captured tool output
 }
 
 # Directories to always skip

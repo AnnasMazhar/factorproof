@@ -38,10 +38,10 @@ classifiers = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/AnnasMazhar/factor-lab"
-Repository = "https://github.com/AnnasMazhar/factor-lab"
-Issues = "https://github.com/AnnasMazhar/factor-lab/issues"
-Changelog = "https://github.com/AnnasMazhar/factor-lab/blob/main/CHANGELOG.md"
+Homepage = "https://github.com/AnnasMazhar/factorproof"
+Repository = "https://github.com/AnnasMazhar/factorproof"
+Issues = "https://github.com/AnnasMazhar/factorproof/issues"
+Changelog = "https://github.com/AnnasMazhar/factorproof/blob/main/CHANGELOG.md"
 
 [project.scripts]
 factor-lab = "factorlab.cli:main"

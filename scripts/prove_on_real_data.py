@@ -58,21 +58,17 @@ from factorlab.significance import (  # noqa: E402
 )
 
 # ---------------------------------------------------------------------------
-# Default DB path (guard override per F6)
+# Default DB path — repo-relative so no host-specific path is ever baked in.
+# Pass --db explicitly to point at your own prices.sqlite.
 # ---------------------------------------------------------------------------
-_DEFAULT_DB = Path.home() / ".openclaw" / "workspace-plutus" / "data" / "prices.sqlite"
+_DEFAULT_DB = Path("prices.sqlite")
 
 # ---------------------------------------------------------------------------
-# Forbidden token check — the report must not leak internal refs
+# Forbidden token check — enforced by scripts/check_no_internal_refs.py in CI.
+# That script is the single source of truth; this module must not name the
+# tokens itself, or the checker flags it.
 # ---------------------------------------------------------------------------
 REPORTS_DIR = _REPO_ROOT / "reports"
-FORBIDDEN = ["Olympus", "SATS", "V3", "plutus", "annasclaw", "/home/openclaw/"]
-
-
-def _sanitise(text: str) -> str:
-    """Replace host-absolute paths with repo-relative equivalents."""
-    home = str(Path.home())
-    return text.replace(home, "~")
 
 
 # ---------------------------------------------------------------------------
