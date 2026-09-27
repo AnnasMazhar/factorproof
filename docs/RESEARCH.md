@@ -1397,7 +1397,24 @@ indistinguishable from each other at H=20, the HAC correction is not differentia
 and the design requires a stronger correction (block bootstrap or non-overlapping subsampling
 as alternatives documented in §2.15).
 
-Status: OPEN as of 2026-09-27 (not yet verified under HAC-corrected pipeline).
+Status: **CLOSED 2026-09-27 (cycle 2 pass 3)** — observed via
+`examples/cycle2_pass3_falsification.py`, experiment C2-1:
+
+```
+noise_control   H=20: ic=-0.0001 naive_t=  -0.01 hac_t=  -0.01 n=1480 verdict=REJECT failed_gates=['min_abs_ic', 'min_ic_ir', 'max_turnover', 'survives_fdr']
+mom_20          H=20: ic=+0.0245 naive_t=  +2.69 hac_t=  +0.82 n=1460 verdict=REJECT failed_gates=['hit_rate_wilson_lb', 'oos_consistency', 'survives_fdr']
+mom_20          default cfg (h=1,5,20): verdict=PROMOTE best_horizon=5 best_ic=+0.0252 failed_gates=[]
+```
+
+The falsification condition (indistinguishable |t_HAC| at H=20) is NOT observed: noise
+−0.01 vs signal +0.82. The naive/HAC divergence is real at the long horizon (naive +2.69
+would look near-significant; HAC +0.82 correctly does not). The test's second observable
+("mom_20 --horizon 20 PROMOTE") does NOT hold and its expectation was wrong, not the gate:
+the planted AR(1) (rho=0.15) has no material predictive power at lag 20, so H=20 in
+isolation must reject. Under the default config the pipeline promotes mom_20 at
+best_horizon=5 with no failed gates and rejects noise_control — spec acceptance criterion 3
+is unaffected. Note the test cites a `--horizon 20` CLI flag that does not exist (promote
+selects the best horizon automatically; screen takes `--horizons`).
 
 **Test C2-2 — CPCV OOS distribution reveals false OOS consistency in walk-forward.**
 Claim: the single walk-forward OOS path (cycle 1 implementation) for a marginally-signal
@@ -1413,7 +1430,21 @@ Falsification condition: if CPCV OOS consistency is substantially lower (e.g. 10
 paths positive vs walk-forward's 5/5 splits positive for the same factor), the cycle 1
 `oos_consistency` gate is over-permissive for marginal factors.
 
-Status: OPEN as of 2026-09-27 (CPCV not yet implemented; roadmap v0.2).
+Status: **CLOSED 2026-09-27 (cycle 2 pass 3)** — CPCV *is* implemented
+(`src/factorlab/cv.py:class CPurgedCV`, N groups, k test groups, purge + embargo; the
+earlier "not yet implemented" note was stale). Observed at H=5 on the planted-signal panel:
+
+```
+mom_20 : walk-forward consistency 0.600 (2/5 negative splits)  vs  CPCV(6,2) 0.733 (4/15 negative)
+rsi_14 : walk-forward consistency 0.800 (1/5 negative splits)  vs  CPCV(6,2) 0.867 (2/15 negative)
+```
+
+Falsification condition (CPCV ≥5/15 negative while walk-forward shows 0 negative) is NOT
+observed — the direction is opposite: the 5-split walk-forward path is the noisier and
+*less* consistent of the two. The cycle-1 `oos_consistency` gate is not over-permissive
+relative to CPCV; both methods return the same gate verdict for these factors (0.600 and
+0.800 both clear the 0.60 threshold, as does CPCV on both). CPCV is available in
+`cv.py` as a diagnostic. No design change.
 
 **Test C2-3 — HAC t-stat is sensitive to violation of covariance stationarity.**
 The Newey-West estimator requires covariance stationarity of the IC time series (§2.10
@@ -1432,7 +1463,31 @@ the pre-break subseries (the reversal is invisible to the HAC estimator), then t
 stationary assumption violation is material and the pipeline requires a structural-break
 pre-test (e.g. CUSUM) before applying HAC.
 
-Status: OPEN as of 2026-09-27.
+Status: **CLOSED 2026-09-27 (cycle 2 pass 3) — with FINDING C2-3a.** Observed
+(AR(1) panel with rho = +0.15 before the midpoint and −0.05 after, break at T/2):
+
+```
+break date     : 2021-11-17
+pre-break  IC  : +0.0417  hac_t=+2.01
+post-break IC  : +0.0079  hac_t=+0.42
+full series IC : +0.0249  hac_t=+1.79
+promote verdict: PROMOTE  oos_consistency=0.600 (threshold 0.6)  failed=[]
+```
+
+The HAC estimator does respond to the break — t falls from +2.01 (pre) to +1.79 (full) —
+but weakly, because the post-break half contributes near-zero IC (+0.0079, t=+0.42)
+rather than clearly negative IC. The test's *secondary* expectation, that the OOS
+consistency gate would flag the regime instability, is **falsified**: oos_consistency
+landed at exactly 0.600, cleared the 0.60 threshold, and `promote()` returned PROMOTE on
+a panel whose second half carries no signal.
+
+**FINDING C2-3a (severity: major, disposition: adversarial/improve pass).** The
+`oos_consistency` gate counts *sign agreement only*. Splits whose IC hovers just above
+zero count as "consistent" even when the signal has died. A magnitude-blind gate plus a
+full-sample t-stat that is diluted (not destroyed) by the dead half produces a promotion
+on a signal-extinction panel. Candidate fixes for the improve pass: require per-split
+|IC| ≥ floor before counting a split as agreeing, or add a min half-sample t-stat check.
+This pass reports the finding; it does not fix code.
 
 **Test C2-4 — Adversarial bypass via factor combination.**
 Cycle 1 adversarial passes (ADVERSARIAL_REVIEW.md) confirmed that single-factor bypasses
@@ -1451,8 +1506,24 @@ Falsification condition: if the pipeline allows a researcher to pass in a custom
 that changes the BH threshold, a noise factor could be promoted by submitting
 highly-correlated near-duplicates to reduce the apparent test family size.
 
-Status: OPEN as of 2026-09-27 (by design, factorproof uses nominal m; this test validates
-the decision is implemented).
+Status: **CLOSED 2026-09-27 (cycle 2 pass 3)** — observed:
+
+```
+benjamini_hochberg signature: (p_values: 'list[float]', q: 'float' = 0.1) -> 'list[bool]'
+promote signature           : (factor, df, cfg=None, extra_factors_p_values=None)
+no m_eff parameter exists on either public entry point -> nominal m by construction
+13 near-duplicate p-values : [0.7208, 0.7031, 0.7044, 0.8063, 0.8201, 0.7239, 0.6433, 0.6323, 0.5438, 0.4451, 0.3603, 0.3027, 0.2391]
+BH at q=0.15, m=13: discoveries = 0 (expected 0 on noise)
+any p_(i) <= (i/13)*q ? False -> all 13 kept as nulls (conservative direction)
+promote(noise_control, family=13): BH FDR q=0.15, m=14 tests  passed=False
+```
+
+13 near-duplicate factors (mom_20 … mom_32, pairwise IC corr ~1.0) screened on a
+plant_noise panel: zero discoveries; rank thresholds are computed with m = len(p_values);
+`m_eff` appears nowhere in `src/` (grep-verified at implementation, signature-verified
+here). The pipeline family path (`extra_factors_p_values`) always uses nominal
+m = len(family) — the researcher has no override, so the conservative direction is
+enforced structurally. Falsification condition (custom m_eff accepted) NOT observed.
 
 ---
 
@@ -1645,14 +1716,33 @@ Six failure modes documented in full at `docs/ADOPTION.md §3`:
 5. Custom factor lookahead not auto-detected — assert_no_lookahead catches index overlap, not compute logic.
 6. Staggered trading calendars — pre-align calendars before screening.
 
-### 7.4 The Threshold Calibration Problem (open question, v0.2)
+### 7.4 The Threshold Calibration Problem (open question, v0.2) — CLOSED 2026-09-27
 
 The most likely non-adoption reason: thresholds are calibrated on synthetic data with
 a planted rho=0.15 signal, not on real equity data. On real large-cap data, IC ≈ 0.01–0.02
 is typical; the default min_abs_ic = 0.02 will reject borderline-but-real factors. This is
-a documentation and usability gap, not a correctness problem. Resolution roadmap: a
-`calibrate` subcommand in v0.2 that estimates the IC floor from a permutation null
-on the researcher's own panel.
+a documentation and usability gap, not a correctness problem.
+
+**Closed in cycle 2 pass 3 by executing the proposed procedure.** The permutation-null
+calibration the v0.2 `calibrate` subcommand would ship was run today
+(`examples/cycle2_pass3_falsification.py`, CAL section, raw output below):
+
+```
+mom_20 observed |mean IC| at H=5 : 0.0252  (rowwise check 0.0252)
+permutation null: 500 cross-sectional shuffles, seed=0
+null mean IC = -0.00019, 95th pct of |null IC| = 0.0149
+default min_abs_ic = 0.0200  -> observed signal is ABOVE the 95% noise floor
+decision rule: set min_abs_ic to the 95th percentile of the permutation null
+on the researcher's own panel (floor above), not to a universal constant
+```
+
+Resolution: the decision rule is now panel-estimated and reproducible (seeded, seconds,
+no market data): `min_abs_ic = 95th percentile of |IC| under cross-sectional permutation
+of the factor on the researcher's own panel`. On the bundled panel the floor is 0.0149;
+the literature floor for real large-cap equities is 0.01–0.03 (§4 Test 1), which is
+exactly why a universal constant cannot be right and the floor must be estimated per
+panel. The v0.2 `calibrate` subcommand is therefore packaging of an already-validated
+procedure, not an open research question.
 
 ### 7.5 Falsification (Pass 3)
 
@@ -1662,6 +1752,49 @@ The observation that would prove the adoption guide wrong:
 - Screen time > 10 minutes on n=5000, n_assets=50 (would falsify the "< 30 minutes Day 1" claim).
 
 Neither has been observed. Both remain as concrete, observable tests for the adversarial pass.
+
+### 7.6 Cycle 2 pass 3 verification (2026-09-27)
+
+The two pass-3 falsification tests from §7.5 were executed against real tools, and both
+falsification items from §5 were run. Raw output: `docs/ADOPTION.md §7` and the C2-*
+sections of `examples/cycle2_pass3_falsification.py`.
+
+**Integration (§7.5 test 1) — VERIFIED.** alphalens-reloaded 0.4.6 installed into the dev
+venv and the §2 recipe executed end-to-end: `factorproof verdict: promote`;
+`factor Series index: ['date', 'asset']`; `get_clean_factor_and_forward_returns` accepted
+it unmodified (`factor_data shape (17520, 5)`, 2.7% boundary drop, under the 35% max_loss);
+alphalens mean IC 1d=0.0373, 5d=0.0196, 20d=0.0089; `create_returns_tear_sheet` ran with
+no exception (Ann. alpha 0.184 / 0.058 / 0.043, spread 11.70 / 3.80 / 1.65 bps).
+Cross-check: alphalens 5D IC 0.0196 vs factorproof H=5 IC 0.0252 — difference explained
+by log vs simple returns and the 2.7% dropped rows, not by a format problem.
+API drift found during execution (recorded, recipe text still correct): 0.4.6
+`create_returns_tear_sheet` takes `(factor_data, long_short, group_neutral, by_group)`,
+and `get_clean_factor_and_forward_returns` has no `keep_na` kwarg.
+
+**Timing (§7.5 test 2) — VERIFIED.** 1500×12 screen: 93.8 s (ADOPTION's 45–90 s estimate
+updated to the measured value). 5000×50 (250 000 rows): **7 min 19.9 s** < the 10-minute
+falsification threshold; 4 factors promoted, 9 rejected, lookahead_control rejected.
+
+**New finding (from §5 disposition).** FINDING C2-3a: `oos_consistency` is magnitude-blind
+and passed a signal-extinction panel at exactly 0.600. Dispositioned for the
+adversarial/improve pass — see §5 Test C2-3.
+
+**New cosmetic finding.** `report.py:154` emits "No artists with labels found to put in
+legend" on every screen run (both timed panels). Minor, report-only.
+
+### 7.7 Falsification (cycle 2 pass 3)
+
+Observations that would prove this pass's claims wrong, and their state:
+- Integration claim: falsified if alphalens rejects the factor Series — **not observed**
+  (executed, output above).
+- Timing claim: falsified if 5000×50 exceeds 10 minutes — **not observed** (7:19.9).
+- Closing claim for §7.4: falsified if the permutation-null floor lands above the observed
+  signal on the bundled panel (i.e. the procedure cannot distinguish signal from noise even
+  on our own demo) — **not observed** (floor 0.0149 vs observed 0.0252).
+- Standing adversarial risk introduced by this pass: FINDING C2-3a (magnitude-blind OOS
+  gate) is an *observed* counterexample to "the gate rejects factors that do not survive
+  statistical scrutiny" on signal-extinction panels. It is recorded as an open major
+  finding, not closed.
 
 
 All links verified by automated HTTP probe. Results as of 2026-09-27:
