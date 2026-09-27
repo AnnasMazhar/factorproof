@@ -10,5 +10,9 @@ overfitting
 financial-machine-learning
 factor-models
 quantitative-research
+quantitative-finance
+backtesting
+python
+statistics
 financial-engineering
 research-software

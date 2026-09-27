@@ -242,7 +242,63 @@ acceptance criterion is satisfied.
 
 ---
 
-## 8. Honest Failures and Findings
+## 9. Implementation pass 2 — changes made (2026-09-27)
+
+This section records the changes from the second implementation pass.
+
+### Summary of changes
+
+- **docs/demo.sh created**: asciinema recording script with instructions for GIF
+  conversion via `agg`. Provides a reproducible terminal session for hero media.
+
+- **launch/topics.txt updated**: added `python`, `statistics`, `quantitative-finance`,
+  `backtesting` to reach 18 tags. The spec requires 8-20 GitHub topic tags; previous
+  pass had 14 (missing key language/domain tags).
+
+- **CONTRIBUTING.md rewritten**: removed reference to internal `portfolio/specs/` path
+  (would 404 on a public repo). Added PR checklist and installation instructions from
+  a fresh clone.
+
+- **pyproject.toml updated**: added `classifiers`, `keywords`, and `[project.urls]`
+  (Homepage, Repository, Issues, Changelog). A pyproject without classifiers is harder
+  to discover on PyPI.
+
+- **.github/workflows/release.yml created**: GitHub Actions release workflow using
+  PyPI trusted publishing (OIDC, no PYPI_TOKEN secret). Triggers on `v*.*.*` tags.
+  Builds sdist + wheel, uploads as artifact, publishes via `pypa/gh-action-pypi-publish`.
+
+- **README rewritten**: first screen now leads with the licence-hook positioning per
+  MARKET-VERDICTS.md ("The overfitting controls that quant research actually needs —
+  without a £100/month licence."). Added explicit mention of MlFinLab licence problem,
+  Deflated Sharpe gate caveat, and MlFinLab comparison.
+
+- **COMPARISONS.md fixed**: removed duplicate "Choose this when..." stub section that
+  appeared before the Sources block (content was already present at the bottom).
+
+- **test_adversarial.py extended**: 9 tests → 16 tests. New byzantine cases:
+  1. `test_fdr_single_factor_standalone_vs_family`: FDR family size cannot be forged
+  2. `test_hac_diverges_from_naive_at_h20`: HAC must reduce naive t-stat by >1.5x at H=20
+  3. `test_lookahead_factor_always_rejected_regardless_of_thresholds`: lookahead hard-blocked
+  4. `test_duplicate_rows_handled_without_silent_corruption`: duplicate row injection
+  5. `test_zero_volume_amihud_no_crash`: zero-volume Amihud illiq guard
+  6. `test_negative_prices_no_crash`: negative price injection
+  7. `test_very_short_panel_rejected`: already existed (moved to correct position)
+
+- **Total tests**: 102 (was 96, +6 new adversarial/byzantine).
+
+### Naming conflict: factor-lab vs factorproof
+
+MARKET-VERDICTS.md states the repo name should be `factorproof`. The pyproject.toml
+and CLI binary are named `factor-lab`. These conflict. Resolution:
+
+- The package/CLI keeps `factor-lab` (already in use, binary installed, changing it
+  requires reinstall and breaks existing invocations).
+- MARKET-VERDICTS instructs the *repo* to be named `factorproof` — this is a git remote
+  rename (settings on GitHub) that does not affect the Python package name.
+- The README title, package name, and CLI stay `factor-lab`; only the GitHub repository
+  slug would become `factorproof` if/when published. This is a deliberate distinction
+  between the Python package identity and the GitHub repository branding.
+- Recorded here per MARKET-VERDICTS instruction: "record the conflict in EVIDENCE.md."
 
 1. **HAC+FDR is more conservative**: The HAC correction at H=20 reduces t-stats by ~3x for
    momentum factors. Combined with FDR over 13 factors, no factor is promoted in the screen.

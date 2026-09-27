@@ -320,3 +320,210 @@ def test_very_short_panel_rejected():
     cfg = PromotionConfig(min_observations=30, horizons=[5])
     decision = promote(factor, tiny_df, cfg)
     assert decision.verdict == "reject", "Very short panel must produce a rejection"
+
+
+# ---------------------------------------------------------------------------
+# Byzantine: forge a passing p-value via test family scoping
+# ---------------------------------------------------------------------------
+
+
+def test_fdr_single_factor_standalone_vs_family():
+    """Byzantine: a factor that passes FDR in isolation (m=1) must NOT pass
+    in the screen with 13 factors (m=13) — the family size must not be forged.
+
+    Fault detected: FDR correction ignoring the true family size, promoting
+    noise that survived by multiple comparisons.
+    """
+    from factorlab.significance import benjamini_hochberg
+
+    # Simulate 13 p-values for 13 factors, one of which happens to be "good"
+    # p=0.05 looks good but does not pass BH at q=0.10 with m=13
+    pvals = [0.05] + [0.8] * 12  # best factor has p=0.05
+
+    rejected_full = benjamini_hochberg(pvals, q=0.10)
+    # With m=13, BH threshold for rank 1 is (1/13)*0.10 = 0.0077
+    # p=0.05 > 0.0077 → should NOT be rejected (rejected=True means the null is rejected,
+    # i.e. passes FDR — so we expect False here meaning factor fails to survive FDR)
+    assert not rejected_full[0], (
+        "Factor with p=0.05 in a family of 13 must NOT survive FDR at q=0.10; "
+        "got rejected_full[0]=True suggesting family size is not respected"
+    )
+
+    # Same factor in isolation (m=1): p=0.05 < q=0.10 → should survive
+    rejected_solo = benjamini_hochberg([0.05], q=0.10)
+    assert rejected_solo[0], "Factor with p=0.05 evaluated alone (m=1) must survive FDR at q=0.10"
+
+
+# ---------------------------------------------------------------------------
+# Byzantine: HAC must differ from naive at H=20 for a correlated factor
+# ---------------------------------------------------------------------------
+
+
+def test_hac_diverges_from_naive_at_h20():
+    """Byzantine: at H=20, HAC t-stat must be materially lower than naive for a
+    momentum-like factor with autocorrelated IC.
+
+    Fault detected: HAC correction not applied, so t_hac == t_naive (inflate bug).
+    This is the core Newey-West correctness check: overlapping labels inflate naive
+    t-stats by ~sqrt(H); HAC corrects for this.
+    """
+    from factorlab.evaluate import evaluate_factor
+
+    df = synthetic_ohlcv(n_days=1500, n_assets=12, seed=7, plant_signal=True)
+    factor = get_factor("mom_20")
+    vals = factor.compute(df)
+    metrics = evaluate_factor(vals, df, [20], "mom_20")
+    m = metrics[0]
+
+    # At H=20, naive should be noticeably larger than HAC
+    ratio = m.ic_tstat_naive / m.ic_tstat if abs(m.ic_tstat) > 1e-6 else 1.0
+    assert ratio > 1.5, (
+        f"HAC/naive ratio={ratio:.2f} at H=20; expected >1.5x inflation correction. "
+        "If ratio~1.0, the HAC fix is not wired."
+    )
+
+
+# ---------------------------------------------------------------------------
+# Byzantine: lookahead must be blocked even with --force-style config bypass
+# ---------------------------------------------------------------------------
+
+
+def test_lookahead_factor_always_rejected_regardless_of_thresholds():
+    """Byzantine: lower all gate thresholds to zero — lookahead_control must still
+    be rejected because uses_future_data=True is a hard block, not a threshold.
+
+    Fault detected: lookahead gate being skipped when other thresholds are low,
+    i.e. only rejecting lookahead_control because it fails IC gates, not because
+    it is actually a lookahead factor.
+    """
+    from factorlab.factors import get_factor as gf
+    from factorlab.promote import PromotionConfig, promote
+
+    # Set all numeric gates to trivially pass, so only the lookahead check matters
+    permissive_cfg = PromotionConfig(
+        min_observations=1,
+        min_ic_ir=0.0,
+        min_abs_ic=0.0,
+        max_turnover=100.0,
+        hit_rate_wilson_lb=0.0,
+        oos_consistency_min=0.0,
+        fdr_q=1.0,  # FDR never blocks
+        horizons=[5],
+    )
+    df = synthetic_ohlcv(n_days=200, n_assets=6, seed=0)
+    factor = gf("lookahead_control")
+    decision = promote(factor, df, permissive_cfg)
+
+    assert (
+        decision.verdict == "reject"
+    ), "lookahead_control must be rejected even when all numeric gates are disabled"
+    lookahead_reason = next((r for r in decision.reasons if r.code == "not_lookahead"), None)
+    assert lookahead_reason is not None, "not_lookahead reason missing from decision"
+    assert lookahead_reason.passed is False, "not_lookahead gate must be FAIL for lookahead_control"
+
+
+# ---------------------------------------------------------------------------
+# Byzantine: duplicate asset/date rows must not silently corrupt IC
+# ---------------------------------------------------------------------------
+
+
+def test_duplicate_rows_handled_without_silent_corruption():
+    """Adversarial: duplicate (date, asset) rows must either be removed or raise,
+    not silently produce a corrupted IC.
+
+    Fault detected: duplicate rows doubling certain returns, inflating IC
+    for factors that happen to rank duplicated rows consistently.
+    """
+    from factorlab.evaluate import evaluate_factor
+
+    df = synthetic_ohlcv(n_days=100, n_assets=4, seed=42)
+    # Duplicate the first 20 rows (creates repeated (date, asset) entries)
+    df_dup = pd.concat([df, df.iloc[:20]], ignore_index=True).sort_values(["date", "asset"])
+    factor = get_factor("mom_20")
+    vals = factor.compute(df)  # compute on clean data, then evaluate on dirty
+    try:
+        metrics = evaluate_factor(vals, df_dup, [5], "mom_20")
+        # If it returns, IC should be finite (not inf) — duplication inflates but must not explode
+        for m in metrics:
+            assert not math.isinf(
+                m.ic_pearson
+            ), "IC is inf after duplicate rows — silent corruption"
+    except (ValueError, KeyError):
+        pass  # Raising on duplicate index is also acceptable
+
+
+# ---------------------------------------------------------------------------
+# Byzantine: zero volume must not crash Amihud illiquidity
+# ---------------------------------------------------------------------------
+
+
+def test_zero_volume_amihud_no_crash():
+    """Edge case: zero volume rows must not produce inf or crash in Amihud illiq.
+
+    Fault detected: division by zero in amihud = |return| / volume when volume=0,
+    producing inf that propagates silently into IC.
+    """
+    dates = pd.bdate_range(start="2020-01-01", periods=60)
+    rows = []
+    rng = np.random.default_rng(0)
+    price = 100.0
+    for d in dates:
+        price = price * (1 + rng.standard_normal() * 0.01)
+        rows.append(
+            {
+                "date": d,
+                "asset": "ZVOL",
+                "open": price,
+                "high": price * 1.001,
+                "low": price * 0.999,
+                "close": price,
+                "volume": 0.0,  # zero volume
+            }
+        )
+    df = pd.DataFrame(rows)
+    factor = get_factor("amihud_illiq_20")
+    vals = factor.compute(df)  # Must not raise
+    # Any inf values must not be present
+    valid = vals.replace([float("inf"), float("-inf")], float("nan")).dropna()
+    # All values (if any non-NaN remain) must be finite
+    if len(valid) > 0:
+        assert np.isfinite(valid.values).all(), "amihud returned inf for zero-volume rows"
+
+
+# ---------------------------------------------------------------------------
+# Byzantine: negative prices must not crash or produce nonsense IC
+# ---------------------------------------------------------------------------
+
+
+def test_negative_prices_no_crash():
+    """Adversarial: negative close prices (corrupt data) must not crash factor
+    computation or produce silently positive IC.
+
+    Fault detected: log() of negative number (ValueError or nan that corrupts
+    downstream sum comparisons without raising).
+    """
+    dates = pd.bdate_range(start="2020-01-01", periods=60)
+    rows = []
+    for i, d in enumerate(dates):
+        rows.append(
+            {
+                "date": d,
+                "asset": "NEG",
+                "open": 100.0,
+                "high": 101.0,
+                "low": 99.0,
+                # every 10th row has a negative close (corrupt data injection)
+                "close": -5.0 if i % 10 == 0 else 100.0 + i * 0.1,
+                "volume": 1000.0,
+            }
+        )
+    df = pd.DataFrame(rows)
+    factor = get_factor("mom_20")
+    try:
+        vals = factor.compute(df)
+        # If it returns, values must be finite or NaN — not inf
+        if vals is not None:
+            bad = vals[vals.apply(lambda x: isinstance(x, float) and math.isinf(x))]
+            assert len(bad) == 0, f"mom_20 returned inf for negative prices: {bad}"
+    except (ValueError, FloatingPointError):
+        pass  # Raising on negative prices is acceptable

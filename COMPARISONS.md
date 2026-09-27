@@ -48,8 +48,6 @@ either.
 - Thresholds are documented defaults, not calibrated on live market data.
 - No production history. MlFinLab has paying users; this has a test suite.
 
-## Choose this when…
-
 ## Sources (fetched 2026-09-26)
 
 - MlFinLab licence: https://github.com/hudson-and-thames/mlfinlab/blob/master/LICENSE.txt (clauses 6.6, 6.7, 14.3–14.5)
