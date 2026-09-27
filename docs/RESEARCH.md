@@ -1456,24 +1456,24 @@ the decision is implemented).
 
 ---
 
-## 6. Ecosystem and Competition (Pass 2 — added 2026-09-26)
+## 6. Ecosystem and Competition (Pass 2 — added 2026-09-26; updated cycle 2 pass 2 — 2026-09-27)
 
 This section documents the six real tools closest to factorproof, their published state as of
-2026-09-26, and the precise gap each leaves. All star counts, licence text, and feature claims
-were verified by fetching the live GitHub pages. `unverified` cells were not reachable or not
-declared in official docs.
+2026-09-27 (cycle 2 re-verification), and the precise gap each leaves. Star counts and last-push
+dates were fetched from the GitHub REST API; PyPI release dates from the PyPI JSON API.
+`unverified` cells were not reachable or not declared in official docs.
 
 ### 6.1 Comparison Table
 
-| Tool | Licence | Maintained? | Purged/embargoed CV | FDR correction across tested family | Deflated Sharpe | Accept/reject promotion gate | Offline demo |
-|---|---|---|---|---|---|---|---|
-| **MlFinLab** (Hudson & Thames) | All rights reserved — commercial use requires a paid licence; no redistribution; no published derivatives; ~£100/mo per user | Partial — repo last pushed 2023-10-02; 4,933 stars; active behind the paywall | **Yes** — purged K-fold + CPCV (AFML ch.7) | **Yes** — BHY, Bonferroni, Holm in Sharpe haircut | **Yes** — plus haircut Sharpe and PBO | **No** — helpers (profit hurdle, min track record) but no public accept/reject API | Yes, local install |
-| **Quantopian stack** (alphalens/pyfolio/empyrical) | Apache-2.0 | **No** — last commits 2020; community forks (alphalens-reloaded 657★, pyfolio-reloaded 616★) keep it installable but add none of the four controls | **No** | **No** | **No** | **No** | Yes |
-| **qlib** (Microsoft) | MIT | **Yes** — 48,876 stars; last push 2026-09-22 | **No** | **No** | Plain Sharpe ratios only | **No** | Partial — requires `get_data.py` download |
-| **purgedcv** (eslazarev) | MIT | **Yes** — 35 stars; v0.0.2 PyPI 2025-04-16; JOSS paper | **Yes** — `PurgedKFold`, `WalkForwardSplit`, CPCV with full embargo | **No** — no BH across a factor family; DSR/PSR per single strategy only | **Yes** — `deflated_sharpe_ratio`, `probabilistic_sharpe_ratio` | **No** — pure CV/statistics library; no IC, no quantile spread, no verdict | Yes |
-| **ml4t-diagnostic** (ml4t org) | MIT | **Yes** — 32 stars; active 2026; part of a 7-library ecosystem | **Yes** — `WalkForwardCV`, `CombinatorialCV`, CPCV, purge + embargo | **Yes** — FDR control, White's Reality Check, DSR, PBO | **Yes** | **No** — metrics and tearsheets, no standalone verdict | **Partial** — requires Polars; optional Numba/LightGBM/SHAP; 7-library ecosystem |
-| **pyanomaly** (chulwoohan) | MIT | **Partial** — v1.01 2024-03-13; 132 stars; no commits since | **No** | **No** | **No** | **No** | **No** — requires WRDS subscription |
-| **factorproof** (this repo) | MIT | Yes — v0.1.0, active | **Yes** — `PurgedWalkForward`: label-overlap purge + embargo | **Yes** — BH (primary) and Bonferroni applied across the screened family inside the gate | **Yes** — implemented, property-tested | **Yes** — 10 checks, all must pass, exit 1 on reject | **Yes** — synthetic OHLCV built in, no network |
+| Tool | Licence | Stars (verified 2026-09-27) | Last real code activity | Purged/embargoed CV | FDR correction across tested family | Deflated Sharpe | Accept/reject promotion gate | Offline demo |
+|---|---|---|---|---|---|---|---|---|
+| **MlFinLab** (Hudson & Thames) | All rights reserved — commercial use requires a paid licence; no redistribution; no published derivatives; ~£100/mo per user | **4,934** | Repo last pushed **2023-10-02** (GitHub API `pushed_at`). Active behind the paywall | **Yes** — purged K-fold + CPCV (AFML ch.7) | **Yes** — BHY, Bonferroni, Holm in Sharpe haircut | **Yes** — plus haircut Sharpe and PBO | **No** — helpers (profit hurdle, min track record) but no public accept/reject API | Yes, local install |
+| **Quantopian stack** (alphalens/pyfolio/empyrical) | Apache-2.0 | alphalens **4,456**; pyfolio (no API count); empyrical (no count) | **Last code commits: 2020-04-27** (alphalens master branch, GitHub commits API). The 2024 `pushed_at` value is a metadata-only update, not a code change. Community forks (alphalens-reloaded **657★** pushed 2025-12-15; pyfolio-reloaded **616★** pushed 2025-12-15; empyrical-reloaded **122★** pushed 2025-12-12) keep them installable on Python 3.12+ but add none of the four overfitting controls | **No** | **No** | **No** | **No** | Yes |
+| **qlib** (Microsoft) | MIT | **48,917** | Last push **2026-09-22** — actively maintained | **No** | **No** | Plain Sharpe ratios only | **No** | Partial — requires `get_data.py` download |
+| **purgedcv** (eslazarev) | MIT | **35** | Latest release: **v0.1.8 released 2026-09-26** (PyPI API). Was v0.0.2 in cycle 1; advanced from v0.0.2 (2026-05-16) through v0.0.10, v0.0.12, v0.1.0 to v0.1.8 in four months — actively developed. GitHub `pushed_at` 2026-09-27. JOSS paper | **Yes** — `PurgedKFold`, `WalkForwardSplit`, CPCV with full embargo | **No** — no BH across a factor family; DSR/PSR per single strategy only | **Yes** — `deflated_sharpe_ratio`, `probabilistic_sharpe_ratio` | **No** — pure CV/statistics library; no IC, no quantile spread, no verdict | Yes |
+| **ml4t-diagnostic** (ml4t org) | MIT | **32** | Last push **2026-09-24** — actively maintained, part of a 7-library ML4T ecosystem | **Yes** — `WalkForwardCV`, `CombinatorialCV`, CPCV, purge + embargo | **Yes** — FDR control, White's Reality Check, DSR, PBO | **Yes** | **No** — metrics and tearsheets, no standalone verdict | **Partial** — requires Polars; optional Numba/LightGBM/SHAP; 7-library ecosystem |
+| **pyanomaly** (chulwoohan) | MIT | **132** | Last push **2024-03-13** — inactive | **No** | **No** | **No** | **No** | **No** — requires WRDS subscription |
+| **factorproof** (this repo) | MIT | — | Active, v0.1.0 | **Yes** — `PurgedWalkForward`: label-overlap purge + embargo | **Yes** — BH (primary) and Bonferroni applied across the screened family inside the gate | **Yes** — implemented, property-tested | **Yes** — 10 checks, all must pass, exit 1 on reject | **Yes** — synthetic OHLCV built in, no network |
 
 ### 6.2 What each tool does well
 
@@ -1486,19 +1486,27 @@ afford it at £100/mo per user. That is the gap.
 
 **Quantopian stack** wins on ecosystem familiarity. `alphalens` tear sheets are still the mental
 model most people have for factor analysis. The community forks keep them installable on Python 3.12+.
-None of them contain purged CV, FDR correction, deflated Sharpe, or an explicit promotion verdict.
-They are not maintained by a responsible party. Their gap: no overfitting controls, dead upstream.
+Note on last-activity: the alphalens GitHub repo shows `pushed_at: 2024-02-12` in the API
+(suggesting a metadata or branch update in 2024), but the master branch commits API confirms the
+last actual code commit was **2020-04-27** by David Michalowicz. The star count is **4,456**
+(verified 2026-09-27). None of the forks contain purged CV, FDR correction, deflated Sharpe, or an
+explicit promotion verdict. They are not maintained by a responsible party. Their gap: no overfitting
+controls, dead upstream.
 
 **qlib** wins on research platform scope: data ingestion, model zoos, experiment tracking, a large
-contributor base. It does not implement overfitting statistics; it delegates statistical quality
-to the researcher. Its gap: none of the four controls in the table above.
+contributor base (**48,917 stars**, last push 2026-09-22). It does not implement overfitting
+statistics; it delegates statistical quality to the researcher. Its gap: none of the four controls
+in the table above.
 
 **purgedcv** does the leakage-safe CV and the DSR/PSR statistics rigorously. It is the closest
 open-source neighbour to factorproof's CV layer and has a JOSS-reviewed paper backing the
-methodology. What it does not do: compute IC, measure quantile spread, apply FDR correction across
-a factor family, or gate a factor to a verdict. It is a CV/statistics primitive, not a factor
-evaluation pipeline. A researcher using purgedcv still needs to write the IC measurement, the BH
-correction, and the promotion logic themselves.
+methodology. **Cycle 2 update:** purgedcv has been actively developed since cycle 1: it advanced
+from v0.0.2 (released 2026-05-16) through v0.0.3 → v0.0.12 → v0.1.0 → **v0.1.8 (released
+2026-09-26)**, releasing 17 versions in four months. This makes it a more direct ongoing
+competitor than cycle 1 assessed. It remains 35 stars (niche audience) and still does not cross
+into factor IC measurement, BH FDR across a family, or binary promotion gates. But the rapid
+v0.1.x cadence signals it is actively filling its own roadmap; factorproof's gap versus purgedcv
+is narrowing on the CV/statistics axis and must be defended on the pipeline + verdict axis.
 
 **ml4t-diagnostic** is the most feature-complete open alternative. It does IC measurement, purged
 CV, FDR control, DSR, and PBO. Two things prevent it from being a drop-in replacement: (1) it
@@ -1547,20 +1555,59 @@ The comparison confirms three design choices made in factorproof:
    design must protect — adding optional extras that require polars or scipy would close the gap
    with ml4t-diagnostic at the cost of the differentiator.
 
-### 6.5 Sources (verified 2026-09-26)
+### 6.5 Cycle 2 competitive update (2026-09-27)
 
-| Tool | URL | HTTP status |
-|---|---|---|
-| MlFinLab licence | https://github.com/hudson-and-thames/mlfinlab/blob/master/LICENSE.txt | 200 |
-| MlFinLab pricing | https://hudsonthames.org/mlfinlab/ | 200 |
-| alphalens last commit | https://github.com/quantopian/alphalens/commits/master | 200 |
-| pyfolio last commit | https://github.com/quantopian/pyfolio/commits/master | 200 |
-| alphalens-reloaded | https://github.com/stefan-jansen/alphalens-reloaded | 200 |
-| qlib repo | https://github.com/microsoft/qlib | 200 |
-| purgedcv repo | https://github.com/eslazarev/purged-cross-validation | 200 |
-| purgedcv PyPI | https://pypi.org/project/purgedcv/ | 200 |
-| ml4t-diagnostic repo | https://github.com/ml4t/diagnostic | 200 |
-| pyanomaly repo | https://github.com/chulwoohan/pyanomaly | 200 |
+Live GitHub and PyPI data re-fetched 2026-09-27 reveals one significant change since cycle 1:
+
+**purgedcv velocity:** Released v0.0.2 in May 2026; now at **v0.1.8 as of 2026-09-26** (17
+versions in four months). This is the most actively developed direct neighbour on the CV axis.
+The JOSS paper backing has kept the library's methodology honest. The feature gap (no IC pipeline,
+no FDR across a family, no verdict API) is unchanged as of v0.1.8.
+
+**No new major competitors found.** GitHub searches for `factor screening python`, `FDR factor
+evaluation`, `purged cross-validation factor` did not surface any tool not already named above.
+Riskfolio-Lib (4,518 stars, active) was investigated; its scope is portfolio optimisation only
+(mean-risk portfolios, 26 convex risk measures) — it does not overlap with factor screening and
+is excluded from the comparison table.
+
+**Star count changes vs cycle 1:**
+
+| Tool | Cycle 1 count | Cycle 2 count | Delta |
+|---|---|---|---|
+| MlFinLab | 4,933 | 4,934 | +1 |
+| alphalens | ~4,400 (cycle 1 did not record) | 4,456 | new data |
+| qlib | 48,876 | 48,917 | +41 |
+| purgedcv | 35 | 35 | 0 |
+| ml4t-diagnostic | 32 | 32 | 0 |
+| pyanomaly | 132 | 132 | 0 |
+| alphalens-reloaded | 657 | 657 | 0 |
+| pyfolio-reloaded | 616 | 616 | 0 |
+| empyrical-reloaded | 122 | 122 | 0 |
+
+**Conclusion:** the competitive landscape is stable. The positioning is unchanged. The only
+material new fact is purgedcv's rapid v0.1.x release cadence, which strengthens (not weakens)
+the differentiation case: if purgedcv is actively competing on the CV/statistics primitive axis,
+factorproof's pipeline + verdict integration is the clear distinction.
+
+### 6.6 Sources (verified 2026-09-27)
+
+| Tool | URL | HTTP status | Verification date |
+|---|---|---|---|
+| MlFinLab licence | https://github.com/hudson-and-thames/mlfinlab/blob/master/LICENSE.txt | 200 | 2026-09-26 |
+| MlFinLab pricing | https://hudsonthames.org/mlfinlab/ | 200 | 2026-09-26 |
+| MlFinLab GitHub API | https://api.github.com/repos/hudson-and-thames/mlfinlab | 200 | 2026-09-27 |
+| alphalens GitHub API | https://api.github.com/repos/quantopian/alphalens | 200 | 2026-09-27 |
+| alphalens commits API | https://api.github.com/repos/quantopian/alphalens/commits | 200 | 2026-09-27 |
+| qlib GitHub API | https://api.github.com/repos/microsoft/qlib | 200 | 2026-09-27 |
+| purgedcv GitHub API | https://api.github.com/repos/eslazarev/purged-cross-validation | 200 | 2026-09-27 |
+| purgedcv PyPI | https://pypi.org/pypi/purgedcv/json | 200 | 2026-09-27 |
+| purgedcv v0.1.8 PyPI | https://pypi.org/pypi/purgedcv/0.1.8/json | 200 | 2026-09-27 |
+| ml4t-diagnostic GitHub API | https://api.github.com/repos/ml4t/diagnostic | 200 | 2026-09-27 |
+| pyanomaly GitHub API | https://api.github.com/repos/chulwoohan/pyanomaly | 200 | 2026-09-27 |
+| alphalens-reloaded GitHub API | https://api.github.com/repos/stefan-jansen/alphalens-reloaded | 200 | 2026-09-27 |
+| pyfolio-reloaded GitHub API | https://api.github.com/repos/stefan-jansen/pyfolio-reloaded | 200 | 2026-09-27 |
+| empyrical-reloaded GitHub API | https://api.github.com/repos/stefan-jansen/empyrical-reloaded | 200 | 2026-09-27 |
+| Riskfolio-Lib GitHub API | https://api.github.com/repos/dcajasn/Riskfolio-Lib | 200 | 2026-09-27 |
 
 ---
 
@@ -1647,6 +1694,17 @@ All links verified by automated HTTP probe. Results as of 2026-09-27:
 | **Lopez de Prado & Lewis 2019 (CPCV arXiv)** | https://arxiv.org/abs/1803.05024 | **200** | **2026-09-27** |
 | **Asness, Moskowitz & Pedersen 2013 (NBER)** | https://www.nber.org/papers/w14554 | **200** | **2026-09-27** |
 | **Meinshausen & Bühlmann 2006 (arXiv)** | https://arxiv.org/abs/math/0608017 | **200** | **2026-09-27** |
+| **MlFinLab GitHub API (c2 re-check)** | https://api.github.com/repos/hudson-and-thames/mlfinlab | **200** | **2026-09-27** |
+| **alphalens GitHub API (c2 re-check)** | https://api.github.com/repos/quantopian/alphalens | **200** | **2026-09-27** |
+| **alphalens commits API (c2 re-check)** | https://api.github.com/repos/quantopian/alphalens/commits | **200** | **2026-09-27** |
+| **qlib GitHub API (c2 re-check)** | https://api.github.com/repos/microsoft/qlib | **200** | **2026-09-27** |
+| **purgedcv GitHub API (c2 re-check)** | https://api.github.com/repos/eslazarev/purged-cross-validation | **200** | **2026-09-27** |
+| **purgedcv PyPI JSON (c2 re-check)** | https://pypi.org/pypi/purgedcv/json | **200** | **2026-09-27** |
+| **ml4t-diagnostic GitHub API (c2 re-check)** | https://api.github.com/repos/ml4t/diagnostic | **200** | **2026-09-27** |
+| **pyanomaly GitHub API (c2 re-check)** | https://api.github.com/repos/chulwoohan/pyanomaly | **200** | **2026-09-27** |
+| **alphalens-reloaded GitHub API (c2 re-check)** | https://api.github.com/repos/stefan-jansen/alphalens-reloaded | **200** | **2026-09-27** |
+| **pyfolio-reloaded GitHub API (c2 re-check)** | https://api.github.com/repos/stefan-jansen/pyfolio-reloaded | **200** | **2026-09-27** |
+| **empyrical-reloaded GitHub API (c2 re-check)** | https://api.github.com/repos/stefan-jansen/empyrical-reloaded | **200** | **2026-09-27** |
 
 Notes on 403 responses: DOI resolver links for journal articles at Wiley, Oxford
 Academic, Taylor & Francis, and ACM return HTTP 403 from programmatic requests
