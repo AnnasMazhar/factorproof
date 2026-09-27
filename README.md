@@ -3,7 +3,7 @@
 The overfitting controls that quant research actually needs — without a £100/month licence.
 
 ![Python](https://img.shields.io/badge/python-3.11%2B-blue)
-![Tests](https://img.shields.io/badge/tests-96%20passed-brightgreen)
+![Tests](https://img.shields.io/badge/tests-105%20passed-brightgreen)
 ![Ruff](https://img.shields.io/badge/ruff-clean-brightgreen)
 ![Licence](https://img.shields.io/badge/licence-MIT-green)
 
@@ -98,7 +98,7 @@ bash examples/run_demo.sh
 
 ## Real results (from examples/run_demo.sh)
 
-Run on synthetic data with an embedded AR(1) momentum signal (rho=0.08).
+Run on synthetic data with an embedded AR(1) momentum signal (rho=0.15).
 13 factors screened at horizons 1, 5, 20 days with Newey-West HAC t-stats.
 
 | Factor | H | IC | IC-IR | t-stat | Q-Spread | HR-WLB | Turnover | Coverage | FDR | Verdict |
@@ -122,7 +122,7 @@ Promoted (standalone): `mom_20` promotes in isolation (IC=0.025, p=0.107 at q=0.
 
 **Why does the screen reject everything?** HAC t-stats at H=20 are ~3x lower than naive t-stats
 due to overlapping-label autocorrelation. Combined with FDR over 13 factors (BH threshold for
-rank 6 = 0.069), no factor survives. This is correct behaviour — this AR(1) signal (rho=0.08)
+rank 6 = 0.069), no factor survives. This is correct behaviour — this AR(1) signal (rho=0.15)
 is genuinely weak when measured honestly. `factor-lab promote mom_20 --data signal` demonstrates
 the pipeline CAN promote a real signal when evaluated in isolation (exit 0; see step 4 of demo).
 

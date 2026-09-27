@@ -131,9 +131,12 @@ class PurgedWalkForward:
         n_dates = len(dates)
 
         if n_dates < self.n_splits + self.label_horizon + self.embargo_days:
+            min_needed = self.n_splits + self.label_horizon + self.embargo_days
             raise ValueError(
-                f"Not enough dates ({n_dates}) for {self.n_splits} splits "
-                f"with label_horizon={self.label_horizon} and embargo={self.embargo_days}."
+                f"Not enough dates ({n_dates}) for {self.n_splits} walk-forward splits "
+                f"with label_horizon={self.label_horizon} and embargo_days={self.embargo_days}. "
+                f"Need at least {min_needed} dates. "
+                "Fix: extend the panel, or reduce n_splits/horizon in PromotionConfig."
             )
 
         # Divide dates into (n_splits + 1) chunks; first chunk = initial train,
@@ -234,7 +237,12 @@ def evaluate_walk_forward(
     """
     splits = list(splitter.split(df))
     if not splits:
-        raise ValueError("No valid splits generated. Check panel length and splitter params.")
+        raise ValueError(
+            "No valid splits generated — the panel is too short for the splitter configuration. "
+            f"Check panel length vs n_splits={splitter.n_splits}, "
+            f"label_horizon={splitter.label_horizon}, embargo_days={splitter.embargo_days}. "
+            "Fix: extend the panel, or lower n_splits in PromotionConfig."
+        )
 
     # Compute factor on full dataset (factors are computationally deterministic given data)
     factor_vals = factor.compute(df)

@@ -201,6 +201,6 @@ def test_load_ohlcv_csv_missing_columns():
         f.write(bad_csv)
         fname = f.name
 
-    with pytest.raises(ValueError, match="Missing columns"):
+    with pytest.raises(ValueError, match="missing required columns"):
         load_ohlcv_csv(fname)
     Path(fname).unlink()

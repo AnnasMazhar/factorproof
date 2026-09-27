@@ -38,7 +38,18 @@ def _get_data(data_arg: str, seed: int = 7, plant_signal: bool = False):
         return synthetic_ohlcv(n_days=1500, n_assets=12, seed=seed, plant_signal=True)
     if data_arg == "noise":
         return synthetic_ohlcv(n_days=1500, n_assets=12, seed=seed, plant_noise=True)
-    return load_ohlcv_csv(data_arg)
+    try:
+        return load_ohlcv_csv(data_arg)
+    except FileNotFoundError:
+        print(
+            f"Error: data file not found: {data_arg!r}.\n"
+            "Use --data synthetic, --data signal, --data noise, or a valid CSV path.",
+            file=sys.stderr,
+        )
+        raise SystemExit(1)
+    except ValueError as exc:
+        print(f"Error reading CSV: {exc}", file=sys.stderr)
+        raise SystemExit(1)
 
 
 # ---------------------------------------------------------------------------

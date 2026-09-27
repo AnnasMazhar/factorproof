@@ -49,7 +49,11 @@ def load_ohlcv_csv(path: str | Path) -> pd.DataFrame:
     required = {"date", "asset", "open", "high", "low", "close", "volume"}
     missing = required - set(df.columns)
     if missing:
-        raise ValueError(f"Missing columns in CSV: {missing}")
+        raise ValueError(
+            f"CSV is missing required columns: {sorted(missing)}. "
+            f"Required: {sorted(required)}. "
+            f"Found: {sorted(df.columns.tolist())}."
+        )
     df = df.sort_values(["date", "asset"]).reset_index(drop=True)
     return df
 

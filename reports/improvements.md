@@ -1,6 +1,106 @@
 # reports/improvements.md — factor-lab improvement log
 
-## Improve pass 1 (cycle 1) — 2026-09-27
+## Improve pass 2 (cycle 1) — 2026-09-27
+
+### Findings addressed
+
+Three issues fixed: one credibility-breaking fact error in the README, one stale badge,
+and actionable error messages for the two most common failure paths.
+
+---
+
+#### Finding 1 (BLOCKER) — rho=0.08 in README, code has rho=0.15
+
+The README stated `rho=0.08` twice in the "Real results" section. `src/factorlab/data.py`
+line 140 has `rho = 0.15`. A reviewer running `grep rho src/factorlab/data.py` would
+immediately find the conflict. Fixed: both README occurrences corrected to `rho=0.15`.
+
+Files changed: `README.md` (lines 101, 125).
+
+---
+
+#### Finding 2 (MINOR) — badge stale: `96 passed` vs actual `105`
+
+The Tests badge in README said `96 passed`. Actual count after pass 1: 105.
+
+```
+$ .venv/bin/pytest 2>&1 | tail -1
+105 passed in 27.14s
+```
+
+Fixed: badge updated to `105 passed`.
+
+Files changed: `README.md` (line 6).
+
+---
+
+#### Finding 3 (ADOPTION) — error messages non-actionable on three paths
+
+**a) `load_ohlcv_csv` — missing columns**
+
+Before:
+```
+ValueError: Missing columns in CSV: {'high', 'low', 'open', 'volume'}
+```
+A stranger sees the missing set but not what columns ARE required. After:
+```
+ValueError: CSV is missing required columns: ['high', 'low', 'open', 'volume'].
+Required: ['asset', 'close', 'date', 'high', 'low', 'open', 'volume'].
+Found: ['asset', 'close', 'date'].
+```
+
+**b) `PurgedWalkForward.split` — panel too short**
+
+Before:
+```
+ValueError: Not enough dates (45) for 5 splits with label_horizon=20 and embargo=20.
+```
+After:
+```
+ValueError: Not enough dates (45) for 5 walk-forward splits with label_horizon=20
+and embargo_days=20. Need at least 45 dates. Fix: extend the panel, or reduce
+n_splits/horizon in PromotionConfig.
+```
+(also tells user the fix)
+
+**c) `evaluate_walk_forward` — no splits generated**
+
+Before:
+```
+ValueError: No valid splits generated. Check panel length and splitter params.
+```
+After includes splitter config and fix instruction.
+
+**d) CLI — missing data file raises unhandled traceback**
+
+Before: `factor-lab screen --data /bad/path.csv` printed a FileNotFoundError traceback.
+After: clean error with actionable hint:
+```
+Error: data file not found: '/bad/path.csv'.
+Use --data synthetic, --data signal, --data noise, or a valid CSV path.
+EXIT: 1
+```
+
+Files changed: `src/factorlab/data.py`, `src/factorlab/cv.py`, `src/factorlab/cli.py`,
+`tests/test_data.py` (regex updated to match new wording; fault detection unchanged).
+
+---
+
+### Metrics delta
+
+| Metric | Before | After | Delta |
+|--------|--------|-------|-------|
+| Test count | 105 | 105 | no change |
+| README rho claim | 0.08 (wrong) | 0.15 (matches code) | ✓ fixed |
+| Tests badge | 96 (stale) | 105 (correct) | ✓ fixed |
+| CLI missing-file error | traceback | clean message + hint | ✓ |
+| CSV missing-columns error | set of missing only | missing + required + found | ✓ |
+| Panel-too-short error | no fix hint | fix instruction included | ✓ |
+| Ruff clean | yes | yes | no change |
+
+---
+
+
 
 ### Finding addressed
 
