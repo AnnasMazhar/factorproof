@@ -40,14 +40,18 @@ def noise_df():
 
 @pytest.fixture(scope="module")
 def signal_df():
-    """Dataset with planted momentum signal."""
-    return synthetic_ohlcv(n_days=1500, n_assets=12, seed=7, plant_signal=True)
+    """Dataset with planted momentum signal (n_days=2000, n_assets=20).
+
+    Larger than the original 1500×12 default so that mom_20 clears all
+    promotion gates at q=0.10 with visible margin (not knife-edge).
+    """
+    return synthetic_ohlcv(n_days=2000, n_assets=20, seed=7, plant_signal=True)
 
 
 @pytest.fixture(scope="module")
 def default_df():
-    """Default synthetic dataset."""
-    return synthetic_ohlcv(n_days=1500, n_assets=12, seed=7)
+    """Default synthetic dataset (n_days=2000, n_assets=20)."""
+    return synthetic_ohlcv(n_days=2000, n_assets=20, seed=7)
 
 
 # ---------------------------------------------------------------------------
@@ -91,33 +95,46 @@ def test_noise_control_rejected(noise_df):
 
 
 def test_planted_signal_promoted(signal_df):
-    """KAT: mom_20 on planted-signal data must be PROMOTED.
+    """KAT: mom_20 on planted-signal data must be PROMOTED at q=0.10 with margin.
 
     Fault detected: gate too strict or factor computing zero IC on data
     with embedded autocorrelation.
 
-    The planted_signal dataset has AR(1) rho=0.08 embedded in returns.
-    At horizon 5, the HAC-corrected t-stat is ~1.6 (weaker than naive 2.9
-    because overlapping labels inflate naive by ~sqrt(5)≈2.2x). The factor
-    achieves IC=0.025, IC-IR=0.075, HR-LB=0.5013. We use fdr_q=0.15 (the
-    default since HAC already deflates the statistic substantially) and
-    min_abs_ic=0.015 to detect the genuine planted signal. This is still
-    more conservative than no FDR correction.
+    The planted_signal dataset has AR(1) rho=0.15 embedded in returns
+    (n_days=2000, n_assets=20).  With the correct BH multiplicity
+    (m = number of horizons searched, not m=1), the factor must still
+    clear all gates at the original q=0.10 with visible margin — not
+    knife-edge.  Key margins expected:
+        hit_rate_wilson_lb >= 0.510 (threshold 0.500)
+        oos_consistency   >= 0.800 (threshold 0.600)
+        survives_fdr p < 0.05  (threshold q=0.10, m=3 horizons)
 
-    The spec requires: 'planted-signal factor is promoted'. The PromotionConfig
-    default fdr_q=0.15 is set to compensate for HAC deflation at h > 1.
+    The spec requires: 'planted-signal factor is promoted'. This test
+    uses default PromotionConfig (fdr_q=0.10, horizons=[1,5,20]) which
+    applies BH with m=3.
     """
     factor = get_factor("mom_20")
-    cfg = PromotionConfig(
-        horizons=[5],
-        min_abs_ic=0.015,
-        min_ic_ir=0.05,
-        fdr_q=0.15,
-    )
+    cfg = PromotionConfig()  # fdr_q=0.10 default, horizons=[1,5,20]
     decision = promote(factor, signal_df, cfg)
     assert (
         decision.verdict == "promote"
     ), f"mom_20 on planted-signal data should be PROMOTED.\n{decision}"
+
+    # Verify margin on the previously knife-edge gates
+    reasons_by_code = {r.code: r for r in decision.reasons}
+    hr_lb = reasons_by_code["hit_rate_wilson_lb"]
+    assert (
+        float(hr_lb.observed) >= 0.505
+    ), f"hit_rate_wilson_lb {hr_lb.observed} too close to threshold (want >=0.505 for margin)"
+    oos = reasons_by_code["oos_consistency"]
+    assert (
+        float(oos.observed) >= 0.70
+    ), f"oos_consistency {oos.observed} too close to threshold (want >=0.70 for margin)"
+    fdr_r = reasons_by_code["survives_fdr"]
+    # note field contains 'm=N tests' — verify N = number of horizons
+    assert (
+        "m=3 tests" in fdr_r.note
+    ), f"FDR correction must use m=3 (one per horizon), got: {fdr_r.note}"
 
 
 # ---------------------------------------------------------------------------
@@ -250,3 +267,48 @@ def test_reason_table_has_observed_and_threshold(default_df):
         assert r.code, "Reason code must be non-empty"
         assert r.observed is not None, f"Reason {r.code} has no observed value"
         assert r.threshold is not None, f"Reason {r.code} has no threshold value"
+
+
+# ---------------------------------------------------------------------------
+# Multiplicity: horizon search must be reflected in FDR correction
+# ---------------------------------------------------------------------------
+
+
+def test_fdr_multiplicity_spans_horizons_searched(signal_df):
+    """BH correction must use m = number of horizons tested, not m = 1.
+
+    Selection bias: if we test 3 horizons and promote the best, we have run
+    3 hypothesis tests.  The BH family must include one p-value per horizon
+    so the correction reflects the actual search performed.
+
+    Fault detected: FDR gate called benjamini_hochberg([p_self], q) with m=1
+    regardless of how many horizons were evaluated.
+    """
+    factor = get_factor("mom_20")
+    cfg = PromotionConfig(horizons=[1, 5, 20])  # 3 horizons
+    decision = promote(factor, signal_df, cfg)
+
+    fdr_reasons = [r for r in decision.reasons if r.code == "survives_fdr"]
+    assert len(fdr_reasons) == 1, "Expected exactly one survives_fdr reason"
+    fdr_r = fdr_reasons[0]
+
+    # The note must report m = len(horizons) = 3
+    assert "m=3 tests" in fdr_r.note, (
+        f"FDR correction must use m=3 when 3 horizons are evaluated. "
+        f"Got: {fdr_r.note!r}.  Passing only p_self (m=1) is selection bias."
+    )
+
+
+def test_fdr_multiplicity_single_horizon_gives_m1(signal_df):
+    """With one horizon, BH family is m=1 (no over-correction)."""
+    factor = get_factor("mom_20")
+    cfg = PromotionConfig(horizons=[1])  # single horizon
+    decision = promote(factor, signal_df, cfg)
+
+    fdr_reasons = [r for r in decision.reasons if r.code == "survives_fdr"]
+    assert len(fdr_reasons) == 1
+    fdr_r = fdr_reasons[0]
+    # m=1 horizon → m=1 tests
+    assert (
+        "m=1 tests" in fdr_r.note
+    ), f"With 1 horizon, FDR family should have m=1 tests. Got: {fdr_r.note!r}"

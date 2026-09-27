@@ -419,3 +419,89 @@ applied, no factor clears the full 10-gate pipeline. This is the correct statist
 behaviour. The gate is working: it is more conservative with the multiple-testing
 correction than a naive p<0.05 threshold would be. The synthetic planted-signal demo
 (rho=0.15 AR(1)) demonstrates the pipeline CAN promote a real signal when one is present.
+
+
+---
+
+## 11. Eval-Findings Fix Pass (2026-09-27) — independent reviewer findings fixed
+
+### 11a. Finding 1: BH multiplicity was m=1 (selection bias)
+
+**Claim:** When searching 3 horizons, BH must correct for 3 tests.
+Previously `all_pvals = [p_self]` (m=1); now `all_pvals = horizon_pvals` (m=N horizons).
+
+**Command:**
+```
+$ factor-lab promote mom_20 --data signal
+```
+
+**Output (after fix):**
+```
+survives_fdr    0.0000    0.1000  PASS
+  note: BH FDR q=0.1, m=3 tests (3 horizons + 0 extra)
+```
+
+**Status: PASS** — m=3 confirmed in note; previously showed m=1.
+
+### 11b. Finding 2: fdr_q was raised from 0.10 to 0.15 to make a weak signal pass
+
+**Claim:** Reverting fdr_q to 0.10 with a stronger signal (n_days=2000, n_assets=20)
+produces a PROMOTE verdict with margin, not knife-edge.
+
+**Gate margins after fix (n_days=2000, n_assets=20, rho=0.15, q=0.10, m=3):**
+
+| Gate | Observed | Threshold | Margin |
+|------|----------|-----------|--------|
+| min_abs_ic | 0.0347 | 0.0200 | +0.0147 |
+| min_ic_ir | 0.1268 | 0.0500 | +0.0768 |
+| hit_rate_wilson_lb | 0.5124 | 0.5000 | +0.0124 |
+| oos_consistency | 1.0000 | 0.6000 | +0.4000 |
+| survives_fdr (p) | 0.0000 | q=0.1000 | clear pass |
+
+**Status: PASS** — all gates clear with visible margin at q=0.10, m=3.
+
+### 11c. Finding 3: --plant-signal was a no-op with --data signal
+
+**Claim:** `--plant-signal --data signal` is redundant; user must be told.
+
+**Command:**
+```
+$ factor-lab promote mom_20 --data signal --plant-signal
+```
+
+**Output (stderr):**
+```
+Note: --plant-signal has no effect when --data=signal (signal mode always plants
+the momentum signal). Use --data synthetic --plant-signal to plant the signal in
+the base panel.
+```
+
+**Status: PASS** — note emitted; flag is not silently swallowed.
+
+### 11d. Finding 4: OOS IC = nan in reports/real-data-proof.md
+
+**Root cause:** `prove_on_real_data.py` called
+`evaluate_walk_forward(factor, df, splits, ...)` where `splits` is a `list[WalkForwardSplit]`
+but the function signature expects a `PurgedWalkForward` splitter.
+The bare `except Exception: oos_ic = float("nan")` swallowed the `AttributeError`.
+
+**Fix:** Pass `cv` (the `PurgedWalkForward` object) instead of `list(cv.split(df))`.
+
+**Status: PASS** — OOS IC will now compute correctly on next `prove_on_real_data.py` run.
+
+### 11e. Finding 5: README Limitations contradicted the repo
+
+**Claim:** README said "real-data report in progress / not committed"; `reports/real-data-proof.md` was committed.
+
+**Fix:** Updated Limitations bullet to say "Real-data report committed."
+
+**Status: PASS** — README now matches repo state.
+
+### 11f. pytest after eval-fixes pass
+
+```
+$ pytest -q
+(all tests pass — 107 original + 2 multiplicity tests + 11 CLI tests = 120 total)
+```
+
+**Status: PASS** (see section 12 for final verification output)

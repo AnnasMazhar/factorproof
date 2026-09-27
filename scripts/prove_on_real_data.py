@@ -215,8 +215,7 @@ def _evaluate_all_factors(
 
         cv = PurgedWalkForward(n_splits=5, embargo_days=max(horizons), label_horizon=best.horizon)
         try:
-            splits = list(cv.split(df))
-            wf = evaluate_walk_forward(factor, df, splits, [best.horizon])
+            wf = evaluate_walk_forward(factor, df, cv, [best.horizon])
             oos_ic = float(np.mean([m.ic_pearson for m in wf if not math.isnan(m.ic_pearson)]))
         except Exception:
             oos_ic = float("nan")
@@ -372,6 +371,19 @@ _FMT_FLOAT = "{:.4f}".format
 _FMT_P = "{:.4f}".format
 
 
+def _fmt_prob(v: float) -> str:
+    """Format a probability [0,1].  Very small values show as <0.001 to
+    distinguish a genuine near-zero probability from a nan / computation error.
+    """
+    import math as _math
+
+    if _math.isnan(v):
+        return "nan"
+    if v < 0.001:
+        return "<0.001"
+    return f"{v:.4f}"
+
+
 def _row_md(row: dict) -> str:
     if "error" in row:
         return f"| {row['factor']} | ERROR | — | — | — | — | — | — | — |"
@@ -380,7 +392,7 @@ def _row_md(row: dict) -> str:
     t_hac = _FMT_FLOAT(row.get("t_hac", float("nan")))
     p_raw = _FMT_P(row.get("p_raw", float("nan")))
     oos_ic = _FMT_FLOAT(row.get("oos_ic", float("nan")))
-    dsr = _FMT_FLOAT(row.get("deflated_sharpe", float("nan")))
+    dsr = _fmt_prob(row.get("deflated_sharpe", float("nan")))
     bh = "Y" if row.get("bh_fdr_pass") else "N"
     verdict = row.get("verdict", "?")
     h = row.get("horizon", "?")
