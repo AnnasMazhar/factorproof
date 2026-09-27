@@ -123,18 +123,18 @@ def test_planted_signal_promoted(signal_df):
     # Verify margin on the previously knife-edge gates
     reasons_by_code = {r.code: r for r in decision.reasons}
     hr_lb = reasons_by_code["hit_rate_wilson_lb"]
-    assert float(hr_lb.observed) >= 0.505, (
-        f"hit_rate_wilson_lb {hr_lb.observed} too close to threshold (want >=0.505 for margin)"
-    )
+    assert (
+        float(hr_lb.observed) >= 0.505
+    ), f"hit_rate_wilson_lb {hr_lb.observed} too close to threshold (want >=0.505 for margin)"
     oos = reasons_by_code["oos_consistency"]
-    assert float(oos.observed) >= 0.70, (
-        f"oos_consistency {oos.observed} too close to threshold (want >=0.70 for margin)"
-    )
+    assert (
+        float(oos.observed) >= 0.70
+    ), f"oos_consistency {oos.observed} too close to threshold (want >=0.70 for margin)"
     fdr_r = reasons_by_code["survives_fdr"]
     # note field contains 'm=N tests' — verify N = number of horizons
-    assert "m=3 tests" in fdr_r.note, (
-        f"FDR correction must use m=3 (one per horizon), got: {fdr_r.note}"
-    )
+    assert (
+        "m=3 tests" in fdr_r.note
+    ), f"FDR correction must use m=3 (one per horizon), got: {fdr_r.note}"
 
 
 # ---------------------------------------------------------------------------
@@ -309,6 +309,6 @@ def test_fdr_multiplicity_single_horizon_gives_m1(signal_df):
     assert len(fdr_reasons) == 1
     fdr_r = fdr_reasons[0]
     # m=1 horizon → m=1 tests
-    assert "m=1 tests" in fdr_r.note, (
-        f"With 1 horizon, FDR family should have m=1 tests. Got: {fdr_r.note!r}"
-    )
+    assert (
+        "m=1 tests" in fdr_r.note
+    ), f"With 1 horizon, FDR family should have m=1 tests. Got: {fdr_r.note!r}"

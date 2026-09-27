@@ -524,9 +524,7 @@ def promote(
     # Passing only p_self (m=1) would be the same selection bias this library
     # exists to prevent.  Collect all per-horizon p-values and include them in
     # the BH family so the correction reflects the actual search performed.
-    horizon_pvals = [
-        _tstat_to_pval(m.ic_tstat, int(m.n_obs)) for m in metrics_list
-    ]
+    horizon_pvals = [_tstat_to_pval(m.ic_tstat, int(m.n_obs)) for m in metrics_list]
     # Ensure p_self is in the family (it is the last element)
     if p_self not in horizon_pvals:
         horizon_pvals.append(p_self)
