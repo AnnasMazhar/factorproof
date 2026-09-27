@@ -321,3 +321,100 @@ and CLI binary are named `factor-lab`. These conflict. Resolution:
 
 5. **Synthetic data only**: All numbers come from synthetic data with embedded AR(1) signal
    (rho=0.08). Performance on real market data is unknown and not claimed.
+
+---
+
+## 10. Cycle 2 Implementation Pass 1 — v0.2 MANDATE (2026-09-27)
+
+### 10a. check_no_internal_refs.py
+
+```
+$ .venv/bin/python scripts/check_no_internal_refs.py
+check_no_internal_refs: CLEAN — no forbidden tokens found.
+```
+
+### 10b. prove_on_real_data.py (full stdout)
+
+```
+$ .venv/bin/python scripts/prove_on_real_data.py
+Loading data from <prices.sqlite> ...
+Dataset: 14 coins, 21,128 bars, 2021-04-29 to 2026-09-27, 60.26 MB
+Running factor evaluation (this may take a few minutes) ...
+Wrote reports/real-data-proof.md
+Wrote reports/real-data-proof.json
+
+--- Summary ---
+Promoted: 0/13
+Noise rejection rate: 10/10 (100.0%) — target >=90%
+Stability flips: 0 — target 0
+
+reports/real-data-proof.md written.
+reports/real-data-proof.json written.
+```
+
+Coins: AAVE, ADA, ARB, ATOM, BTC, DOGE, ETH, FIL, HBAR, INJ, RENDER, SOL, TON, XRP
+Date range: 2021-04-29 to 2026-09-27 (daily aggregated from raw intraday where applicable)
+Total daily bars: 21,128 across 14 coins
+
+F3 results:
+- Specificity (noise rejection): 10/10 = 100% — PASS (target ≥90%)
+- Sensitivity: 0 real factors promoted on this dataset (honest). Synthetic planted-signal
+  demo still demonstrates sensitivity (factor-lab promote mom_20 --data signal --plant-signal
+  exits 0). This is an honest finding about the current factor library on daily crypto bars.
+- Stability: 0 verdict flips — PASS (target 0)
+
+### 10c. check_real_data_proof.py
+
+```
+$ .venv/bin/python scripts/check_real_data_proof.py
+check_real_data_proof: all checks passed.
+PROOF_COMPLETE
+```
+
+### 10d. pytest after this pass
+
+```
+$ .venv/bin/pytest 2>&1 | tail -1
+107 passed, 512 warnings in 32.26s
+```
+
+### 10e. ruff clean
+
+```
+$ .venv/bin/ruff check .
+All checks passed!
+
+$ .venv/bin/ruff format --check .
+22 files already formatted
+```
+
+### 10f. git log
+
+```
+$ git log --oneline -3
+2fa74e9 feat(mandate): v0.2 F1-F4 — real-data proof scripts and CI gate
+6e58f0a docs(research): cycle 2 pass 3 — close C2-1..C2-4, verify adoption claims with executed evidence
+fbcbfe0 docs(readme): drop the internal-system reference; state the real-data proof as pending
+```
+
+### What this pass built
+
+- `scripts/prove_on_real_data.py` — full pipeline on prices.sqlite (read-only SQLite),
+  produces both report files with all F2 sections and F3 checks. Handles intraday→daily
+  aggregation (5-minute bars from 2026-04-01 onward, daily before). Exits 0/prints SKIP
+  if DB not present (CI safe).
+- `scripts/check_no_internal_refs.py` — scans all tracked files + results/reports dirs
+  for forbidden tokens; wired into CI.
+- `scripts/check_real_data_proof.py` — validates F2/F3 thresholds; prints PROOF_COMPLETE.
+- `reports/real-data-proof.md` and `reports/real-data-proof.json` — generated artifacts.
+- CI updated: `check_no_internal_refs.py` step added to both Python matrix jobs.
+- README Limitations updated to v0.2 MANDATE wording.
+
+### Why 0/13 factors were promoted (honest finding)
+
+Daily crypto bars are noisy. The HAC t-stat correction at H=20 reduces naive t-stats
+by ~3x for momentum factors. With 13 factors in the BH-FDR family and the HAC correction
+applied, no factor clears the full 10-gate pipeline. This is the correct statistical
+behaviour. The gate is working: it is more conservative with the multiple-testing
+correction than a naive p<0.05 threshold would be. The synthetic planted-signal demo
+(rho=0.15 AR(1)) demonstrates the pipeline CAN promote a real signal when one is present.
