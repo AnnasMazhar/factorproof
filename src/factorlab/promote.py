@@ -22,10 +22,12 @@ from dataclasses import dataclass, field
 from typing import Literal
 
 from .cv import (
+    CPurgedCV,
     PurgedWalkForward,
     check_lookahead,
     check_lookahead_runtime,
     check_lookahead_source,
+    evaluate_cpcv,
     evaluate_walk_forward,
 )
 from .data import synthetic_ohlcv
@@ -77,10 +79,26 @@ class PromotionConfig:
     """Minimum fraction of non-NaN observations."""
 
     n_wf_splits: int = 5
-    """Number of walk-forward splits."""
+    """Number of walk-forward splits (used when cv_method='walk_forward')."""
 
     embargo_days: int = 20
-    """Embargo days in walk-forward splits. Must be >= max(horizons) = 20."""
+    """Embargo days in walk-forward/CPCV splits. Must be >= max(horizons) = 20."""
+
+    cv_method: str = "walk_forward"
+    """Cross-validation method: 'walk_forward' (default) or 'cpcv'.
+
+    'walk_forward': PurgedWalkForward — n_wf_splits sequential folds.
+    'cpcv': CPurgedCV — C(n_cpcv_groups, k_cpcv_test) combinatorial folds.
+    CPCV generates more OOS paths (e.g. C(6,2)=15 vs 5 walk-forward),
+    producing more robust sign-consistency estimates at the cost of
+    training set size per split.
+    """
+
+    n_cpcv_groups: int = 6
+    """Number of date groups for CPCV (used when cv_method='cpcv')."""
+
+    k_cpcv_test: int = 2
+    """Number of groups held out as test per CPCV combination."""
 
     n_days: int = 1500
     """Synthetic data length (overridable)."""
@@ -463,15 +481,26 @@ def promote(
     )
 
     # ------------------------------------------------------------------
-    # Gate 7: Walk-forward OOS consistency
+    # Gate 7: OOS consistency (walk_forward or cpcv)
     # ------------------------------------------------------------------
-    splitter = PurgedWalkForward(
-        n_splits=cfg.n_wf_splits,
-        embargo_days=cfg.embargo_days,
-        label_horizon=max(cfg.horizons),
-    )
-    wf_results = evaluate_walk_forward(factor, df, splitter, cfg.horizons)
-    # Pick the WF result for best_h
+    if cfg.cv_method == "cpcv":
+        cv_splitter: PurgedWalkForward | CPurgedCV = CPurgedCV(
+            n_groups=cfg.n_cpcv_groups,
+            k_test=cfg.k_cpcv_test,
+            embargo_days=cfg.embargo_days,
+            label_horizon=max(cfg.horizons),
+        )
+        wf_results = evaluate_cpcv(factor, df, cv_splitter, cfg.horizons)
+        cv_label = f"CPCV splits: C({cfg.n_cpcv_groups},{cfg.k_cpcv_test})"
+    else:
+        cv_splitter = PurgedWalkForward(
+            n_splits=cfg.n_wf_splits,
+            embargo_days=cfg.embargo_days,
+            label_horizon=max(cfg.horizons),
+        )
+        wf_results = evaluate_walk_forward(factor, df, cv_splitter, cfg.horizons)
+        cv_label = f"WF splits: {cfg.n_wf_splits}"
+    # Pick the CV result for best_h
     best_wf = next((r for r in wf_results if r.horizon == best_h), None)
     if best_wf is None:
         best_wf = wf_results[0] if wf_results else None
@@ -488,7 +517,7 @@ def promote(
             passed=oos_pass,
             observed=oos_cons,
             threshold=cfg.oos_consistency_min,
-            note=f"WF splits: {best_wf.n_splits if best_wf else 0}",
+            note=f"{cv_label}, method={cfg.cv_method}",
         )
     )
 

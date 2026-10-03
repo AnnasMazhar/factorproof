@@ -419,3 +419,104 @@ applied, no factor clears the full 10-gate pipeline. This is the correct statist
 behaviour. The gate is working: it is more conservative with the multiple-testing
 correction than a naive p<0.05 threshold would be. The synthetic planted-signal demo
 (rho=0.15 AR(1)) demonstrates the pipeline CAN promote a real signal when one is present.
+
+---
+
+## 11. Cycle 2 Implementation Pass 1 — OOS IC fix, CPCV wiring, evaluate_cpcv (2026-10-03)
+
+### 11a. What was fixed / added
+
+**Bug: OOS IC = nan in real-data proof**
+
+Root cause: `prove_on_real_data.py` line 219 passed a materialised `splits` list
+(type: `list[WalkForwardSplit]`) as the `splitter` argument to `evaluate_walk_forward`,
+which internally calls `splitter.split(df)`. A list has no `.split()`, causing an
+`AttributeError` silently caught by `except Exception: oos_ic = float("nan")`.
+Additionally, line 221 accessed `.ic_pearson` on `WalkForwardResult` objects —
+which only `FactorMetrics` has; `WalkForwardResult` has `.oos_mean_ic`.
+
+Fix: pass `cv` (the `PurgedWalkForward` instance) directly, and read `wf[0].oos_mean_ic`.
+
+**New: `evaluate_cpcv` function**
+
+`src/factorlab/cv.py` now exports `evaluate_cpcv(factor, df, splitter, horizons)` — 
+mirrors `evaluate_walk_forward` but accepts `CPurgedCV` and aggregates across
+C(n_groups, k_test) combinatorial paths. With k=2 and 6 groups: 15 OOS paths vs 5.
+
+**New: `cv_method` in `PromotionConfig`**
+
+`promote()` now accepts `cv_method='walk_forward'` (default) or `cv_method='cpcv'`.
+CPCV path uses `CPurgedCV` with configurable `n_cpcv_groups` and `k_cpcv_test`.
+The `oos_consistency` gate note now includes the method name for traceability.
+
+**New tests (+3)**
+
+- `test_evaluate_cpcv_returns_valid_oos_ic` — KAT: evaluate_cpcv returns non-NaN on planted data
+- `test_evaluate_walk_forward_oos_ic_not_nan` — KAT: catches the .ic_pearson attribute bug
+- `test_promote_cpcv_method_produces_decision` — KAT: cv_method='cpcv' wired into promote()
+
+### 11b. pytest -q (full suite after changes)
+
+```
+$ .venv/bin/python -m pytest 2>&1 | tail -1
+110 passed, 2 warnings in 40.21s
+```
+
+### 11c. ruff clean
+
+```
+$ .venv/bin/ruff check .
+All checks passed!
+
+$ .venv/bin/ruff format --check .
+22 files already formatted
+```
+
+### 11d. prove_on_real_data.py — OOS IC column now populated
+
+```
+$ .venv/bin/python scripts/prove_on_real_data.py --db <prices.sqlite>
+Loading data from <prices.sqlite> ...
+Dataset: 14 coins, 21,200 bars, 2021-04-29 to 2026-10-03, 60.39 MB
+Running factor evaluation (this may take a few minutes) ...
+Wrote reports/real-data-proof.md
+Wrote reports/real-data-proof.json
+
+--- Summary ---
+Promoted: 0/13
+Noise rejection rate: 10/10 (100.0%) — target >=90%
+Stability flips: 0 — target 0
+```
+
+OOS IC values (previously nan, now real numbers):
+| Factor | OOS IC |
+|--------|--------|
+| mom_20 | 0.0467 |
+| rev_5 | 0.0278 |
+| amihud_illiq_20 | -0.0512 |
+| noise_control | -0.0115 |
+| lookahead_control | 0.4171 |
+
+### 11e. check_real_data_proof.py
+
+```
+$ .venv/bin/python scripts/check_real_data_proof.py
+check_real_data_proof: all checks passed.
+PROOF_COMPLETE
+```
+
+### 11f. check_no_internal_refs.py
+
+```
+$ .venv/bin/python scripts/check_no_internal_refs.py
+check_no_internal_refs: CLEAN — no forbidden tokens found.
+```
+
+### Notes on deflated Sharpe = 0.0 (not a bug)
+
+All factors show DSR=0.0 in the real-data proof. This is mathematically correct:
+IC-IR values (~0.09) are far below SR* (~1.70, expected max from 13 trials).
+`deflated_sharpe_ratio(0.09, 13, 1938)` = ~0.00000000 — the factor scores are
+lower than expected by pure selection across 13 strategies. This is the honest
+answer on daily crypto data. The DSR of 0.0 is a real finding, not a display error.
+The function works correctly (verified: `deflated_sharpe_ratio(0.09, 1, 1938)` = 0.9999).

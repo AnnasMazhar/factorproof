@@ -622,6 +622,107 @@ class CPurgedCV:
 
 
 # ---------------------------------------------------------------------------
+# CPCV evaluation — aggregates metrics across combinatorial splits
+# ---------------------------------------------------------------------------
+
+
+def evaluate_cpcv(
+    factor: Factor,
+    df: pd.DataFrame,
+    splitter: CPurgedCV,
+    horizons: list[int],
+) -> list[WalkForwardResult]:
+    """Evaluate a factor using Combinatorial Purged CV (CPCV).
+
+    Analogous to evaluate_walk_forward but uses CPurgedCV splits.
+    With more OOS paths than walk-forward, sign_consistency estimates
+    are more robust (C(n_groups,k_test) paths vs n_splits paths).
+
+    Parameters
+    ----------
+    factor:
+        Factor instance.
+    df:
+        Full tidy OHLCV panel.
+    splitter:
+        CPurgedCV instance.
+    horizons:
+        List of forward-return horizons.
+
+    Returns
+    -------
+    List of WalkForwardResult, one per horizon.
+    """
+    splits = splitter.split(df)
+    if not splits:
+        raise ValueError(
+            "No CPCV splits generated — panel too short or n_groups/k_test misconfigured."
+        )
+
+    factor_vals = factor.compute(df)
+    results_by_horizon: dict[int, list[float]] = {h: [] for h in horizons}
+
+    for spl in splits:
+        test_df = df.iloc[spl.test_idx].copy()
+        test_dates = test_df["date"].unique()
+        test_factor = factor_vals[factor_vals.index.get_level_values("date").isin(test_dates)]
+
+        if test_factor.empty:
+            for h in horizons:
+                results_by_horizon[h].append(float("nan"))
+            continue
+
+        split_metrics = evaluate_factor(
+            factor_vals=test_factor,
+            df=test_df,
+            horizons=horizons,
+            factor_name=factor.name,
+        )
+        for m in split_metrics:
+            results_by_horizon[m.horizon].append(m.ic_pearson)
+
+    wf_results: list[WalkForwardResult] = []
+    for h in horizons:
+        ics = [ic for ic in results_by_horizon[h] if not _isnan(ic)]
+        if not ics:
+            wf_results.append(
+                WalkForwardResult(
+                    factor_name=factor.name,
+                    horizon=h,
+                    per_split_ic=[],
+                    oos_mean_ic=float("nan"),
+                    oos_ic_ir=float("nan"),
+                    sign_consistency=float("nan"),
+                    n_splits=0,
+                )
+            )
+            continue
+
+        ics_arr = np.array(ics)
+        mean_ic = float(np.mean(ics_arr))
+        std_ic = float(np.std(ics_arr, ddof=1)) if len(ics_arr) > 1 else float("nan")
+        ic_ir = mean_ic / std_ic if std_ic and std_ic > 0 else float("nan")
+        if mean_ic != 0:
+            sign_match = float(np.mean(np.sign(ics_arr) == np.sign(mean_ic)))
+        else:
+            sign_match = float("nan")
+
+        wf_results.append(
+            WalkForwardResult(
+                factor_name=factor.name,
+                horizon=h,
+                per_split_ic=list(ics_arr),
+                oos_mean_ic=mean_ic,
+                oos_ic_ir=ic_ir,
+                sign_consistency=sign_match,
+                n_splits=len(ics),
+            )
+        )
+
+    return wf_results
+
+
+# ---------------------------------------------------------------------------
 # Private helpers
 # ---------------------------------------------------------------------------
 

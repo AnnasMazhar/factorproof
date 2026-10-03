@@ -215,9 +215,9 @@ def _evaluate_all_factors(
 
         cv = PurgedWalkForward(n_splits=5, embargo_days=max(horizons), label_horizon=best.horizon)
         try:
-            splits = list(cv.split(df))
-            wf = evaluate_walk_forward(factor, df, splits, [best.horizon])
-            oos_ic = float(np.mean([m.ic_pearson for m in wf if not math.isnan(m.ic_pearson)]))
+            wf = evaluate_walk_forward(factor, df, cv, [best.horizon])
+            # WalkForwardResult has oos_mean_ic, not ic_pearson
+            oos_ic = wf[0].oos_mean_ic if wf and not math.isnan(wf[0].oos_mean_ic) else float("nan")
         except Exception:
             oos_ic = float("nan")
 

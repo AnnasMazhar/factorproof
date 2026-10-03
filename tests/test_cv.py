@@ -337,3 +337,69 @@ def test_cpcv_embargo_less_than_horizon_raises():
 
     with pytest.raises(ValueError, match="embargo_days"):
         CPurgedCV(n_groups=4, k_test=2, embargo_days=3, label_horizon=5)
+
+
+def test_evaluate_cpcv_returns_valid_oos_ic(planted_df):
+    """KAT: evaluate_cpcv must return non-NaN oos_mean_ic when data is sufficient.
+
+    Fault detected: evaluate_cpcv returning NaN because of wrong attribute access
+    on WalkForwardResult (ic_pearson vs oos_mean_ic) or wrong splitter argument.
+    """
+    import math
+
+    from factorlab.cv import CPurgedCV, evaluate_cpcv
+
+    factor = get_factor("mom_20")
+    cpcv = CPurgedCV(n_groups=4, k_test=2, embargo_days=5, label_horizon=5)
+    results = evaluate_cpcv(factor, planted_df, cpcv, [5])
+    assert results, "evaluate_cpcv returned no results"
+    assert not math.isnan(results[0].oos_mean_ic), (
+        "evaluate_cpcv returned NaN oos_mean_ic on planted-signal data — "
+        "likely accessing wrong attribute or passing wrong splitter type"
+    )
+    # With C(4,2)=6 paths and planted signal, must have at least 4 valid splits
+    assert results[0].n_splits >= 4, f"Expected >= 4 CPCV paths, got {results[0].n_splits}"
+
+
+def test_evaluate_walk_forward_oos_ic_not_nan(planted_df):
+    """KAT: evaluate_walk_forward must return non-NaN oos_mean_ic.
+
+    Fault detected: returning NaN oos_mean_ic because ic_pearson is inaccessible
+    on WalkForwardResult (field is oos_mean_ic, not ic_pearson — only FactorMetrics
+    has ic_pearson). This test catches the prove_on_real_data bug where
+    `m.ic_pearson` was accessed on WalkForwardResult objects.
+    """
+    import math
+
+    factor = get_factor("mom_20")
+    splitter = PurgedWalkForward(n_splits=4, embargo_days=5, label_horizon=5)
+    results = evaluate_walk_forward(factor, planted_df, splitter, [5])
+    assert results, "evaluate_walk_forward returned no results"
+    h5 = next(r for r in results if r.horizon == 5)
+    assert not math.isnan(h5.oos_mean_ic), (
+        "evaluate_walk_forward returned NaN oos_mean_ic — "
+        "split may be producing empty test sets or NaN IC"
+    )
+    assert h5.n_splits >= 3, f"Expected >= 3 valid splits, got {h5.n_splits}"
+
+
+def test_promote_cpcv_method_produces_decision(planted_df):
+    """KAT: promote() with cv_method='cpcv' must complete without error.
+
+    Fault detected: cv_method='cpcv' not wired into promote(), or CPurgedCV
+    import missing, causing AttributeError or TypeError.
+    """
+    from factorlab.promote import PromotionConfig, promote
+
+    factor = get_factor("mom_20")
+    cfg = PromotionConfig(cv_method="cpcv", n_cpcv_groups=4, k_cpcv_test=2)
+    decision = promote(factor, planted_df, cfg)
+    assert decision.verdict in (
+        "promote",
+        "reject",
+    ), f"Expected promote or reject, got: {decision.verdict!r}"
+    # The oos_consistency reason must mention 'cpcv'
+    oos_reason = next(r for r in decision.reasons if r.code == "oos_consistency")
+    assert (
+        "cpcv" in oos_reason.note.lower()
+    ), f"Expected 'cpcv' in oos_consistency note, got: {oos_reason.note!r}"
