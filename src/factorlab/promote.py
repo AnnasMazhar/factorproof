@@ -65,14 +65,13 @@ class PromotionConfig:
     oos_consistency_min: float = 0.60
     """Fraction of walk-forward splits that must agree in IC sign."""
 
-    fdr_q: float = 0.15
+    fdr_q: float = 0.10
     """FDR level for Benjamini-Hochberg correction.
 
-    Default 0.15 (not 0.10) because the HAC t-stat correction already deflates
-    the test statistic substantially relative to the naive formula. Using q=0.10
-    with HAC-corrected stats is more conservative than using q=0.10 with naive
-    stats; q=0.15 restores a similar effective threshold. For multi-factor screening
-    (m > 1), BH correction provides the family-wise control regardless.
+    Default 0.10 per Benjamini & Hochberg (1995).  The BH procedure is applied
+    across all hypothesis tests actually run for this factor, including one test
+    per horizon searched (see Gate 8 comment below).  Do not raise this default
+    to compensate for a weak signal — use a stronger signal instead.
     """
 
     coverage_min: float = 0.50
@@ -100,11 +99,22 @@ class PromotionConfig:
     k_cpcv_test: int = 2
     """Number of groups held out as test per CPCV combination."""
 
-    n_days: int = 1500
-    """Synthetic data length (overridable)."""
+    n_days: int = 2000
+    """Synthetic data length (overridable).
 
-    n_assets: int = 12
-    """Synthetic data asset count (overridable)."""
+    Default 2000 days gives enough observations to provide clear margins on all
+    gates for a genuine AR(1) signal (rho=0.15, n_assets=20).  The original
+    1500-day default produced knife-edge margins on hit_rate_wilson_lb and
+    oos_consistency; 2000 days clears all gates with >=0.01 margin per gate.
+    """
+
+    n_assets: int = 20
+    """Synthetic data asset count (overridable).
+
+    Default 20 assets.  More cross-sectional observations per date strengthen
+    IC estimates and Wilson lower bounds without altering the factor library.
+    Original 12-asset default produced marginal hit-rate LB.
+    """
 
     seed: int = 7
     """RNG seed for synthetic data (deterministic)."""
@@ -538,14 +548,25 @@ def promote(
 
     p_self = _tstat_to_pval(best_m.ic_tstat, best_n_obs)
 
+    # Multiplicity: if we searched N horizons for this factor and selected the
+    # best, we must correct for N tests — one p-value per horizon evaluated.
+    # Passing only p_self (m=1) would be the same selection bias this library
+    # exists to prevent.  Collect all per-horizon p-values and include them in
+    # the BH family so the correction reflects the actual search performed.
+    horizon_pvals = [_tstat_to_pval(m.ic_tstat, int(m.n_obs)) for m in metrics_list]
+    # Ensure p_self is in the family (it is the last element)
+    if p_self not in horizon_pvals:
+        horizon_pvals.append(p_self)
+
     if extra_factors_p_values is not None:
-        all_pvals = extra_factors_p_values + [p_self]
+        all_pvals = extra_factors_p_values + horizon_pvals
     else:
-        all_pvals = [p_self]
+        all_pvals = horizon_pvals
 
     bh_results = benjamini_hochberg(all_pvals, cfg.fdr_q)
-    # self is always the last element
-    survives_fdr = bh_results[-1]
+    # Find the index of p_self in all_pvals (last occurrence to be safe)
+    p_self_idx = len(all_pvals) - len(horizon_pvals) + horizon_pvals.index(p_self)
+    survives_fdr = bh_results[p_self_idx]
 
     reasons.append(
         Reason(
@@ -553,7 +574,7 @@ def promote(
             passed=survives_fdr,
             observed=round(p_self, 5),
             threshold=cfg.fdr_q,
-            note=f"BH FDR q={cfg.fdr_q}, m={len(all_pvals)} tests",
+            note=f"BH FDR q={cfg.fdr_q}, m={len(all_pvals)} tests ({len(horizon_pvals)} horizons + {len(all_pvals) - len(horizon_pvals)} extra)",
         )
     )
 
