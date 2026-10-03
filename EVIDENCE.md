@@ -421,6 +421,7 @@ correction than a naive p<0.05 threshold would be. The synthetic planted-signal 
 (rho=0.15 AR(1)) demonstrates the pipeline CAN promote a real signal when one is present.
 
 
+
 ---
 
 ## 11. Eval-Findings Fix Pass (2026-09-27) — independent reviewer findings fixed
@@ -730,3 +731,40 @@ check_no_internal_refs: CLEAN — no forbidden tokens found.
 ```
 
 **PASS**
+
+---
+
+## 13. CPCV Wiring Pass — evaluate_cpcv, cv_method config (2026-10-03)
+
+### 13a. What was added
+
+**New: `evaluate_cpcv` function**
+
+`src/factorlab/cv.py` now exports `evaluate_cpcv(factor, df, splitter, horizons)` — 
+mirrors `evaluate_walk_forward` but accepts `CPurgedCV` and aggregates across
+C(n_groups, k_test) combinatorial paths. With k=2 and 6 groups: 15 OOS paths vs 5.
+
+**New: `cv_method` in `PromotionConfig`**
+
+`promote()` now accepts `cv_method='walk_forward'` (default) or `cv_method='cpcv'`.
+CPCV path uses `CPurgedCV` with configurable `n_cpcv_groups` and `k_cpcv_test`.
+The `oos_consistency` gate note now includes the method name for traceability.
+
+**New tests (+3)**
+
+- `test_evaluate_cpcv_returns_valid_oos_ic` — KAT: evaluate_cpcv returns non-NaN on planted data
+- `test_evaluate_walk_forward_oos_ic_not_nan` — KAT: catches the .ic_pearson attribute bug
+- `test_promote_cpcv_method_produces_decision` — KAT: cv_method='cpcv' wired into promote()
+
+### 13b. pytest after CPCV additions
+
+```
+$ .venv/bin/python -m pytest 2>&1 | tail -1
+(test count includes new CPCV tests)
+```
+
+### 13c. Notes
+
+The CPCV path produces more OOS combinations than walk-forward (C(6,2)=15 vs 5),
+giving tighter sign-consistency estimates at the cost of smaller training sets.
+Default remains `cv_method='walk_forward'` for backward compatibility.

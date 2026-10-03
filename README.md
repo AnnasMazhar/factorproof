@@ -9,10 +9,10 @@ The package is `factor-lab`; the CLI is `factor-lab` (repo name `factorproof`).
 ![Ruff](https://img.shields.io/badge/ruff-clean-brightgreen)
 ![Licence](https://img.shields.io/badge/licence-MIT-green)
 
-**For quant researchers** who want purged walk-forward CV, Benjamini-Hochberg FDR
-correction, Newey-West HAC t-stats, and a promotion gate that says no — under MIT,
-offline, no subscription. MlFinLab does more; it costs £100+VAT/month per user.
-This does less and costs nothing.
+**For quant researchers** who want purged walk-forward CV, combinatorial purged CV (CPCV),
+Benjamini-Hochberg FDR correction, Newey-West HAC t-stats, and a promotion gate that says
+no — under MIT, offline, no subscription. MlFinLab does more; it costs £100+VAT/month per
+user. This does less and costs nothing.
 
 ```bash
 # Install (no network at test time)
