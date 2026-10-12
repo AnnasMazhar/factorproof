@@ -316,8 +316,9 @@ Matches `docs/ADOPTION.md` §7.1 numbers (0.0373/0.0196/0.0089) — the recipe r
 
 ### Drive-by: checker-clean generated reports
 
-`scripts/check_no_internal_refs.py` FAILED on 6 hits — all absolute `/home/openclaw/`
-paths embedded in the untracked evaluator artifacts `reports/eval-c2-p6.json` /
+`scripts/check_no_internal_refs.py` FAILED on 6 hits — all absolute host-path
+prefixes (redacted here; the literal path tripped the very checker being
+documented) embedded in the untracked evaluator artifacts `reports/eval-c2-p6.json` /
 `reports/eval-c2-p7.json` (pytest warning tracebacks). Mechanically scrubbed the repo
 prefix to `repo/` (JSON re-validated); checker now CLEAN. Not caused by this pass;
 pre-existing since the c2-p06/p07 eval runs.

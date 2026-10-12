@@ -818,3 +818,126 @@ def test_malformed_csv_raises_value_error(tmp_path):
     bad.write_text("date,asset,close\n2021-01-01,AAA,100.0\n")
     with pytest.raises(ValueError, match="missing required columns"):
         load_ohlcv_csv(bad)
+
+
+# ---------------------------------------------------------------------------
+# Perturbation lookahead gate (cycle 2, adversarial-2: F-B1 fix)
+# ---------------------------------------------------------------------------
+
+
+def _diluted_roll_leak(weight: float):
+    """Build a factor blending clean momentum with `weight` of future data.
+
+    The leak uses np.roll (no .shift literal, so Gate 0.5 source inspection
+    sees nothing) inside a module-level helper (closure-style indirection),
+    and the small weight keeps |corr| with future returns under the Gate 0.75
+    threshold of 0.30. This is the F-B1 attack shape.
+    """
+    import numpy as np
+    import pandas as pd
+
+    from factorlab.factors.base import Factor
+
+    shift_amount = -5
+
+    class DilutedLeak(Factor):
+        name = "diluted_leak"
+        category = "attack"
+        description = "momentum blended with a small future-data admixture"
+        params = {}
+        uses_future_data = False
+
+        def compute(self, df, _w=weight):
+            close = df.pivot(index="date", columns="asset", values="close")
+            mom = close.pct_change(20)
+            lead = (
+                pd.DataFrame(
+                    np.roll(close.values, shift_amount, axis=0),
+                    index=close.index,
+                    columns=close.columns,
+                )
+                / close
+                - 1
+            )
+            blend = (1 - _w) * mom.fillna(0) + _w * lead.fillna(0)
+            vals = blend.stack()
+            vals.index.names = ["date", "asset"]
+            return vals
+
+    factor = DilutedLeak()
+    factor.name = f"diluted_leak_{weight}"
+    return factor
+
+
+def test_diluted_leak_rejected_by_perturbation_gate():
+    """F-B1 FIX: a 5% future-data admixture must be rejected by Gate 0.85.
+
+    Fault detected: Gate 0.75 (correlation > 0.30) and Gate 0.5 (source
+    inspection) both pass on this shape, and the admixture flips the verdict
+    (clean blend rejects at IC=0.0065; +5% leak promotes at IC=0.0488 on
+    plain synthetic data, seed 7). A naive gate without the perturbation
+    test promotes future-reading factors. The perturbation check flags it
+    because past outputs change when only future inputs are perturbed.
+    """
+    from factorlab.cv import (
+        check_lookahead_perturbation,
+        check_lookahead_runtime,
+        check_lookahead_source,
+    )
+    from factorlab.data import synthetic_ohlcv
+    from factorlab.promote import promote
+
+    df = synthetic_ohlcv(n_days=1500, n_assets=12, seed=7)
+    factor = _diluted_roll_leak(0.05)
+
+    # Precondition: both older gates are blind to this shape.
+    assert check_lookahead_source(factor) == []
+    flagged, _ = check_lookahead_runtime(factor, df, threshold=0.30)
+    assert not flagged, "precondition broken: runtime check now fires; test needs update"
+
+    is_lookahead, reason = check_lookahead_perturbation(factor, df)
+    assert is_lookahead, f"perturbation check missed the 5% leak: {reason}"
+
+    decision = promote(factor, df)
+    assert (
+        decision.verdict == "reject"
+    ), f"diluted leak promoted: {[ (r.code, r.passed) for r in decision.reasons ]}"
+    codes = [r.code for r in decision.reasons if not r.passed]
+    assert "no_future_dependence" in codes, f"expected no_future_dependence FAIL, got {codes}"
+
+
+def test_perturbation_no_false_positives_on_library():
+    """F-B1 FIX counterpart: no shipped factor may trip the perturbation gate.
+
+    Fault detected: a perturbation threshold with any tolerance margin, or a
+    perturbation that alters past inputs, would flag causal factors. The
+    check perturbs only future rows and demands exact past-output stability,
+    so all 12 library factors plus noise_control must report zero diffs.
+    """
+    from factorlab.cv import check_lookahead_perturbation
+    from factorlab.data import synthetic_ohlcv
+    from factorlab.factors import REGISTRY, get_factor
+
+    df = synthetic_ohlcv(n_days=1500, n_assets=12, seed=7)
+    for name in REGISTRY.keys():
+        if name == "lookahead_control":
+            continue  # deliberate positive control — covered by test_perturbation_flags_registered_lookahead_control
+        flagged, reason = check_lookahead_perturbation(get_factor(name), df)
+        assert not flagged, f"library factor '{name}' flagged as lookahead: {reason}"
+
+
+def test_perturbation_flags_registered_lookahead_control():
+    """F-B1 FIX: check_lookahead_perturbation must flag lookahead_control directly.
+
+    Fault detected: perturbation comparing the wrong date window (e.g. dates
+    inside the perturbed tail) would miss a small-window lookahead. The
+    registered control leaks a few days ahead, so only past-window
+    comparison catches it.
+    """
+    from factorlab.cv import check_lookahead_perturbation
+    from factorlab.data import synthetic_ohlcv
+    from factorlab.factors import get_factor
+
+    df = synthetic_ohlcv(n_days=1500, n_assets=12, seed=7)
+    flagged, reason = check_lookahead_perturbation(get_factor("lookahead_control"), df)
+    assert flagged, f"lookahead_control not flagged by perturbation check: {reason}"

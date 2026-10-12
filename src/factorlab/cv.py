@@ -455,6 +455,96 @@ def check_lookahead_runtime(
     return (False, "")
 
 
+def check_lookahead_perturbation(
+    factor: Factor,
+    df: pd.DataFrame,
+    tail_days: int = 20,
+    max_diffs: int = 0,
+) -> tuple[bool, str]:
+    """Behavioral detection of lookahead via future perturbation.
+
+    Source inspection (check_lookahead_source) is evadable by hiding the
+    shift amount in a closure variable or by using np.roll/iloc instead of
+    .shift(-N). Correlation screening (check_lookahead_runtime) only fires
+    above an absolute-correlation threshold, so a *diluted* leak (a few
+    percent of future data blended into an otherwise clean factor) passes
+    it while still flipping a REJECT into a PROMOTE.
+
+    This function tests the property directly instead of the mechanism:
+
+    1. Compute the factor on the panel (baseline).
+    2. Deterministically perturb the LAST `tail_days` of OHLCV data
+       (per-asset tail reversal — no RNG, fully reproducible).
+    3. Recompute. Factor values at dates strictly BEFORE the perturbed
+       region must be bit-identical: a causal factor cannot change its
+       past outputs when only future inputs change.
+
+    Any differing past value proves the factor reads future rows,
+    regardless of how the access is obfuscated. The comparison is exact
+    (deterministic compute on identical inputs is bit-identical), so
+    `max_diffs=0` has no false-positive margin by construction — with one
+    documented assumption: the factor must not normalize with full-sample
+    (global) statistics, which is itself a form of in-sample leakage.
+    All factors in the shipped library satisfy this (verified by
+    test_perturbation_no_false_positives_on_library).
+
+    Parameters
+    ----------
+    factor:
+        Factor instance to test.
+    df:
+        OHLCV panel (tidy long format).
+    tail_days:
+        Number of trailing dates to perturb. Must exceed any plausible
+        single-lookahead window. Default 20.
+    max_diffs:
+        Tolerated number of differing past values. Default 0.
+
+    Returns
+    -------
+    Tuple of (is_lookahead: bool, reason: str).
+    """
+    try:
+        baseline = factor.compute(df)
+    except Exception as e:
+        return (False, f"factor.compute() raised: {e}")
+
+    perturbed = df.copy()
+    last_dates = sorted(df["date"].unique())[-tail_days:]
+    for _asset, sub in perturbed.groupby("asset"):
+        for col in ("open", "high", "low", "close", "volume"):
+            if col not in perturbed.columns:
+                continue
+            vals = sub[col].values.copy()
+            mask = sub["date"].isin(last_dates).values
+            vals[mask] = vals[mask][::-1]
+            perturbed.loc[sub.index, col] = vals
+
+    try:
+        retested = factor.compute(perturbed)
+    except Exception as e:
+        return (False, f"factor.compute() raised on perturbed panel: {e}")
+
+    first_perturbed = pd.Timestamp(last_dates[0])
+    past_mask = baseline.index.get_level_values("date") < first_perturbed
+    a = baseline.loc[past_mask]
+    common = a.index.intersection(retested.index)
+    if len(common) == 0:
+        return (False, "no overlapping past dates to compare")
+    a, b = a.loc[common], retested.loc[common]
+    both_nan = a.isna() & b.isna()
+    n_diffs = int((((a != b) & ~both_nan) | (a.isna() ^ b.isna())).sum())
+
+    if n_diffs > max_diffs:
+        return (
+            True,
+            f"Factor values at {n_diffs} past dates changed when only future "
+            f"OHLCV data was perturbed (tail_days={tail_days}). "
+            f"A causal factor cannot do this — lookahead contamination.",
+        )
+    return (False, "")
+
+
 # ---------------------------------------------------------------------------
 # Combinatorial Purged Cross-Validation (CPCV)
 # ---------------------------------------------------------------------------

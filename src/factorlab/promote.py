@@ -25,6 +25,7 @@ from .cv import (
     CPurgedCV,
     PurgedWalkForward,
     check_lookahead,
+    check_lookahead_perturbation,
     check_lookahead_runtime,
     check_lookahead_source,
     evaluate_cpcv,
@@ -297,6 +298,38 @@ def promote(
                 observed="high",
                 threshold="< 0.30",
                 note=runtime_reason,
+            )
+        )
+        return PromotionDecision(
+            factor_name=factor.name,
+            verdict="reject",
+            reasons=reasons,
+            best_horizon=-1,
+            best_ic=float("nan"),
+            best_ic_ir=float("nan"),
+            oos_consistency=float("nan"),
+            n_obs=0,
+        )
+
+    # ------------------------------------------------------------------
+    # Gate 0.85: Lookahead contamination — perturbation test (F-B1 fix)
+    #
+    # Correlation screening (Gate 0.75) only fires above |corr| = 0.30, so
+    # a diluted leak (a few percent of future data blended into a clean
+    # factor) passes it while still flipping a REJECT into a PROMOTE.
+    # The perturbation test checks the property directly: past outputs
+    # must not change when only future inputs change. It catches leaks
+    # regardless of obfuscation (closures, np.roll, iloc tricks).
+    # ------------------------------------------------------------------
+    is_pert_lookahead, pert_reason = check_lookahead_perturbation(factor, df)
+    if is_pert_lookahead:
+        reasons.append(
+            Reason(
+                code="no_future_dependence",
+                passed=False,
+                observed="changed",
+                threshold="identical",
+                note=pert_reason,
             )
         )
         return PromotionDecision(
