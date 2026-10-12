@@ -77,7 +77,7 @@ def cmd_explain(args) -> int:
     try:
         factor = get_factor(args.factor)
     except KeyError as e:
-        print(f"Error: {e}", file=sys.stderr)
+        print(f"Error: {e.args[0]}", file=sys.stderr)
         return 1
 
     print(f"Name:        {factor.name}")
@@ -97,7 +97,22 @@ def cmd_screen(args) -> int:
     from .promote import PromotionConfig, promote
     from .report import plot_ic_decay, plot_quantile_returns, to_markdown
 
-    horizons = [int(h) for h in args.horizons.split(",")]
+    try:
+        horizons = [int(h) for h in args.horizons.split(",")]
+    except ValueError:
+        print(
+            f"Error: --horizons must be comma-separated positive integers "
+            f"(e.g. '1,5,20'), got {args.horizons!r}.",
+            file=sys.stderr,
+        )
+        return 1
+    if not horizons or any(h <= 0 for h in horizons):
+        print(
+            f"Error: --horizons must be comma-separated positive integers "
+            f"(e.g. '1,5,20'), got {args.horizons!r}.",
+            file=sys.stderr,
+        )
+        return 1
     df = _get_data(args.data, seed=args.seed)
     out_dir = Path(args.out)
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -184,7 +199,7 @@ def cmd_promote(args) -> int:
     try:
         factor = get_factor(args.factor)
     except KeyError as e:
-        print(f"Error: {e}", file=sys.stderr)
+        print(f"Error: {e.args[0]}", file=sys.stderr)
         return 1
 
     df = _get_data(args.data, seed=args.seed, plant_signal=args.plant_signal)

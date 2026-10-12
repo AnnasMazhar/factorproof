@@ -238,20 +238,22 @@ is small. For large families with strong factor correlation (IC pairwise > 0.5),
 Storey's (2002) adaptive pi_0 estimate (v0.3 roadmap). See §4.6 (closed) for
 the quantitative bound.
 
-### 3.5 Lookahead in custom factors is not automatically detected
+### 3.5 Lookahead in custom factors is caught in two layers (residual: evasion)
 
 The `lookahead_control` factor is correctly rejected because it is flagged with
-`uses_future_data = True`. A researcher implementing a custom factor that accidentally
-uses future data (e.g. by forgetting `.shift(1)` after computing forward-looking
-features) will not have that flag set.
+`uses_future_data = True`. Since the M01 fix, `promote()` additionally scans the
+`compute()` source for negative `.shift(-N)` patterns and rejects before any
+statistics run — accidental lookahead via negative shifts IS caught (executed
+evidence: §8.4, a `shift(-5)` custom factor hard-rejects with `no_negative_shifts`).
 
-`assert_no_lookahead(features, targets, horizon)` catches overlap at the index level but
-does not catch subtle contamination inside a custom factor's compute function.
+`assert_no_lookahead(features, targets, horizon)` catches overlap at the index level.
+What remains uncaught is future access hidden from source inspection (index slicing,
+helper functions) — the documented residual risk, now bounded to deliberate evasion
+rather than accidents.
 
-**Mitigation:** write tests for custom factors that confirm they produce `NaN` on the
-first `horizon` rows (no values to use that would require future knowledge). See
-`docs/ADVERSARIAL-REVIEW.md` finding M01 for details on what `assert_no_lookahead` does
-and does not catch.
+**Mitigation:** set `uses_future_data = True` on any factor that intentionally touches
+future rows; write tests for custom factors that confirm they produce `NaN` on the
+first `horizon` rows. See `docs/ADVERSARIAL-REVIEW.md` finding M01 (fixed) for details.
 
 ### 3.6 Multi-asset universes with staggered trading calendars
 

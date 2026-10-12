@@ -3,7 +3,7 @@
 The overfitting controls that quant research actually needs — without a £100/month licence.
 
 ![Python](https://img.shields.io/badge/python-3.11%2B-blue)
-![Tests](https://img.shields.io/badge/tests-110%20passed-brightgreen)
+![Tests](https://img.shields.io/badge/tests-133%20passed-brightgreen)
 ![Ruff](https://img.shields.io/badge/ruff-clean-brightgreen)
 ![Licence](https://img.shields.io/badge/licence-MIT-green)
 
@@ -178,9 +178,11 @@ and every number is reproducible from this repository alone, under MIT.
 - **Factor independence assumed for FDR.** In practice, momentum factors share
   data; the effective number of independent tests is less than 13. The BH
   correction is therefore conservative (over-rejects), not anti-conservative.
-- **Lookahead detection is opt-in.** The `uses_future_data` flag prevents known
-  structural lookahead; it does not catch subtle contamination in custom factors.
-  See `docs/ADVERSARIAL-REVIEW.md` finding M01.
+- **Lookahead detection is two-layered, not airtight.** The `uses_future_data` flag
+  plus a source scan for negative `.shift(-N)` patterns in `compute()` catch declared
+  and accidental lookahead (see `docs/ADVERSARIAL-REVIEW.md` finding M01, now fixed).
+  Future access hidden from source inspection (index slicing, helper functions) is
+  still the author's responsibility to declare.
 - **MlFinLab is more complete.** It ships triple-barrier labelling, meta-labelling,
   PBO, haircut Sharpe, and an entire financial-ML ecosystem. If you can pay for a
   commercial licence, it is the broader tool. See `COMPARISONS.md`.

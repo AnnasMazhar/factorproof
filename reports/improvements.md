@@ -259,6 +259,109 @@ M01 is downgraded from `accepted_limitation` to `fixed` in `docs/ADVERSARIAL-REV
 
 ---
 
+## Improve pass 2 (cycle 2) — 2026-10-12 — c2-p09-improve-2
+
+Baseline quoted exactly as mandated: cycle 1 mutation gate killed 878/1977 mutants = 44.4%
+(authoritative: reports/mutation-c1.json). Gate: 70%.
+
+### Scope of this pass
+
+Adoption readiness + ecosystem gaps: stranger-actionable errors, docs matching the code
+exactly, packaging/versioning check, one concrete integration example against a real
+external tool — then the single biggest README credibility gap fixed.
+
+### Finding addressed (credibility gap)
+
+**Docs contradicted the code on lookahead detection.** After the cycle-1 M01 fix (Gate 0.5
+source scan for `.shift(-N)`), `README.md` Limitations still said "Lookahead detection is
+opt-in ... it does not catch subtle contamination", and `docs/ADOPTION.md` §3.5 said the
+same — while §8.4 of the same file documented the tripwire catching a `shift(-5)` factor.
+A skeptical reviewer running the M01 attack would see REJECT where the docs promise a miss.
+Fixed: README bullet rewritten to "two-layered, not airtight" (flag + source scan; residual
+is evasion-only); ADOPTION §3.5 rewritten to match §8.4, with the executed evidence cited.
+
+**Stale Tests badge:** `110 passed` vs actual `130` at pass start. Fixed to `133 passed`
+(after this pass's +3 tests).
+
+### Ergonomics fixes (with tests)
+
+1. `factor-lab screen --horizons abc` raised an unhandled `ValueError` traceback. Now:
+```
+Error: --horizons must be comma-separated positive integers (e.g. '1,5,20'), got 'abc'.
+```
+exit 1. Non-positive horizons (`1,0,20`) rejected the same way.
+2. `explain`/`promote` on an unknown factor printed the KeyError repr
+(`Error: "Unknown factor: ..."` with extra quoting). Now prints the plain message with
+the available-factor list, exit 1.
+3. `tests/test_cli.py` (new, 3 tests, fault-list docstring per quality contract).
+
+### Integration example (real external tool)
+
+`examples/integrate_alphalens.py` (new, committed): gates `mom_20` on the planted-signal
+panel, then hands the identical `Factor.compute()` Series to alphalens-reloaded 0.4.6
+`get_clean_factor_and_forward_returns`. Prints SKIP + exit 0 when alphalens is absent so
+fresh clones stay green. Executed 2026-10-12:
+
+```
+factorproof verdict for mom_20: promote
+alphalens 0.4.6: factor_data shape (17520, 5)
+alphalens mean IC:
+1D     0.037336
+5D     0.019585
+20D    0.008899
+INTEGRATION_OK
+```
+
+Matches `docs/ADOPTION.md` §7.1 numbers (0.0373/0.0196/0.0089) — the recipe reproduces.
+
+### Drive-by: checker-clean generated reports
+
+`scripts/check_no_internal_refs.py` FAILED on 6 hits — all absolute `/home/openclaw/`
+paths embedded in the untracked evaluator artifacts `reports/eval-c2-p6.json` /
+`reports/eval-c2-p7.json` (pytest warning tracebacks). Mechanically scrubbed the repo
+prefix to `repo/` (JSON re-validated); checker now CLEAN. Not caused by this pass;
+pre-existing since the c2-p06/p07 eval runs.
+
+### Packaging / versioning check
+
+`pyproject.toml` 0.1.0 matches `CHANGELOG.md` 0.1.0 entry; `[project.scripts]` entry point
+verified live (`factor-lab` CLI runs from the venv); CI already runs
+`check_no_internal_refs.py`. No change needed. `ruff format --check` drift (9 files) is
+pre-existing and untouched — this pass's files (`cli.py`, `test_cli.py`,
+`integrate_alphalens.py`) are all format-clean.
+
+### Before / after (raw output)
+
+```
+$ .venv/bin/python -m pytest 2>&1 | tail -1
+133 passed, 2 warnings in 42.52s
+```
+
+```
+$ ruff check .
+All checks passed!
+```
+
+```
+$ .venv/bin/python scripts/check_no_internal_refs.py
+check_no_internal_refs: CLEAN — no forbidden tokens found.
+```
+
+### Metrics delta
+
+| Metric | Before | After | Delta |
+|--------|--------|-------|-------|
+| Test count | 130 | 133 | +3 |
+| README Tests badge | 110 (stale) | 133 (correct) | ✓ fixed |
+| README lookahead limitation | contradicted code | matches Gate 0.5 | ✓ fixed |
+| ADOPTION §3.5 vs §8.4 | contradicted | consistent | ✓ fixed |
+| `--horizons abc` | traceback | clean error + hint | ✓ |
+| Unknown-factor error | repr-quoted | plain message | ✓ |
+| alphalens integration | recipe text only | committed runnable script, INTEGRATION_OK | ✓ |
+| check_no_internal_refs | FAIL (6 hits) | CLEAN | ✓ |
+| mom_20 / noise_control / lookahead_control verdicts | PROMOTE / REJECT / REJECT | unchanged | no regression |
+| Ruff check | clean | clean | no change |
+
 ## Improve pass 1 (cycle 2) — 2026-10-12 — c2-p08-improve-1
 
 Baseline quoted exactly as mandated: cycle 1 mutation gate killed 878/1977 mutants = 44.4%
