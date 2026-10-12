@@ -2315,3 +2315,151 @@ fields, F3 thresholds, bars-vs-source, section content, internal refs).
 | Linnainmaa-Roberts 2018 (DOI) | https://doi.org/10.1093/rfs/hhx132 | 403 — NOT claimed |
 | Hansen 2005 SPA (DOI) | https://doi.org/10.1198/073500104000000063 | 404 — NOT claimed |
 | Romano-Wolf 2005 (DOI) | https://doi.org/10.1111/j.1468-0262.2005.00615.x | 403 — NOT claimed |
+
+### 8.9 Cycle 2 pass-3 dispositions — every pass-1/pass-2 open item closed (2026-10-12)
+
+Pass 2 (§6.7) left no open questions — the comparison is current as of today.
+The items below are pass 1's §8.7 boundary and §8.8 falsifiers F-R1…F-R6.
+Experiments ran in /tmp (throwaway scripts, repo untouched, DB read-only);
+raw outputs are pasted verbatim — summaries are not evidence.
+
+**§8.7 boundary — CONFIRMED, still blocked (re-probed 2026-10-12, curl -L):**
+
+```
+403 https://doi.org/10.1111/1468-0262.00152
+403 https://doi.org/10.1111/0022-1082.00163
+403 https://doi.org/10.1080/01621459.1994.10476870
+200 https://doi.org/10.1214/aos/1013699998
+200 https://doi.org/10.1214/aos/1176347265
+403 https://doi.org/10.1111/jofi.12365
+403 https://doi.org/10.1093/rfs/hhx132
+404 https://doi.org/10.1198/073500104000000063
+403 https://doi.org/10.1111/j.1468-0262.2005.00615.x
+```
+
+All 7 still bot-blocked; the two project-IMTJ DOI resolvers (BY §8.3, Künsch
+§8.4) still resolve. Nothing structural is newly blocked or unblocked.
+
+**F-R1 — CLOSED (not observed).** 10 fresh-seed noise factors (master seed
+20261012; the proof used 42), horizons 1/5/20, real 14-coin panel
+(21,308 rows, 2021-04-29…2026-10-12):
+
+```
+noise_0 seed=1026914109 H= 1 ic=+0.0089 t_hac=+1.21 t_naive=+1.21 p=0.2264 BH15=N
+noise_1 seed=1311211840 H=20 ic=+0.0050 t_hac=+0.68 t_naive=+0.69 p=0.4943 BH15=N
+noise_2 seed=1818015127 H= 5 ic=+0.0077 t_hac=+1.03 t_naive=+1.04 p=0.3031 BH15=N
+noise_3 seed=885879397  H= 1 ic=+0.0079 t_hac=+1.08 t_naive=+1.08 p=0.2795 BH15=N
+noise_4 seed=844379682  H= 1 ic=+0.0066 t_hac=+0.91 t_naive=+0.91 p=0.3633 BH15=N
+noise_5 seed=1915375832 H= 1 ic=-0.0109 t_hac=-1.50 t_naive=-1.50 p=0.1341 BH15=N
+noise_6 seed=1938639109 H= 5 ic=-0.0049 t_hac=-0.69 t_naive=-0.68 p=0.4931 BH15=N
+noise_7 seed=1400362054 H=20 ic=-0.0044 t_hac=-0.55 t_naive=-0.61 p=0.5843 BH15=N
+noise_8 seed=2120681876 H=20 ic=-0.0043 t_hac=-0.58 t_naive=-0.59 p=0.5598 BH15=N
+noise_9 seed=1312924144 H= 5 ic=+0.0069 t_hac=+0.93 t_naive=+0.93 p=0.3533 BH15=N
+max |t_hac| = 1.50; BH discoveries = 0
+```
+
+Falsification condition (|t_HAC| > 2 AND BH-FDR pass) not observed on new
+seeds. Standing caveat kept: the proof's seed-42 noise_0 reached |t_HAC| =
+2.36 (saved by the family correction) — the noise tail is fat and the margin
+is thinner than comfortable, but two independent seed sets now agree.
+
+**F-R2 — CLOSED with FINDING (detection works, verdict blocks).** Pre-registered
+planted signal, seed 1234, construction fixed before the run: fwd5(t) =
+log(C[t+5]/C[t]) on the wide close frame, raw = fwd5 + eps with eps scaled for
+corr ≈ 0.30, factor = cross-sectional rank per date; serving Factor.compute()
+only reindexes a stored Series (no future-data access in factor source, so this
+tests the statistical gates — declared, not hidden). Round 1 additionally
+observed that a `shift(-5)` formulation is hard-rejected by the
+`no_negative_shifts` source-scan gate before any statistics run — leakage
+detection on custom factors works (see ADOPTION §8.4).
+
+```
+achieved corr(factor, fwd5) = +0.1039 (n=21234)
+H= 1 ic=+0.0604 ic_ir=+0.1864 t_hac=+8.31 t_naive=+8.31 n=1988
+H= 5 ic=+0.1528 ic_ir=+0.4680 t_hac=+19.06 t_naive=+20.87 n=1988
+H=20 ic=+0.0914 ic_ir=+0.2786 t_hac=+10.85 t_naive=+12.38 n=1973
+promote verdict (family m=14): reject
+  PASS not_lookahead / not_degenerate / coverage / min_observations
+  PASS min_abs_ic obs=0.1528 / min_ic_ir obs=0.4680
+  FAIL hit_rate_wilson_lb obs=0.4658 thr=0.5
+  FAIL max_turnover obs=1.3103 thr=0.5
+  PASS oos_consistency obs=1.0 / survives_fdr obs=0.0
+```
+
+(Achieved corr 0.104, not 0.30: cross-sectional ranking on 14 coins compresses
+the pooled calibration — reported as achieved, not as targeted. The signal is
+still overwhelming at t_HAC = 19, so the sensitivity conclusion stands.)
+Disposition: the gate is not blind — IC/HAC/FDR/OOS all fire — but the full
+verdict couples detection with tradability gates a daily 14-coin rank factor
+cannot satisfy. Consequence for the mandate, stated as a number the checker
+must respect: an F3b sensitivity proof on this panel geometry must either use
+a low-turnover planted construction (weekly rebalance) or credit the
+statistical-gate sub-verdict; demanding a full PROMOTE verdict rejects real
+predictability at t = 19. Note for trial accounting: adding the planted factor
+moves E[max SR] 13 → 14 trials only 1.7033 → 1.7384 (F-R4 numbers below) —
+the bar barely moves, so a planted F3b proof does not soften deflation.
+
+**F-R3 — CLOSED (demonstrated where promotable; vacuous leg documented).**
+mom_20 on planted synthetic under varied CV geometry:
+
+```
+method=walk_forward splits=4 verdict=promote oos=1.0                note=WF splits: 4
+method=walk_forward splits=5 verdict=promote oos=0.6                note=WF splits: 5
+method=walk_forward splits=6 verdict=promote oos=0.6666666666666666 note=WF splits: 6
+method=cpcv         splits=5 verdict=promote oos=0.7333333333333333 note=CPCV splits: C(6,2)
+```
+
+0 flips across 4 geometries — stability holds where a promotion exists. And the
+real-data leg stays vacuous for a structural reason this pass verified in
+source: `_stability_check` re-runs `promote()` with the identical config
+(`alt_seed` accepted, unused), so "0 flips" passes by construction even before
+counting that nothing is promoted. Named fix for the implement pass: vary
+`n_wf_splits` and `cv_method` inside `_stability_check`; the four rows above
+are the reference shape.
+
+**F-R4 — CLOSED (quantified; wiring deferred to implement).** E[max SR] from
+Bailey–López de Prado eq. (2) (§2.4), Phi_inv via repo's own `_norm_cdf`
+bisection (n = 1 degenerate — formula needs n ≥ 5 — excluded):
+
+```
+n_trials= 13 E[max SR]=1.7033
+n_trials= 14 E[max SR]=1.7384
+n_trials= 53 E[max SR]=2.2985
+c(13)=3.1801 c(53)=4.5569 ratio=1.433
+```
+
+A 53-factor family raises the deflation bar 35% (1.70 → 2.30) and the BY bar
+43% — a constant MIN_BARS_FLOOR = 10,000 cannot be right for both. Observable
+test named for the implement pass: re-run the proof with 40 extra noise
+factors in the family; if the checker passes with the identical floor, the
+floor must become f(m) (MinTRL wiring, v0.3). E[max SR] = 1.7033 at m = 13
+independently matches the §2.4 hand-arithmetic (≈ 1.71).
+
+**F-R5 — CLOSED.** BY(q = 0.15) on correctly p-sorted proof p-values
+(2026-10-12 proof; the round-1 "BY = 13" was this pass's own ordering bug —
+p-values must be sorted ascending before rank thresholds apply; re-ran
+correctly):
+
+```
+rank  1 lookahead_control  p=0.0000 BH=Y BYthr=0.0036 Y
+rank  2 rev_5              p=0.0005 BH=Y BYthr=0.0073 Y
+rank  3 volume_z_20        p=0.0255 BH=Y BYthr=0.0109 N
+rank  4 amihud_illiq_20    p=0.0895 BH=N ...
+BH discoveries=3 BY discoveries=2
+```
+
+Exactly the §8.3 hand-arithmetic (3 → 2, volume_z_20 drops). The middle
+equality raw == BH (3 == 3) on real data is confirmed as the soft spot BY
+hardens. No code change: the procedure transcription in §8.3 is what the
+design would wire, and it now has machine confirmation.
+
+**F-R6 — TRANSFERRED to the adversarial citation audit (not closable in
+research).** Exact scope: every §8.1–§8.6 equation against its §8.8-table link;
+flagged in advance — McLean–Pontiff magnitudes (§8.6, verify against the NBER
+PDF before any threshold cites them) and the BY hand-arithmetic (§8.3, now
+machine-confirmed as procedure-correct, F-R5). A "BY arithmetic wrong" finding
+is minor; a "BY procedure wrong" finding is blocking.
+
+**Cycle-1 mutation baseline (unchanged, quoted per brief):** 878/1977 mutants
+killed = 44.4%, gate 70% (authoritative: reports/mutation-c1.json). No
+mutants-survived file is present in reports/; nothing to disposition from it.

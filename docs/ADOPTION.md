@@ -455,6 +455,143 @@ every screen run (both panels above). Cosmetic — the PNG and table are produce
 but a researcher piping screen output into CI logs will see it every time. Recorded for
 the improve pass; not a gate or correctness issue.
 
+## 8. Tuesday Run on Real Data (v0.2 mandate — added 2026-10-12, cycle 2 pass 3)
+
+The synthetic Tuesday (§1) answers "does the tool work". The real-data Tuesday
+answers "does the tool work on my market". One command, read-only, ~5 minutes.
+
+### 8.1 The exact commands
+
+```bash
+python scripts/prove_on_real_data.py --db <prices.sqlite> --horizons 1,5,20 --noise-factors 10
+python scripts/check_real_data_proof.py
+python scripts/check_no_internal_refs.py
+```
+
+Notes: the DB connection is read-only (`mode=ro` URI — the script cannot write,
+VACUUM, or copy raw rows; the published artifact is aggregate statistics only).
+If the database is absent (CI, fresh clone) the script prints SKIP and exits 0.
+Never commit a CSV/parquet of the data. The third command enforces the
+no-internal-references rule on every tracked file plus generated reports.
+
+### 8.2 Measured run — raw output (2026-10-12)
+
+```
+$ time .venv/bin/python scripts/prove_on_real_data.py --db <prices.sqlite> --horizons 1,5,20 --noise-factors 10
+Loading data from <prices.sqlite> ...
+Dataset: 14 coins, 21,308 bars, 2021-04-29 to 2026-10-12, 60.38 MB
+Running factor evaluation (this may take a few minutes) ...
+Wrote reports/real-data-proof.md
+Wrote reports/real-data-proof.json
+
+--- Summary ---
+Promoted: 0/13
+Noise rejection rate: 10/10 (100.0%) — target >=90%
+Stability flips: 0 — target 0
+
+reports/real-data-proof.md written.
+reports/real-data-proof.json written.
+287.83s user 0.27s system 100% cpu 4:48.01 total
+
+$ .venv/bin/python scripts/check_real_data_proof.py
+check_real_data_proof: all checks passed.
+PROOF_COMPLETE
+$ .venv/bin/python scripts/check_no_internal_refs.py
+check_no_internal_refs: CLEAN — no forbidden tokens found.
+```
+
+Proof JSON (`reports/real-data-proof.json`, generated 2026-10-12T16:41:01Z):
+delta = raw-p<0.05: 3, BH-FDR q=0.15: 3, promoted: 0.
+BH passes: rev_5 (p=0.0003), volume_z_20 (p=0.0214), lookahead_control (p=0.0000).
+Specificity 10/10, sensitivity 0 promoted, stability 0 flips.
+
+### 8.3 What the numbers mean for adoption
+
+The delta (3 → 3 → 0) IS the product working: three factors look significant at
+raw p<0.05, the full gate promotes none — lookahead dies at the leakage gate,
+rev_5 and volume_z_20 at other gates. Two honest caveats a team must know:
+
+1. The middle equality (raw == BH at q=0.15, 3 == 3) is a soft spot: at this q
+   the family correction adds nothing over raw p. Benjamini-Yekutieli would
+   harden it to 2, dropping exactly volume_z_20 (machine-verified in
+   docs/RESEARCH.md §8.9 F-R5). If your family is large or correlated, run BY.
+2. DSR = 0.0 for every factor is mathematically correct, not a display bug:
+   IC-IR ≈ 0.09 against E[max SR] ≈ 1.70 under 13 trials. Daily crypto bars do
+   not clear a 13-trial deflation bar. 0/13 on a 14-coin daily panel is
+   consistent with the literature (weekly momentum on broad panels is where the
+   crypto premium lives — RESEARCH §8.1); it is not evidence the gate is broken.
+
+### 8.4 New failure modes found this pass (executed, not theorised)
+
+**A planted signal is detected but not promoted.** A pre-registered planted
+factor (seed 1234, achieved corr +0.104 with 5-day forward returns on the real
+panel) prints H=5 IC=+0.1528, t_HAC=+19.06, OOS consistency 1.0, FDR pass — and
+the verdict is still REJECT, on `max_turnover` (1.31 > 0.5) and
+`hit_rate_wilson_lb` (0.4658 < 0.50). The detection chain sees real
+predictability clearly; the tradability-flavoured gates block a daily-rebalanced
+rank factor on 14 coins. Mitigation: weekly rebalance or smoothed ranks for the
+sensitivity demo; treat the Wilson-LB gate as the category error the spec
+already names it as (a binomial CI is not the right interval for IC — report
+the block bootstrap CI instead). Full numbers: docs/RESEARCH.md §8.9 F-R2.
+
+**The source-scan tripwire works.** A custom factor using `shift(-5)` in its
+`compute()` source is hard-rejected with `no_negative_shifts` before any
+statistics run (observed this pass). This strengthens §3.5: accidental
+lookahead via negative shifts IS caught at `promote()` time. What remains
+uncaught is future access hidden from source inspection (index slicing) —
+the documented residual risk, now bounded to deliberate evasion rather than
+accidents.
+
+**The stability leg varies nothing.** `_stability_check` re-runs `promote()`
+with the identical config (`alt_seed` is accepted and unused), so "0 flips"
+passes by construction — doubly so when nothing is promoted. A stability check
+that cannot fail is decorative. Mitigation (named for the implement pass): vary
+`n_wf_splits` and `cv_method` inside the check. Reference observation executed
+this pass on synthetic planted data: mom_20 promotes under 4 CV geometries
+(walk-forward 4/5/6 splits, CPCV(6,2)) with 0 flips — that is what a
+non-vacuous stability leg looks like.
+
+### 8.5 Operational cost (real-data run)
+
+| Item | Measured |
+|---|---|
+| Full proof, 14 coins × 21,308 daily bars, 13 factors × 3 horizons + 10 noise | **4 min 48 s** wall, single CPU core |
+| Dataset on disk | 60.38 MB SQLite, read-only |
+| Dependencies | 4 (numpy, pandas, matplotlib, pyyaml) — unchanged |
+| Network | none (local SQLite read only) |
+| Memory | trivial (21k-row panel) |
+
+No GPU, no services, no credentials. The Tuesday cost is five minutes of one core.
+
+### 8.6 The single most likely reason someone would NOT adopt it (real-data edition)
+
+**The report says "everything rejected" — including real signals.** A team that
+runs the Tuesday command gets 0/13 promoted, and this pass proved the rejection
+extends even to a planted t=19 signal (via turnover and Wilson LB). The tool
+answers "is it statistically significant?" but the promotion verdict couples
+that with tradability gates calibrated for a different market rhythm
+(low-turnover equity-style factors). On daily crypto the verdict is a constant
+REJECT, and a constant verdict carries no information.
+
+The honest framing, which the README Limitations must keep: this is a
+*significance filter with a tradability pre-screen*, not a strategy approval.
+Adopt it for the delta (raw → FDR → gate attrition in counts and names) and
+for the controls (noise rejected, lookahead caught) — not for the verdict
+column on this dataset. The fix is recalibration to the team's own rhythm
+(weekly horizons, turnover measured against their execution), not a lower bar:
+F3b explicitly allows a planted-signal sensitivity proof, and §8.4 shows
+exactly which two gates such a proof must address.
+
+### 8.7 Falsification for this section
+
+- Cost: falsified if the Tuesday run exceeds 15 minutes on this panel —
+  **not observed** (4:48).
+- "Promotes nothing": falsified if a weekly-horizon re-run promotes a real
+  factor — **not tested this pass**; named test for the implement pass
+  (re-run proof at weekly aggregation, report verdict flips).
+- Specificity: falsified if fresh-seed noise passes BH-FDR — **not observed**
+  (10 new seeds, max |t_HAC| = 1.50, 0 discoveries; RESEARCH §8.9 F-R1).
+
 ---
 
 *Written 2026-09-26. Integration recipe tested against alphalens-reloaded 0.4.x API documentation.*
@@ -462,3 +599,6 @@ the improve pass; not a gate or correctness issue.
 *Cycle 2 pass 3 (2026-09-27): integration recipe and both falsification tests executed for real —
 raw output in §7; timings in §4 updated to measured values; threshold calibration run (§5, §7.3);
 reproducible via examples/cycle2_pass3_falsification.py.*
+*Cycle 2 pass 3 (2026-10-12, reopened v0.2 mandate): §8 Tuesday real-data run — commands in §8.1,
+measured output in §8.2 (4:48 wall), three executed failure-mode findings in §8.4, cost table in
+§8.5. Falsification experiments in /tmp (not committed); raw outputs pasted in docs/RESEARCH.md §8.9.*
