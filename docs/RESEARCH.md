@@ -2464,3 +2464,418 @@ is minor; a "BY procedure wrong" finding is blocking.
 **Cycle-1 mutation baseline (unchanged, quoted per brief):** 878/1977 mutants
 killed = 44.4%, gate 70% (authoritative: reports/mutation-c1.json). No
 mutants-survived file is present in reports/; nothing to disposition from it.
+
+---
+
+## 9. Cycle 3 pass 1 — checker-number ground truth (added 2026-10-12, pass c3-p01)
+
+Scope: the numbers `scripts/check_real_data_proof.py` must reject, part II.
+Cycle 2 §8 derived what the checker must check from the factor literature
+(momentum priors, FM asymptotics, BY, MBB, MinTRL). This pass derives the
+remaining checker numbers from the *inference* literature: when a HAC t-stat
+may use normal critical values (KVB 2000, §9.3), when a Sharpe-ratio mapping
+may annualise with sqrt(q) (Lo 2002, §9.2; Ledoit-Wolf 2008, §9.5), what the
+named alternative to BH-FDR is and why the repo rejects it (White 2000, §9.1),
+and what the post-2020 crypto-momentum record says a real-data proof must show
+(Grobys et al. 2025, §9.4). 12 new sources probed today (curl -L, UA
+Mozilla/5.0); 10 verified HTTP 200, 2 recorded as boundary (§9.6). Five drive
+the design (§9.1–§9.5, full method/equations/assumptions/failure modes).
+
+Standing data (unchanged since §8, re-read today): `reports/real-data-proof.json`
+(generated 2026-10-12T16:41:01Z) — 14 coins, 21,308 daily bars, 2021-04-29 →
+2026-10-12; 0/13 promoted; raw p<0.05 flags 3; BH-FDR q=0.15 passes the same
+3; specificity 10/10; DSR = 0.0 everywhere. Fresh read-only check today:
+raw `candles` table holds 669,860 rows / 14 coins / ts 1619724600 →
+1791840300 (2021-04-29 → 2026-10-12), consistent with the proof's 21,308
+aggregated daily bars. All 13 §8 claimed-200 links re-probed today: 12 still
+200, 1 rot observed (AMS Pseudo-Mathematics PDF now 403 — citation kept,
+status updated in §9.8).
+
+### 9.1 White's Reality Check — the named alternative to BH-FDR (DRIVES DESIGN)
+
+**White, H. (2000)**
+"A Reality Check for Data Snooping"
+*Econometrica* 68(5):1097–1126
+DOI: https://doi.org/10.1111/1468-0262.00152 (publisher page bot-blocks automated
+probes — NOT claimed as verified; §8.7 boundary stands)
+[Verified URL: https://www.jstor.org/stable/2999444 — HTTP 200 confirmed
+2026-10-12. Second verified record: https://ideas.repec.org/a/ecm/emetrp/v68y2000i5p1097-1126.html
+— HTTP 200 confirmed 2026-10-12, page title fetched and matches. Publisher
+abstract: https://www.econometricsociety.org/publications/econometrica/2000/09/01/reality-check-data-snooping
+— HTTP 200 confirmed 2026-10-12.]
+
+Method extracted: the formal test that a *best-of-family* result is not luck.
+For k = 1..m candidate models and a benchmark fixed ex ante, define the
+date-t performance differential (e.g. loss-differential or return spread):
+
+    f_{k,t} = L(Y_t, benchmark) - L(Y_t, model_k)
+
+Null hypothesis (p.1098): the best model has no predictive superiority —
+
+    H_0: max_{k=1..m} E[f_k] <= 0
+
+Test statistic (standardised maximum):
+
+    T_n = max_{k=1..m} sqrt(n) * fbar_k,   fbar_k = (1/n) * sum_{t=1}^{n} f_{k,t}
+
+p-value by stationary bootstrap (Politis-Romano 1994 — the §8.7-blocked
+source this procedure depends on): resample B stationary-bootstrap series,
+recompute T*_n,b on each, p = fraction of T*_n,b >= T_n. Reject H_0 (the
+family's best is real) iff p < alpha.
+
+Notation: n = dates; m = family size; B = bootstrap replicates; the stationary
+bootstrap resamples blocks of geometric (random) length so the replicate stays
+stationary — this is why White cites Politis-Romano rather than the plain
+i.i.d. bootstrap of §2.5.
+
+Assumptions: (a) {f_{k,t}} covariance-stationary and mixing (dependence dies
+with lag — same assumption as §8.4 MBB); (b) the benchmark is fixed BEFORE the
+search (a benchmark picked after seeing results reintroduces the snooping the
+test prices); (c) n large relative to the bootstrap block length.
+
+Known failure modes per the literature: (a) CONSERVATISM UNDER JUNK — when the
+family contains many poor models, the max-statistic's null distribution is
+dominated by noise and the test loses power (this is the documented motivation
+for Hansen's SPA test, which studentises and recentres — Hansen 2005 cited as
+boundary, §9.6, working-paper version unverified); (b) benchmark dependence —
+changing the benchmark changes the verdict, so two researchers can disagree
+with the same family; (c) block-length sensitivity, same as §8.4 failure (a).
+
+Design consequence (alternatives-considered): the Reality Check is the
+procedure the repo does NOT implement, deliberately. RC answers "is the best
+of this family better than benchmark X" and needs the full return panel plus a
+bootstrap over the family; BH-FDR (§2.3) answers "which members survive a
+family error budget" and operates on p-values already in hand from the
+HAC-corrected IC t-stats (§2.10). For a screening gate that must emit
+per-factor verdicts, BH is the correct layer; RC tests the family maximum
+only and cannot name names. Filed as falsification item F-R9 below: any proof
+that claims "no data snooping" from per-factor p-values WITHOUT a
+max-over-family statistic of any kind (RC/SPA/PBO/BH — the repo's answer is
+BH plus the PBO-adjacent CPCV diagnostic, §2.12) is unprotected, and the
+checker must reject a proof whose report never names its family size m.
+
+### 9.2 Lo on Sharpe-ratio statistics — the annualisation the checker must police (DRIVES DESIGN)
+
+**Lo, A.W. (2002)**
+"The Statistics of Sharpe Ratios"
+*Financial Analysts Journal* 58(4):36–52
+DOI: https://doi.org/10.2469/faj.v58.n4.2453 (T&F abstract page returns 403 to
+automated probes — NOT claimed; the DOI is retained as canonical identifier)
+[Verified URL: https://www.jstor.org/stable/4480405 — HTTP 200 confirmed
+2026-10-12. Second verified record (publisher): https://rpc.cfainstitute.org/research/financial-analysts-journal/2002/the-statistics-of-sharpe-ratios
+— HTTP 200 confirmed 2026-10-12. The T&F abstract text, retrieved via search
+2026-10-12, states the two headline results quoted below.]
+
+Method extracted: sampling theory for SRhat under IID and under serial
+correlation. Under IID returns, sqrt(T)(SRhat - SR) is asymptotically normal
+with asymptotic variance 1 + SR^2/2 (the moment-correction parent shared with
+the PSR/DSR of §8.5 and §2.4). Under stationary autocorrelated returns with
+lag-k autocorrelations rho_k, the textbook annualisation is wrong:
+
+    SR_ann = sqrt(q) * SR_monthly        (valid ONLY under IID)
+
+    corrected: SR_ann = sqrt(q) * SR_monthly / sqrt(V),
+        V = 1 + 2 * sum_{k=1}^{q-1} (1 - k/q) * rho_k
+
+Notation: q = aggregation factor (12 for monthly→annual, 252 for
+daily→annual); rho_k = lag-k return autocorrelation; V = 1 under IID.
+(Notation standardised to the repo's conventions; exact transcription to be
+confirmed against JSTOR pp.36–52 in the adversarial citation audit — flagged
+in advance as F-R6-class, minor if the factor V is right and only symbols
+differ.)
+
+Headline numbers (from the publisher abstract, retrieved 2026-10-12):
+ignoring serial correlation can OVERSTATE a hedge-fund annual Sharpe by as
+much as 65%, and SR-based fund RANKINGS can flip once autocorrelation is
+accounted for.
+
+Assumptions: (a) stationarity (V estimable); (b) rho_k estimable — needs long
+T, same caveat as the DSR moment correction (§2.4 failure mode); (c) the
+aggregation horizon q is fixed and known.
+
+Known failure modes: (a) V itself is estimated with error — on T < 200 the
+correction is noise (same floor argument as §8.5); (b) negative autocorrelation
+UNDERSTATES the naive SR (the correction cuts both ways); (c) structural
+breaks invalidate the full-sample rho_k (cf. C2-3/C2-3a).
+
+Design consequence: the §4-Test-5 resolution maps IC-IR to SR via the
+fundamental law (SR ≈ IC*sqrt(breadth)) and compares against E[max SR] ≈ 1.70
+— that mapping annualises with sqrt. Lo says the sqrt step is valid only if
+the strategy returns are serially uncorrelated, which overlapping-label IC
+series (§2.10) guarantee they are NOT at H > 1. Filed as falsification item
+F-R8: any proof that reports an SR (or DSR input SR*) annualised with a bare
+sqrt without the V correction or an explicit IID caveat overstates its Sharpe
+by a Lo-class magnitude, and the checker must reject a proof whose
+IC→SR layering paragraph is missing. Standing proof is unaffected (its DSR =
+0.0 conclusion strengthens under correction, since V > 1 shrinks SRhat
+toward the E[max SR] bar — the conservative direction).
+
+### 9.3 Kiefer-Vogelsang-Bunzel fixed-b — when normal critical values are legal (DRIVES DESIGN)
+
+**Kiefer, N.M., Vogelsang, T.J. & Bunzel, H. (2000)**
+"Simple Robust Testing of Regression Hypotheses"
+*Econometrica* 68(3):695–714
+[Verified URL: https://www.jstor.org/stable/2999605 — HTTP 200 confirmed
+2026-10-12. Second verified record: https://ideas.repec.org/a/ecm/emetrp/v68y2000i3p695-714.html
+— HTTP 200 confirmed 2026-10-12. (This is the paper §2.10 failure mode (3)
+cited without a full entry — now grounded.)]
+
+Method extracted: fixed-b asymptotics for HAC-robust tests. Standard
+("small-b") HAC theory lets the truncation lag L grow slower than T (L/T → 0)
+and tests with NORMAL critical values (±1.96). KVB analyse the opposite
+limit: hold the bandwidth fraction b = L/T FIXED (in the extreme, b = 1, i.e.
+use all T lags with Bartlett weights). Then the HAC t-statistic converges to
+a NONSTANDARD, non-pivotal limit (functionals of Brownian motion), and valid
+critical values are LARGER than normal ones and must be simulated for the
+given b and kernel. Payoff: holding b fixed gives substantially better
+finite-sample size control — standard HAC with large L/T over-rejects badly,
+and fixed-b critical values repair it.
+
+The repo's operating point: HAC lag L = H-1 ≤ 19, IC series length T ≈ 1900+,
+so L/T ≈ 19/1953 ≈ 0.0097 — deep in the small-b regime where normal critical
+values are asymptotically valid. KVB's simulations show size distortion grows
+with b; at b ≈ 0.01 it is negligible. This entry is therefore the *licence*
+for every HAC t-stat the proof reports.
+
+Assumptions: (a) stationarity + mixing (same as §2.10); (b) kernel fixed
+(Bartlett — matches the repo); (c) the fixed-b critical values assume the
+limit theory's regularity (no breaks — cf. C2-3a).
+
+Known failure modes: (a) fixed-b critical values are non-pivotal — they depend
+on b, the kernel, and whether the series is demeaned; using the wrong table
+reintroduces size distortion; (b) power loss vs small-b in well-behaved large
+samples (paying for robustness).
+
+Design consequence: the licence has a boundary, and the boundary is a number.
+Filed as falsification item F-R7: the checker must reject any proof whose
+reported HAC significance uses normal critical values when L/T >= 0.05
+(e.g. H=20 on a T ≤ 400 panel, or CPCV sub-paths with short test groups) —
+at that ratio KVB's results say normal-1.96 over-rejects, so a "significant"
+t_HAC there is unlicensed. Standing proof: L/T ≈ 0.01 everywhere — licence
+holds, no verdict changes.
+
+### 9.4 Crypto momentum after 2020 — the sensitivity prior, updated (DRIVES DESIGN)
+
+**Grobys, K., Kolari, J.W., Sandretto, D., Shahzad, S.J.H. & Aijo, J. (2025)**
+"Cryptocurrency momentum has (not) its moments"
+*Journal of Asset Management*, published online 27 March 2025 (open access).
+[Verified URL (PDF): https://link.springer.com/content/pdf/10.1007/s11408-025-00474-9.pdf
+— HTTP 200 confirmed 2026-10-12. Landing page: https://link.springer.com/article/10.1007/s11408-025-00474-9
+— HTTP 200 confirmed 2026-10-12.]
+
+Method extracted: weekly cross-sectional momentum on the top-30 liquid coins,
+2016–2023, with tail-risk (power-law) modelling of the momentum leg and a
+volatility-managed variant. This is the post-sample continuation of the
+Liu-Tsyvinski-Wu (2022, §8.1) result — same strategy, six more years of data
+that Liu et al. could not have seen.
+
+Headline numbers (abstract + §1, retrieved 2026-10-12): momentum earned
++1.74%/week Jan-2016 → Jul-2020; in the ex-post Jul-2020 → 2023 sample the
+average payoff is NEGATIVE and statistically insignificant; full-sample
+average +0.90%/week, insignificant. In December 2020 — inside Liu et al.'s own
+sample window — momentum crashed −255.23%, and the crash is NOT a
+Daniel-Moskowitz-style market reversal: it traces to an extreme price jump in
+a SINGLE coin in the short leg. The paper's §2 survey further records the
+field as inconclusive (Grobys-Sapkota 2019, Shen et al. 2020: no momentum;
+Dobrynskaya 2023: short momentum + longer reversal, §9.6 boundary).
+
+Assumptions: (a) top-30-by-cap panel controls illiquidity; (b) weekly
+rebalance tradable (ignores spread/impact — same caveat as §8.1); (c) no
+survivorship handling beyond the liquid panel.
+
+Known failure modes the paper documents: (a) single-coin crash dominance on a
+narrow panel — with 1–2 coins per decile leg, idiosyncratic jumps ARE the
+strategy return; (b) publication/capacity decay post-2020 (same mechanism as
+McLean-Pontiff, §8.6); (c) trimming choices move the headline (their §3 shows
+trimmed vs untrimmed estimates differ in sign in the ex-post window).
+
+Design consequence: this is the strongest literature evidence for the
+standing observation. A 2021-2026 daily 14-coin panel promoting NOTHING —
+including momentum — is exactly what the post-2020 record predicts; a proof
+that DID promote a daily-H momentum factor on this window would contradict a
+2025 peer-reviewed result and must be treated as suspect, not as success.
+Filed as falsification item F-R10: any real-data MOM promotion at daily
+horizons on 2021+ data must be flagged for adversarial review (single-coin
+crash dominance check: drop the top-|return| coin-week and re-screen; if the
+verdict flips, the "factor" was one coin). The F3b planted-signal route (§8.9
+F-R2 disposition) is endorsed unchanged — it tests the gate, not the market.
+
+### 9.5 Ledoit-Wolf robust Sharpe testing — the second vote against naive HAC (DRIVES DESIGN)
+
+**Ledoit, O. & Wolf, M. (2008)**
+"Robust Performance Hypothesis Testing with the Sharpe Ratio"
+*Journal of Empirical Finance* 15(5):850–859
+DOI: https://doi.org/10.1016/j.jempfin.2008.03.002
+[Verified URL (DOI): HTTP 200 confirmed 2026-10-12 via doi.org. Verified
+working-paper version (substantively equivalent, U. Zurich IEW WP 320, Jan
+2008): https://www.econ.uzh.ch/apps/workingpapers/wp/iewwp320.pdf — HTTP 200
+confirmed 2026-10-12. Second verified record: https://ideas.repec.org/p/zur/iewwpx/320.html
+— HTTP 200 confirmed 2026-10-12. Correction note: an earlier draft of this
+entry guessed DOI suffix .2007.10.002 — that guess was WRONG (verified
+against the search record 2026-10-12; the correct suffix is .2008.03.002 as
+printed on the paper itself). Guessed DOIs are not cited.]
+[Abstract text retrieved via search 2026-10-12; equation transcription below
+is from the abstract + working paper excerpts and is flagged for audit.]
+
+Method extracted: testing H_0: Delta = 0 where Delta = SR_1 - SR_2 (two
+strategies). The paper kills the Jobson-Korkie/Memmel status quo (invalid
+under heavy tails or time-series dependence) and replaces it with two
+procedures: (a) a studentised circular-block-bootstrap confidence interval
+for Delta (declare different iff 0 not in the interval — resample OBSERVED
+data, no null restriction); (b) HAC inference with a kernel long-run-variance
+estimator Psi-hat (Andrews 1991 / Andrews-Monahan 1992 style):
+
+    p_hat = 2 * Phi(-|Delta_hat| / s(Delta_hat)),   CI: Delta_hat ± z_{1-a/2} * s
+
+Notation: s(Delta_hat) = HAC standard error from the kernel estimator;
+Phi = standard normal CDF. The paper's own verdict (verified abstract text):
+HAC inference "works asymptotically but does not always have satisfactory
+properties in finite samples" — it is "often liberal when sample sizes are
+small to moderate" — so the bootstrap is the recommended default.
+
+Assumptions: (a) stationarity + mixing for both the bootstrap and HAC legs;
+(b) circular block bootstrap with block length covering the dependence
+(same l ≈ H argument as §8.4); (c) studentisation (bootstrap the t-stat, not
+the raw Delta — non-studentised bootstrap under-covers).
+
+Known failure modes: (a) block-length choice, again; (b) HAC liberalism in
+small samples — the failure mode this entry exists to record; (c) heavy-tail
+DGPs where even the bootstrap needs large T (their simulations).
+
+Design consequence: second independent citation (with Lo 2002) that HAC
+standard errors over-reject in finite samples — F-R7's L/T >= 0.05 rule now
+has two votes, and the repo's `bootstrap_ci` primitive (§2.5) is the
+literature-recommended leg wherever T is small. Checker number, shared with
+F-R7: any proof p-value computed with a HAC SE on T < 200 must use the block
+bootstrap (l = H), not normal critical values. Standing proof (T ≈ 1900+)
+is on the HAC-legal side of both rules.
+
+### 9.6 Context sources probed today (boundary — NOT claimed as verified)
+
+- **Dobrynskaya, V. (2023)** "Cryptocurrency Momentum and Reversal", *Journal
+  of Alternative Investments* 26(1):65–76. DOI: https://doi.org/10.3905/jai.2023.1.189
+  — resolver returned HTTP 429 (throttled) 2026-10-12; SSRN abstract page and
+  pm-research PDF both 403. Content summarised from the SSRN abstract
+  (retrieved via search): 2,000 coins 2014–2020, momentum ≤ 2–4 weeks, reversal
+  beyond ~1 month ("faster metabolism" of crypto). Usable as narrative context
+  only — no threshold or gate may cite it until a 200 is recorded.
+- **Grobys, K. & Shahzad, S.J.H. (2025)** "Cryptocurrency Momentum: Is It an
+  Illusion?", *Int. J. Finance & Economics* (early view). DOI:
+  https://doi.org/10.1002/ijfe.70036 — 403 to automated probes 2026-10-12.
+  Abstract (retrieved via search): realised variances of six crypto-momentum
+  strategies follow power laws; block-bootstrap tests say the population mean
+  and variance are statistically UNDEFINED — "performance metrics using
+  variance as an input are not informative". If verified later, this is a
+  third vote (with Lo, Ledoit-Wolf) that variance-normalised statistics on
+  crypto momentum are fragile — directly relevant to the DSR moment
+  correction (§2.4) on crypto panels. Until then: boundary.
+- **Ehsani, S. & Linnainmaa, J.T. (2022)** "Factor Momentum and the Momentum
+  Factor", *J. Finance* 77(3) — DOI probe returned 403 (Wiley). Boundary;
+  noted because the 2023 crypto factor-momentum paper (§9.4's survey cites it)
+  builds on it.
+- **Hansen, P.R. (2005)** "A Test for Superior Predictive Ability", *J.
+  Business & Econ. Statistics* — DOI probe returned 404 (moved or
+  mis-recorded). Boundary; the SPA power-motivation claim in §9.1 rests on
+  the paper's title/abstract record, not on a verified full text.
+- **Shanken (1992)** EIV correction — never probed (no verified URL in hand);
+  NOT cited. The §8.2 EIV failure-mode paragraph stands on Fama-MacBeth
+  (verified) alone.
+
+### 9.7 Alternatives considered (this pass)
+
+RC-vs-BH (§9.1) is the substantive one. Two more, briefly: (i) Lo-corrected
+vs naive annualisation — naive sqrt retained ONLY with an explicit IID caveat
+(§9.2/F-R8); a silent naive sqrt in a proof report is a checker reject, not a
+style choice, because the bias direction is known (overstatement up to
+Lo-class 65% magnitudes). (ii) fixed-b vs small-b critical values — small-b
+(normal) retained ONLY with L/T < 0.05 recorded in the proof (F-R7); the
+proof's L/T ≈ 0.01 satisfies this with 5x margin.
+
+### 9.8 Falsification — what would prove this pass wrong (F-R7…F-R10 new; F-R1…F-R6 stand)
+
+F-R1…F-R6: dispositions in §8.9 stand; nothing re-run this pass (no new data
+— the proof JSON is hours old and the dataset grew by <1 day of bars).
+
+F-R7 (HAC licence boundary): any proof reporting HAC-based significance with
+normal critical values at L/T >= 0.05. Standing proof L/T ≈ 0.0097 — holds
+with 5x margin. Would be falsified (the pass, not the repo) if KVB's
+simulations show negligible distortion at b = 0.05 — the audit should check
+the b-grid in KVB Table/Figures against the 0.05 number; if the distortion
+only bites at b >= 0.10, the rule relaxes to 0.10.
+
+F-R8 (sqrt-annualisation): any proof IC→SR mapping with a bare sqrt and no V
+correction or IID caveat. Standing proof reports no annualised SR (DSR inputs
+are horizon-native) — vacuously holds; the rule binds the first proof that
+does annualise.
+
+F-R9 (family-size silence): any proof whose report never names m (family
+size) or, equivalently, reports a best-factor statistic with no max-over-family
+correction of any kind (BH/BY/RC/SPA/PBO). Standing proof names m = 13
+(+10 noise) and all three delta counts — holds.
+
+F-R10 (momentum anachronism): any daily-H MOM promotion on 2021+ crypto that
+survives the single-coin-drop check. Standing proof promotes nothing — holds;
+the check is specified (drop top-|return| coin-week, re-screen, verdict must
+not flip) so a future implement pass can wire it.
+
+F-R11 (this pass's own transcriptions): the Lo V-factor notation (§9.2) and
+the White T_n/bootstrap description (§9.1) are standardised paraphrases, not
+verbatim copies — the adversarial citation audit must open the JSTOR links
+and check them. A "symbols differ, factor right" finding is minor; a "factor
+wrong" finding is blocking. Pre-flagged: the Ledoit-Wolf equation block
+rests on abstract + working-paper excerpts, not the typeset journal PDF.
+
+### 9.9 Loop-status notes (observed today, for the implement/evaluate passes — NOT fixed here)
+
+1. **Mutation-c2 gate is VOID, not failed.** `reports/mutation-c2.json`
+   (untracked, read today) records rc=2, killed=0/total=0: `mutmut run` was
+   invoked with `--max-children`, which the installed mutmut has no such
+   option ("Error: No such option '--max-children'"). No score exists, so the
+   70% gate is unmeasured for cycle 2, and `reports/mutants-survived-c2.txt`
+   exists but is EMPTY (0 lines, verified today) — there is nothing to
+   disposition from it. Named fix for the evaluate pass: re-run with the
+   installed mutmut's actual CLI flags. The cycle-1 baseline (44.4%,
+   reports/mutation-c1.json) remains the authoritative kill score.
+2. **Link rot observed:** the Bailey et al. 2014 AMS Notices PDF (§8.6) now
+   returns 403 (was 200 on 2026-10-12 per §8.8 — same day, later probe).
+   Citation retained with updated status; the DSR equation record lives in
+   §2.4 (arXiv preprint, still 200) so nothing structural depends on it.
+3. **F1 checker state:** `scripts/check_real_data_proof.py` FAILs today, and
+   `scripts/check_no_internal_refs.py` FAILs on absolute-path hits in
+   `docs/ADVERSARIAL_REVIEW.md:898` and `reports/improvements.md:319` (all
+   abs-path hits per the script output). Research records this; the path
+   scrub belongs to the implement pass (this pass touches no lane but its
+   own artifact).
+4. **Branch note:** `feat/v0.1` is checked out in a sibling worktree
+   (`/home/openclaw/portfolio-wt/factorproof-reconcile`), so this pass
+   commits on detached HEAD at 811343c for the orchestrator to merge — the
+   pass brief's "commit on feat/v0.1" is honoured in content, not in ref
+   name, to avoid disturbing the parallel lane.
+
+### Link-verification table (all probed 2026-10-12, curl -L, UA Mozilla/5.0)
+
+| Source | URL | HTTP status |
+|--------|-----|-------------|
+| White 2000 (JSTOR) | https://www.jstor.org/stable/2999444 | 200 |
+| White 2000 (RePEc, title-fetched) | https://ideas.repec.org/a/ecm/emetrp/v68y2000i5p1097-1126.html | 200 |
+| White 2000 (Econometric Society) | https://www.econometricsociety.org/publications/econometrica/2000/09/01/reality-check-data-snooping | 200 |
+| Lo 2002 (JSTOR) | https://www.jstor.org/stable/4480405 | 200 |
+| Lo 2002 (CFA Institute) | https://rpc.cfainstitute.org/research/financial-analysts-journal/2002/the-statistics-of-sharpe-ratios | 200 |
+| KVB 2000 (JSTOR) | https://www.jstor.org/stable/2999605 | 200 |
+| KVB 2000 (RePEc) | https://ideas.repec.org/a/ecm/emetrp/v68y2000i3p695-714.html | 200 |
+| Grobys et al. 2025 (Springer PDF) | https://link.springer.com/content/pdf/10.1007/s11408-025-00474-9.pdf | 200 |
+| Grobys et al. 2025 (landing) | https://link.springer.com/article/10.1007/s11408-025-00474-9 | 200 |
+| Ledoit-Wolf 2008 (DOI, correct suffix .2008.03.002) | https://doi.org/10.1016/j.jempfin.2008.03.002 | 200 |
+| Ledoit-Wolf 2008 (UZH WP 320 PDF) | https://www.econ.uzh.ch/apps/workingpapers/wp/iewwp320.pdf | 200 |
+| Ledoit-Wolf 2008 (RePEc) | https://ideas.repec.org/p/zur/iewwpx/320.html | 200 |
+| §8 re-verification (12/13 still 200 — see §9 preamble) | various §8.8 URLs | 200 |
+| Bailey et al. 2014 (AMS PDF — ROT observed) | https://www.ams.org/notices/201405/rnoti-p458.pdf | 403 |
+| Dobrynskaya 2023 (DOI, throttled) | https://doi.org/10.3905/jai.2023.1.189 | 429 — NOT claimed |
+| Dobrynskaya 2023 (SSRN) | https://papers.ssrn.com/sol3/papers.cfm?abstract_id=3913263 | 403 — NOT claimed |
+| Dobrynskaya 2023 (pm-research PDF) | https://www.pm-research.com/content/iijaltinv/early/2023/03/25/jai.2023.1.189.full.pdf | 403 — NOT claimed |
+| Lo 2002 (T&F abstract) | https://www.tandfonline.com/doi/abs/10.2469/faj.v58.n4.2453 | 403 — NOT claimed |
+| Lo 2002 (SSRN) | https://papers.ssrn.com/sol3/papers.cfm?abstract_id=377260 | 403 — NOT claimed |
+| Grobys-Shahzad 2025 (Wiley) | https://doi.org/10.1002/ijfe.70036 | 403 — NOT claimed |
+| Ehsani-Linnainmaa 2022 (Wiley DOI) | https://doi.org/10.1111/jofi.13131 | 403 — NOT claimed |
+
+(End of file)
