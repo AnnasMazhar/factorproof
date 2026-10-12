@@ -106,7 +106,10 @@ def test_wilson_lower_monotone_in_k():
 def test_bh_fdr_hand_computed():
     """KAT: Benjamini-Hochberg on a textbook example.
 
-    Fault detected: wrong k* identification or wrong rejection set.
+    Fault detected: wrong k* identification or wrong rejection set
+    (off-threshold values). NOTE: the `<=` vs `<` boundary fault is NOT
+    covered by this test's values — it is covered by
+    test_bh_fdr_exact_boundary (adversarial finding F-T2).
 
     Example from Benjamini & Hochberg (1995) Table 1 (adapted).
     m=6, q=0.05. Sorted p-values: 0.001, 0.008, 0.039, 0.041, 0.210, 0.450.

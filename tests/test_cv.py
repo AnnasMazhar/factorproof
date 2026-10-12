@@ -3,8 +3,12 @@ Tests for factorlab.cv — purged walk-forward cross-validation.
 
 Faults detected per test:
     test_purge_no_label_overlap:
-        Fault: purge logic failing to remove training rows whose label window
-        overlaps the test set (lookahead via label leakage).
+        Fault: combined purge+embargo failing to keep training label windows
+        out of the test set (joint property only; purge-only faults are
+        covered by test_purge_count_matches_label_geometry).
+    test_purge_count_matches_label_geometry:
+        Fault: purge step missing/zeroed/wrong-horizon (n_purged disagrees
+        with the independently recomputed label-geometry count).
     test_embargo_removes_gap:
         Fault: embargo days not applied after purging (residual train-test proximity).
     test_split_chronological_order:
@@ -55,12 +59,17 @@ def planted_df():
 def test_purge_no_label_overlap(small_df):
     """KAT: no training row's label window should overlap the test window.
 
-    Fault detected: purge step missing or label_horizon not applied,
-    allowing train labels to look into the test period.
+    Fault detected: combined purge+embargo geometry broken, allowing train
+    labels to look into the test period.
 
     For each split: every training date t must satisfy
         t + label_horizon < first_test_date
     (i.e., the forward-return window does not reach into the test set).
+
+    NOTE: this asserts the joint property. With embargo_days >= label_horizon
+    the embargo alone enforces this bound, so a purge-only fault is masked
+    here (adversarial finding F-T3). The purge step in isolation is covered
+    by test_purge_count_matches_label_geometry below.
 
     NOTE: embargo_days must be >= label_horizon per spec STATISTICAL CORRECTIONS.
     Using embargo_days=5, label_horizon=5 (minimum valid values).
@@ -80,6 +89,45 @@ def test_purge_no_label_overlap(small_df):
                 f"Split {spl.split_id}: training date {td.date()} has label window "
                 f"ending at {label_end.date()} which overlaps test start {first_test_date.date()}"
             )
+
+
+def test_purge_count_matches_label_geometry(small_df):
+    """KAT: n_purged must equal the independently recomputed purge count.
+
+    Fault detected: purge step missing, zeroed, or using the wrong horizon
+    (e.g. purge_cutoff computed with days=0 instead of label_horizon).
+
+    Unlike test_purge_no_label_overlap (joint purge+embargo property, where a
+    valid embargo masks a broken purge — adversarial finding F-T3), this test
+    asserts the purge step's own output: the number of training dates removed
+    must equal the number of raw training dates whose label window
+    [t, t+label_horizon] reaches the first test date, recomputed here from the
+    date index without calling the splitter's purge code path.
+
+    NOTE: embargo_days must be >= label_horizon per spec STATISTICAL CORRECTIONS.
+    """
+    splitter = PurgedWalkForward(n_splits=3, embargo_days=5, label_horizon=5)
+    splits = list(splitter.split(small_df))
+
+    dates = pd.DatetimeIndex(sorted(small_df["date"].unique()))
+    chunk_size = len(dates) // (splitter.n_splits + 1)
+
+    assert splits, "expected at least one split"
+    for spl in splits:
+        test_start_pos = (spl.split_id + 1) * chunk_size
+        first_test_date = dates[test_start_pos]
+        train_raw = dates[:test_start_pos]
+        cutoff = first_test_date - pd.Timedelta(days=splitter.label_horizon)
+        expected_purged = int((train_raw > cutoff).sum())
+        assert expected_purged > 0, (
+            f"Split {spl.split_id}: fixture too short to purge anything — "
+            "test cannot discriminate a broken purge"
+        )
+        assert spl.n_purged == expected_purged, (
+            f"Split {spl.split_id}: purge removed {spl.n_purged} rows, "
+            f"expected {expected_purged} from the label geometry "
+            f"(cutoff {cutoff.date()}, first test {first_test_date.date()})"
+        )
 
 
 def test_no_train_test_date_overlap(small_df):

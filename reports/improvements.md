@@ -256,3 +256,78 @@ no_negative_shifts                      shift(-2)         none   FAIL
   `uses_future_data=True` explicitly — which is the correct contract.
 
 M01 is downgraded from `accepted_limitation` to `fixed` in `docs/ADVERSARIAL-REVIEW.md`.
+
+---
+
+## Improve pass 1 (cycle 2) — 2026-10-12 — c2-p08-improve-1
+
+Baseline quoted exactly as mandated: cycle 1 mutation gate killed 878/1977 mutants = 44.4%
+(authoritative: reports/mutation-c1.json). Gate: 70%.
+
+### Finding addressed
+
+**F-T3 (minor — highest-severity open finding)** from `docs/ADVERSARIAL_REVIEW.md`
+(independent pass-1 review, c2-p06/p07):
+
+> `test_purge_no_label_overlap` docstring claims it detects "purge step missing or
+> label_horizon not applied", but injecting exactly that fault leaves the whole suite
+> green: with `embargo_days >= label_horizon` the embargo independently enforces
+> `label_end < first_test_date`, so the test cannot distinguish "purge broken" from
+> "purge working".
+
+Reproduced before fixing (fault: `purge_cutoff = first_test_date - Timedelta(days=0)`):
+
+```
+$ .venv/bin/pytest tests/test_cv.py -q   # under injected purge-zeroed fault
+tests/test_cv.py:126: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_cv.py::test_purge_count_matches_label_geometry - AssertionE...
+```
+
+Note: under the fault, ONLY the new test fails — confirming it isolates the purge
+step while the old joint-property test stays green (the masking F-T3 describes).
+
+### Fix implemented
+
+- `tests/test_cv.py::test_purge_count_matches_label_geometry` (new): asserts
+  `spl.n_purged` equals an independently recomputed count of raw training dates
+  whose label window `[t, t+label_horizon]` reaches the first test date, derived
+  from the date index without touching the splitter's purge code path. Also guards
+  `expected_purged > 0` so the fixture cannot silently lose discriminating power.
+- `tests/test_cv.py::test_purge_no_label_overlap` docstring corrected: now states it
+  verifies the joint purge+embargo property and points to the new test for the
+  purge-only check. Top-of-file fault list updated for both tests.
+- Drive-by wording fixes for the other two open minors (one line each, no behaviour
+  change): F-T2 (`tests/test_significance.py::test_bh_fdr_hand_computed` docstring now
+  attributes the `<=`-boundary fault to `test_bh_fdr_exact_boundary`); F-L1
+  (`docs/RESEARCH.md` §2.4 DSR DOI now reads "enters a redirect loop (curl: maximum
+  50 redirects followed)" instead of "returns HTTP 302 redirect to publisher page").
+
+### Before / after (raw output)
+
+```
+# before (eval-c2-p7 baseline): 129 passed
+# after:
+$ .venv/bin/pytest --tb=short 2>&1 | grep -E "passed|failed" | tail -3
+130 passed, 2 warnings in 44.88s
+```
+
+```
+$ ruff check .
+All checks passed!
+```
+
+Note: `ruff format --check .` flags 9 files, identically before and after this pass
+(verified via `git stash`); pre-existing formatter-version drift, out of scope.
+
+### Metrics delta
+
+| Metric | Before | After | Delta |
+|--------|--------|-------|-------|
+| Test count | 129 | 130 | +1 |
+| F-T3 status | open | fixed (new killing test + corrected attribution) | ✓ |
+| F-T2 status | open | fixed (docstring attribution) | ✓ |
+| F-L1 status | open | fixed (wording) | ✓ |
+| Purge-zeroed fault detection | suite green (fault masked) | new test FAILS, rest green | ✓ |
+| mom_20 / noise_control / lookahead_control verdicts | PROMOTE / REJECT / REJECT | unchanged | no regression |
+| Ruff check | clean | clean | no change |

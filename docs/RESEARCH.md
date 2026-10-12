@@ -477,8 +477,9 @@ and Non-Normality"
 *Journal of Portfolio Management* 40(5):94–107
 DOI: https://doi.org/10.3905/jpm.2014.40.5.094
 arXiv preprint: https://arxiv.org/abs/1405.4598
-[Verified URL: arXiv — HTTP 200 confirmed 2026-09-26. DOI returns HTTP 302 redirect
-to publisher page; the arXiv preprint is substantively equivalent.]
+[Verified URL: arXiv — HTTP 200 confirmed 2026-09-26. DOI enters a redirect
+loop (curl: maximum 50 redirects followed, 2026-10-12); the arXiv preprint
+is substantively equivalent.]
 
 Method extracted: The DSR adjusts the observed Sharpe Ratio (SR) downward to account
 for (a) multiple trials / selection bias, (b) non-normal return distributions.
