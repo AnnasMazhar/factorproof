@@ -183,6 +183,21 @@ def test_pearson_corr_self_correlation(data):
     assert abs(r - 1.0) < 1e-9, f"corr(x,x)={r:.6f} should be 1.0 for std={std_x:.2e}"
 
 
+def test_pearson_corr_self_correlation_tiny_magnitude():
+    """Regression: corr(x, x) == 1.0 at |x| ~ 1e-79 (hypothesis-found case).
+
+    Fault detected: subnormal underflow in the denominator sum-of-squares
+    (~1e-317, below float64 min normal 2.2e-308), which returned
+    corr(x,x) = 0.9999999953 instead of 1.0. Fixed by rescaling inputs by
+    max(|x|, |y|) before centering (exact under scale-invariance).
+    """
+    from factorlab.evaluate import _pearson_corr
+
+    x = np.array([0.0, 0.0, 1.1179560251007517e-79])
+    r = _pearson_corr(x, x.copy())
+    assert abs(r - 1.0) < 1e-9, f"corr(x,x)={r:.12f} should be 1.0"
+
+
 @given(
     data=st.lists(
         st.floats(min_value=-1e6, max_value=1e6, allow_nan=False),

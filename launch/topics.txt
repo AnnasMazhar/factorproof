@@ -14,5 +14,5 @@ quantitative-finance
 backtesting
 python
 statistics
-financial-engineering
-research-software
+machine-learning
+quant
