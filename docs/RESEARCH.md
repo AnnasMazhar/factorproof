@@ -1846,3 +1846,416 @@ every journal article has a confirmed HTTP 200 alternative URL listed in the tex
 
 SSRN links (e.g. AQR papers) also return HTTP 403 from automated requests (bot-detection);
 NBER working-paper versions are used instead and are confirmed HTTP 200.
+
+---
+
+## 8. Cycle 2 (reopened) — v0.2 MANDATE research base (added 2026-10-12, pass c2-p01)
+
+Scope of this pass: ground truth for the v0.2 MANDATE only — the real-data proof the
+spec names (F2/F3/F4), i.e. which numbers `scripts/check_real_data_proof.py` must
+reject and why. The tools-that-validate-factors survey is pass 2's job; the Tuesday-run
+recipe is pass 3's. 13 new sources below, every link probed today (2026-10-12) with
+`curl -L`, statuses recorded verbatim in §8.8. Five drive the design (§8.1–§8.5, full
+method/equations/assumptions/failure modes); eight are context (§8.6).
+
+Standing observation this research must explain (from `reports/real-data-proof.md`,
+generated 2026-10-03, read today): on 14 coins × 21,200 daily bars, **0/13 factors
+promoted**; raw `p<0.05` flags 3 (rev_5, volume_z_20, lookahead_control); BH-FDR q=0.15
+passes the same 3; lookahead is rejected by the leakage gate, rev_5/volume_z_20 by other
+gates; specificity 10/10 noise rejected; sensitivity rests on the synthetic planted
+signal only; stability is vacuous (nothing promoted); DSR = 0.0 everywhere
+(IC-IR ≈ 0.09 << SR* ≈ 1.70 under 13 trials).
+
+### 8.1 Crypto factors exist — the sensitivity prior (DRIVES DESIGN)
+
+**Liu, Y., Tsyvinski, A. & Wu, X. (2022)**
+"Common Risk Factors in Cryptocurrency"
+*Journal of Finance* 77(2):1133–1177.
+NBER Working Paper w28682: https://www.nber.org/papers/w28682
+[Verified URL: NBER — HTTP 200 confirmed 2026-10-12]
+
+Method extracted: the paper ports the equity-factor toolkit to crypto. For a panel of
+coins, each week sort coins into deciles on a characteristic C (past return for
+momentum, on-chain/value and network proxies for the other two), then form the
+long-short spread:
+
+    R^{LS}_t = (1/N_top) * sum_{i in top decile} R_{i,t}
+             - (1/N_bot) * sum_{i in bot decile} R_{i,t}
+
+and test the spread with Fama-MacBeth cross-sectional regressions (§8.2) of coin
+returns on lagged characteristics. Headline result: cryptocurrency momentum, a
+value-like factor and a network factor earn statistically significant premia —
+momentum is the strongest, at 1–4 week formation/holding horizons.
+
+Notation: R_{i,t} = coin i log return; C_{i,t} = characteristic; deciles re-formed
+weekly; premia are long-short decile spreads, gross of costs.
+
+Assumptions: (a) coin panel is broad enough for decile sorts to diversify
+idiosyncratic risk; (b) characteristics are observable before the holding week (no
+lookahead); (c) weekly rebalancing is tradable (ignores spread/impact).
+
+Known failure modes per the literature: (a) the sample ends 2021 — post-2021 the
+crypto momentum premium is widely reported weaker (publication + capacity decay,
+cf. §8.6 McLean-Pontiff); (b) decile sorts on 14 coins put 1–2 coins per leg —
+idiosyncratic risk dominates, so a 14-coin daily panel promoting nothing (§8
+standing observation) is *consistent* with this paper, not a contradiction of it;
+(c) exchange-failure/survivorship: dead coins leave the panel.
+
+Design consequence: the checker's sensitivity leg (F3b) must NOT require a real
+crypto factor to promote on 14 coins at daily horizons — the literature prior says
+weekly momentum on a broad panel is where the premium lives. A checker that demanded
+a daily-H promotion on this dataset would reject an honest gate. The current checker
+(shape: promoted factor OR honest note) matches the literature; this pass endorses it.
+
+### 8.2 Fama-MacBeth two-pass estimator — the IC t-stat's ancestor (DRIVES DESIGN)
+
+**Fama, E.F. & MacBeth, J.D. (1973)**
+"Risk, Return, and Equilibrium: Empirical Tests"
+*Journal of Political Economy* 81(3):607–636
+JSTOR: https://www.jstor.org/stable/1830708
+[Verified URL: JSTOR — HTTP 200 confirmed 2026-10-12]
+
+Method extracted: the two-pass procedure every cross-sectional t-stat in this repo
+descends from.
+
+First pass (time series, per asset i, over the estimation window):
+
+    R_{i,t} = alpha_i + beta_i * R_{m,t} + eps_{i,t}      →  beta_hat_i
+
+Second pass (cross section, per date t, over all assets i):
+
+    R_{i,t} = gamma_{0,t} + gamma_{1,t} * beta_hat_i + eta_{i,t}
+
+Risk-premium estimate and its t-stat (p.613–614):
+
+    gamma_bar_1 = (1/T) * sum_{t=1}^{T} gamma_{1,t}
+    t_FM        = gamma_bar_1 / ( s(gamma_1) / sqrt(T) )
+
+    where s(gamma_1) = sample standard deviation of the T cross-sectional slopes.
+
+Notation: R_{i,t} = asset return; R_{m,t} = market return; gamma_{1,t} = date-t
+premium for one unit of beta; T = number of dates. The repo's IC t-stat is the
+same construction with factor scores in place of beta_hat_i — which is why the
+spec's HAC correction (§2.10) applies verbatim: FM's denominator assumes the
+gamma_{1,t} series is serially uncorrelated, exactly the assumption overlapping
+labels (H > 1) break.
+
+Assumptions: (a) betas stable over the window; (b) no errors-in-variables
+(beta_hat treated as known — Shanken 1992 correction absent); (c) second-pass
+residuals cross-sectionally uncorrelated; (d) gamma_{1,t} serially uncorrelated
+(the one this repo fixes with Newey-West).
+
+Known failure modes: (a) EIV attenuates gamma_bar toward zero when betas are
+noisy — on a 14-coin panel, beta_hat noise is large, biasing premia down (a
+second reason 0/13 promoted is unsurprising); (b) time-varying betas break the
+first pass; (c) cross-sectionally correlated residuals (all coins load on BTC)
+inflate t_FM — the crypto analogue of the §4 Test-6 correlation caveat.
+
+Design consequence: the checker's data-integrity leg (bars/coins cross-check
+against the private database) is the Fama-MacBeth assumption (a)/(c) made
+operational — a proof run on 3 coins or 400 bars cannot satisfy the asymptotics
+either estimator needs, so MIN_BARS_FLOOR and the coin-count cross-check must stay.
+
+### 8.3 Benjamini-Yekutieli under arbitrary dependence (DRIVES DESIGN)
+
+**Benjamini, Y. & Yekutieli, D. (2001)**
+"The Control of the False Discovery Rate in Multiple Testing under Dependency"
+*Annals of Statistics* 29(4):1165–1188
+DOI: https://doi.org/10.1214/aos/1013699998
+[Verified URL: DOI resolves — HTTP 200 confirmed 2026-10-12 via doi.org]
+
+Method extracted: the BH procedure (§2.3) controls FDR under PRDS only. Under
+*arbitrary* dependence the paper's Theorem 1.3 proves FDR control with one change —
+divide the BH thresholds by c(m):
+
+    c(m) = sum_{j=1}^{m} 1/j   (≈ ln(m) + gamma_EM, gamma_EM = 0.5772...)
+
+    k = max{ i : p_(i) <= (i/m) * (q / c(m)) }; reject H_(1..k).
+
+    For the repo family m = 13: c(13) = 3.1801.
+    Rank-1 threshold at q = 0.10: (1/13)*(0.10/3.1801) ≈ 0.00242
+    vs BH rank-1: (1/13)*0.10 ≈ 0.00769  →  ~3.2x stricter.
+
+Hand-worked on the standing real-data p-values (q = 0.15, m = 13):
+sorted p: 0.0000 (lookahead), 0.0005 (rev_5), 0.0255 (volume_z_20), ...
+BY thresholds: i=1: 0.00363 → 0.0000 passes; i=2: 0.00726 → 0.0005 passes;
+i=3: 0.01089 → 0.0255 fails → k = 2.
+So BY would cut the proof's FDR discoveries 3 → 2, dropping exactly volume_z_20.
+
+Assumptions: none on dependence (that is the point); p-values valid.
+
+Known failure modes: (a) conservatism costs power — on a 13-factor family it
+roughly triples the evidence bar; (b) with 0 real-factor promotions, BY changes
+the *reported delta* (3→2 FDR passes) but no verdict, since volume_z_20 already
+fails other gates; (c) c(m) grows with m, so a researcher screening 50 factors
+pays ~ln(50) ≈ 4.5x — the procedure punishes large families hard.
+
+Design consequence: the checker's delta leg (§3 of the proof: raw count vs
+BH-FDR count vs promoted count) must record the FDR *procedure and q*, not just
+counts — a future pass wiring BY must show the 3→2 arithmetic above, and any
+proof whose three counts are equal (gate adds nothing over raw p) is a number
+the checker must reject. Filed as falsification item F-R5 below.
+
+### 8.4 Blockwise bootstrap — the spec's HAC alternative, grounded (DRIVES DESIGN)
+
+**Künsch, H.R. (1989)**
+"The Jackknife and the Bootstrap for General Stationary Observations"
+*Annals of Statistics* 17(3):1217–1241
+DOI: https://doi.org/10.1214/aos/1176347265
+[Verified URL: DOI resolves — HTTP 200 confirmed 2026-10-12 via doi.org]
+
+Method extracted: the moving-block bootstrap the spec's STATISTICAL CORRECTIONS
+section names as an allowed alternative to Newey-West. For stationary X_1..X_n
+and block length l, form overlapping blocks:
+
+    B_i = (X_i, X_{i+1}, ..., X_{i+l-1}),   i = 1..(n - l + 1)
+
+Draw b = ceil(n/l) blocks with replacement, concatenate, truncate to length n →
+one bootstrap replicate X*. Recompute the statistic (here: mean IC) on each of B
+replicates; the bootstrap SE/percentile CI replaces the HAC SE. Setting l = H
+preserves exactly the MA(H−1) overlap structure §2.10 diagnoses, which is why
+l = H is non-arbitrary for the IC series — the same argument that fixes L = H−1
+for Newey-West.
+
+Notation: n = IC series length; l = block length (= H); b = blocks per replicate;
+B = number of replicates (repo default 2000 for bootstrap_ci).
+
+Assumptions: (a) stationarity + mixing (dependence dies with lag); (b) l → ∞
+with l/n → 0 (blocks grow but stay a vanishing fraction); (c) no structural
+break inside the window (cf. falsification item C2-3/C2-3a: the break panel
+violates this for both HAC and MBB).
+
+Known failure modes: (a) l too small breaks the dependence → SE understated,
+the same inflation HAC fixes returns through the back door; (b) l too large
+leaves few independent blocks → CI noisy (at H=20, T=1500: 75 blocks, workable;
+at H=20, T=200: 10 blocks, not workable); (c) 2000 replicates × 13 factors × 3
+horizons is ~10^3x the cost of one analytical HAC pass — the reason §2.15
+rejected MBB as the default stands, now with the citation attached.
+
+Design consequence: if a later pass wires block bootstrap into bootstrap_ci, the
+checker must reject any proof whose block length l < H (dependence broken by
+construction) — a concrete, checkable number for the checker, derived here.
+
+### 8.5 Minimum track record before a Sharpe means anything (DRIVES DESIGN)
+
+**Bailey, D.H. & López de Prado, M. (2012)**
+"The Sharpe Ratio Efficient Frontier"
+*Journal of Risk* 15(2):3–44. arXiv: https://arxiv.org/abs/1207.3518
+[Verified URL: arXiv — HTTP 200 confirmed 2026-10-12]
+
+Method extracted: the Probabilistic Sharpe Ratio (PSR) and the Minimum Track
+Record Length (MinTRL) — the sample-floor mathematics behind the repo's
+min_sample_size helper and min_observations gate.
+
+    PSR(SR*) = Phi( (SR_hat - SR*) * sqrt(T - 1)
+                    / sqrt(1 - skew*SR_hat + (kurt-1)/4 * SR_hat^2) )
+
+    where SR_hat = observed Sharpe, SR* = benchmark Sharpe, T = observations,
+    skew/kurt = return skewness/excess kurtosis, Phi = standard normal CDF.
+    (Same moment correction as the DSR in §2.4 — PSR is its single-trial parent.)
+
+    MinTRL(SR*) = 1 + [1 - skew*SR* + (kurt-1)/4 * SR*^2] * (z_alpha/(SR_hat - SR*))^2
+
+    where z_alpha = Phi_inv(1 - alpha). MinTRL answers: how long must the record
+    be before SR_hat > SR* is significant at level alpha.
+
+Worked on the standing real-data numbers: IC-IR ≈ 0.09 mapped via the fundamental
+law (§2.1) to SR ≈ 0.09*sqrt(12*252/20) ≈ 1.1 at H=20 breadth… versus SR* ≈ 1.70
+expected max under 13 trials (§2.4). SR_hat < SR* → MinTRL is infinite (no record
+length makes a below-benchmark Sharpe significant) → DSR = 0.0 everywhere in the
+proof is the closed-form consequence, not a display bug. This independently
+re-derives the EVIDENCE.md §11 note from the literature side.
+
+Assumptions: (a) IID returns within the record; (b) skew/kurtosis estimable
+(needs long T — on T < 200 the moment correction is noise); (c) single-trial
+framing (multi-trial handled by DSR layering, §2.4).
+
+Known failure modes: (a) MinTRL explodes as SR_hat → SR* from above — borderline
+factors (IC-IR in [0.05, 0.08], cf. §4 Test-5 resolution) need absurd records;
+(b) non-stationary records (breaks) invalidate T as "length of evidence".
+
+Design consequence: the checker's MinTRL-shaped number is MIN_BARS_FLOOR — this
+paper says *why* a floor exists (below it no Sharpe comparison is significant at
+any alpha) and why the floor must scale with the trial count, which the current
+constant floor (10,000) does not. Filed as falsification item F-R4: a proof on a
+50-factor family passing with the same floor as a 13-factor family is suspect.
+
+### 8.6 Additional context (8 sources, verified today)
+
+**Liu, Y. & Tsyvinski, A. (2021)** "Risks and Returns of Cryptocurrency",
+*Review of Financial Studies* 34(6):2809–2864. NBER w24877:
+https://www.nber.org/papers/w24877 [NBER — HTTP 200, 2026-10-12].
+Market facts that calibrate the proof's dataset expectations: crypto returns are
+high-volatility, positively skewed, strongly cross-correlated (BTC beta ≈ 1 for
+alts), and momentum-sorted portfolios earn significant premia at monthly
+horizons. Consequence: daily IC ≈ 0.02–0.05 with HAC t ≈ 1–1.7 (§8 standing
+observation) is the *normal* appearance of a weak-but-real crypto premium at the
+wrong frequency — not evidence the gate is miscalibrated. Rejected alternative:
+demanding IC > 0.05 on daily crypto (imports the Grinold-Kahn annual-manager
+benchmark, §2.1, into a domain where it never applied).
+
+**Lo, A.W., Mamaysky, H. & Wang, J. (2000)** "Foundations of Technical Analysis",
+*Journal of Finance* 55(4):1755–1770. NBER w5711:
+https://www.nber.org/papers/w5711 [NBER — HTTP 200, 2026-10-12].
+Automated kernel-regression pattern detection finds significant information in
+real US equity prices (1992–1996) for head-and-shoulders and double-bottoms.
+Precedent that indicator-like factors (RSI/reversal family) *can* carry real-data
+signal — so the proof's rev_5 BH-FDR pass (p = 0.0005) has a literature
+antecedent and is not dismissed as noise; it is rejected only because the fuller
+gate (turnover/consistency) says so. Failure mode they document: patterns decay
+once automated (same decay mechanism as McLean-Pontiff below).
+
+**McLean, R.D. & Pontiff, J. (2016)** "Does Academic Research Destroy Stock
+Return Predictability?", *Journal of Finance* 71(1):137–188. NBER w19804:
+https://www.nber.org/papers/w19804 [NBER — HTTP 200, 2026-10-12].
+Decay regression R_{i,t} = a + b·PostSample_{i,t} + c·PostPublication_{i,t} + e
+over 97 published predictors. Widely-cited headline magnitudes (≈58%
+in-sample-to-out-of-sample decay; ≈26% post-publication decay — VERIFY against
+the NBER PDF before wiring any threshold to them; flagged for the adversarial
+citation audit). Consequence for the mandate: any real-data proof is a *decaying*
+snapshot — the checker validates the run, not the factors, and a factor promoted
+today must clear the same gate next quarter. The stability leg (F3c) is the
+decaying-world counterpart of PBO; both ask "does the verdict survive a new
+sample."
+
+**Harvey, C.R. & Liu, Y. (2015)** "Backtesting",
+available at https://arxiv.org/abs/1502.00606 [arXiv — HTTP 200, 2026-10-12].
+The "lucky factor" framework: under multiple testing, the benchmark haircut for
+a t-ratio 2.0 strategy tested among hundreds is ≈ 50%+ of reported Sharpe.
+Drives the IC-vs-Sharpe layering the proof needs: the delta (§3 of the proof)
+must show raw → BH-FDR → full-gate attrition *in counts and names*, because a
+single surviving number without its trial count is exactly the "lucky factor"
+this paper diagnoses. Rejected alternative: reporting only the best factor's IC
+(no family size m) — unpublishable under this framework.
+
+**Poterba, J.M. & Summers, L.H. (1988)** "Mean Reversion in Stock Prices:
+Evidence and Implications", *Journal of Financial Economics* 22(2):27–59.
+NBER w2343: https://www.nber.org/papers/w2343 [NBER — HTTP 200, 2026-10-12].
+Variance-ratio evidence for a transitory price component (positive short-horizon
+autocorrelation, negative long-horizon) — the mechanism behind short-horizon
+reversal factors. Gives rev_5's real-data BH-FDR pass a second antecedent
+(besides Lo-Mamaysky-Wang) and predicts its fragility: transitory components
+are the first to arbitrage away, so a reversal factor that passes FDR but fails
+OOS-consistency is the *expected* shape of a decaying edge, not a gate bug.
+
+**Shiller, R.J. (1981)** "Do Stock Prices Move Too Much to be Justified by
+Subsequent Changes in Dividends?", *American Economic Review* 71(3):421–436.
+JSTOR: https://www.jstor.org/stable/1802789 [JSTOR — HTTP 200, 2026-10-12].
+Excess-volatility bound: price variance exceeds the variance of ex-post-rational
+prices under the efficient-markets null. The volatility-factor prior: vol_20 /
+atr_norm_14 carry regime information (they proxy the same excess movement), but
+Shiller's bound is about *levels*, not *predictability* — so vol factors
+screening negative IC-IR on crypto (§8 standing table: vol_20 IC-IR −0.11) is
+consistent: volatility describes risk, it does not sign next week's return. A
+proof promoting a vol factor on IC alone would contradict this reading; none did.
+
+**Fama, E.F. (1991)** "Efficient Capital Markets: II", *Journal of Finance*
+46(5):1575–1617. JSTOR: https://www.jstor.org/stable/2328565
+[JSTOR — HTTP 200, 2026-10-12]. Updates the EMH taxonomy (weak-form tests absorb
+the anomalies literature; "the same returns are called anomalies or evidence of
+efficiency depending on the model"). Frames the proof's null correctly: every
+gate verdict is *joint* with the return model (raw, un-risk-adjusted IC) — a
+promoted factor rejects "IC = 0 on raw returns", not "markets are inefficient".
+The proof's Limitations §8 must keep saying so; if a future pass risk-adjusts
+returns first, the Fama-1991 joint-hypothesis caveat moves into the gate notes.
+
+**Bailey, D.H., Borwein, J.M., López de Prado, M. & Zhu, Q.J. (2014)**
+"Pseudo-Mathematics and Financial Charlatanism: The Effects of Backtest
+Overfitting on Out-of-Sample Performance", *Notices of the AMS* 61(5):458–471.
+https://www.ams.org/notices/201405/rnoti-p458.pdf
+[AMS — HTTP 200, 2026-10-12]. The non-technical parent of the DSR program: most
+reported backtest Sharpe ratios are overfit; the False Strategy theorem bounds
+the probability that an estimated Sharpe exceeds a benchmark under repeated
+trials. Drives the *interpretation* of the proof's delta section (equation-level
+detail lives in §2.4 DSR): 3 raw-passi → 0 promoted is the healthy shape; a
+proof where everything tried gets promoted is the article's central symptom
+in miniature.
+
+### 8.7 What this pass deliberately did NOT verify (boundary for passes 2–3)
+
+The following canonical data-snooping sources returned HTTP 403 (publisher
+bot-detection) from every probe today and are therefore NOT claimed as verified
+in this pass: White (2000) Reality Check doi:10.1111/1468-0262.00152;
+Sullivan-Timmermann-White (1999) doi:10.1111/0022-1082.00163; Hansen (2005) SPA
+doi:10.1198/073500104000000063; Romano-Wolf (2005) doi:10.1111/j.1468-0262.2005.00615.x;
+Politis-Romano (1994) stationary bootstrap doi:10.1080/01621459.1994.10476870;
+Linnainmaa-Roberts (2018) doi:10.1093/rfs/hhx132; Harvey-Liu-Zhu-adjacent
+McLean-Pontiff journal DOI doi:10.1111/jofi.12365 (NBER version verified instead,
+§8.6). Pass 2 (ecosystem) or pass 3 (Tuesday run) may re-probe from a different
+route or use institutional access — but no threshold or gate may cite an
+unverified source until then. The Künsch (1989) block bootstrap (§8.4) covers the
+spec's MBB requirement with a verified citation, so nothing structural is blocked.
+
+### 8.8 Falsification — what would prove this pass wrong
+
+F-R1 (specificity design broken): a seeded noise factor on the real 14-coin
+panel prints |t_HAC| > 2 AND passes BH-FDR at q = 0.15. Standing data: max noise
+|t_HAC| = 2.36 (noise_0) with BH-FDR N — uncomfortably close on the t-stat, saved
+by the family correction. If a re-run with a new noise seed shows an FDR-passing
+noise factor, the F3a 90% bar is too weak and the checker threshold must rise
+(e.g. specificity on |t_HAC| > 2 count, not just verdicts).
+
+F-R2 (sensitivity design broken): a pre-registered, fixed-seed planted signal on
+the real panel (documented construction *before* the run, per F3b) is REJECTED by
+the full gate. Would prove the gate cannot see real predictability at daily
+frequency — the failure this repo exists to prevent, in reverse.
+
+F-R3 (stability vacuous forever): the checker keeps passing with "0 promoted, 0
+flips" quarter after quarter. A stability leg that can never fail is decorative;
+if no real factor promotes by cycle 4, the mandate's sensitivity leg — not the
+checker — is what failed, and the honest response is a planted-signal proof on
+real data (F3b explicitly allows it), not a lowered bar.
+
+F-R4 (floor does not scale with trials): a proof over a 50-factor family passes
+with the same MIN_BARS_FLOOR = 10,000 as the 13-factor proof (§8.5: MinTRL grows
+with the trial count). Observable: re-run the proof with 40 extra noise factors
+in the family; if the checker still passes with identical floors, the floor must
+become a function of m (MinTRL wiring, v0.3).
+
+F-R5 (gate adds nothing): a proof where raw-p<0.05 count == BH-FDR count ==
+promoted count (no attrition anywhere). The delta IS the product (§8.6
+Harvey-Liu); a zero-delta proof means the gate is a pass-through and the checker
+must reject it. Standing data shows healthy attrition (3 → 3 → 0); the middle
+equality (raw == BH at q = 0.15) is already noted as a soft spot BY would harden
+(3 → 2, §8.3).
+
+F-R6 (this pass's own literature claims): any §8.1–§8.6 equation that does not
+match its cited source falsifies the pass — the adversarial citation audit must
+open every §8.8-table link and check the transcription. Flagged in advance:
+McLean-Pontiff magnitudes (§8.6) and the BY hand-arithmetic (§8.3) are the two
+spots most likely to need correction; a "BY arithmetic wrong" finding is minor
+(the procedure transcription is what the design uses), a "BY procedure wrong"
+finding is blocking.
+
+Correction note on the pass brief: the brief states check_real_data_proof.py "is
+not in the repo". It is: scripts/check_real_data_proof.py exists (tracked since
+the c2-p04 lane, 303 lines, read today) with uncommitted working-tree
+modifications (git diff: +109 lines vs HEAD) belonging to a parallel lane — left
+untouched by this pass. The "which numbers it must reject" research above is
+written against the on-disk version (§8.8-table checker legs: sections, JSON
+fields, F3 thresholds, bars-vs-source, section content, internal refs).
+
+### Link-verification table (all probed 2026-10-12, curl -L, UA Mozilla/5.0)
+
+| Source | URL | HTTP status |
+|--------|-----|-------------|
+| Liu, Tsyvinski & Wu 2022 (NBER w28682) | https://www.nber.org/papers/w28682 | 200 |
+| Fama & MacBeth 1973 (JSTOR) | https://www.jstor.org/stable/1830708 | 200 |
+| Benjamini & Yekutieli 2001 (DOI) | https://doi.org/10.1214/aos/1013699998 | 200 |
+| Künsch 1989 (DOI) | https://doi.org/10.1214/aos/1176347265 | 200 |
+| Bailey & López de Prado 2012 (arXiv) | https://arxiv.org/abs/1207.3518 | 200 |
+| Liu & Tsyvinski 2021 (NBER w24877) | https://www.nber.org/papers/w24877 | 200 |
+| Lo, Mamaysky & Wang 2000 (NBER w5711) | https://www.nber.org/papers/w5711 | 200 |
+| McLean & Pontiff 2016 (NBER w19804) | https://www.nber.org/papers/w19804 | 200 |
+| Harvey & Liu 2015 (arXiv) | https://arxiv.org/abs/1502.00606 | 200 |
+| Poterba & Summers 1988 (NBER w2343) | https://www.nber.org/papers/w2343 | 200 |
+| Shiller 1981 (JSTOR) | https://www.jstor.org/stable/1802789 | 200 |
+| Fama 1991 ECM II (JSTOR) | https://www.jstor.org/stable/2328565 | 200 |
+| Bailey et al. 2014 Pseudo-Math (AMS) | https://www.ams.org/notices/201405/rnoti-p458.pdf | 200 |
+| White 2000 (DOI, bot-block) | https://doi.org/10.1111/1468-0262.00152 | 403 — NOT claimed |
+| Sullivan-Timmermann-White 1999 (DOI) | https://doi.org/10.1111/0022-1082.00163 | 403 — NOT claimed |
+| Politis-Romano 1994 (DOI) | https://doi.org/10.1080/01621459.1994.10476870 | 403 — NOT claimed |
+| McLean-Pontiff journal DOI | https://doi.org/10.1111/jofi.12365 | 403 — NBER version used |
+| Linnainmaa-Roberts 2018 (DOI) | https://doi.org/10.1093/rfs/hhx132 | 403 — NOT claimed |
+| Hansen 2005 SPA (DOI) | https://doi.org/10.1198/073500104000000063 | 404 — NOT claimed |
+| Romano-Wolf 2005 (DOI) | https://doi.org/10.1111/j.1468-0262.2005.00615.x | 403 — NOT claimed |

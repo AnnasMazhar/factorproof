@@ -519,4 +519,95 @@ IC-IR values (~0.09) are far below SR* (~1.70, expected max from 13 trials).
 `deflated_sharpe_ratio(0.09, 13, 1938)` = ~0.00000000 — the factor scores are
 lower than expected by pure selection across 13 strategies. This is the honest
 answer on daily crypto data. The DSR of 0.0 is a real finding, not a display error.
+All factors show DSR=0.0 in the real-data proof. This is mathematically correct:
+IC-IR values (~0.09) are far below SR* (~1.70, expected max from 13 trials).
+`deflated_sharpe_ratio(0.09, 13, 1938)` = ~0.00000000 — the factor scores are
+lower than expected by pure selection across 13 strategies. This is the honest
+answer on daily crypto data. The DSR of 0.0 is a real finding, not a display error.
 The function works correctly (verified: `deflated_sharpe_ratio(0.09, 1, 1938)` = 0.9999).
+
+## 12. Cycle 2 research pass 1 (c2-p01, 2026-10-12) — MEASURED BASELINE + link probes
+
+### 12a. Cycle 1 mutation-gate baseline (authoritative: reports/mutation-c1.json)
+
+Quoted exactly, not re-derived:
+
+```
+$ cat reports/mutation-c1.json  # fields: killed, total, kill_rate, target
+  "killed": 878,
+  "total": 1977,
+  "kill_rate": 0.4441072331815883,
+  "score_raw": "878/1977",
+  "target": 0.7,
+```
+
+878/1977 mutants killed = 44.4%. Gate: 70%. The whole cycle is therefore
+improvement-directed at test strength; research passes in this cycle must not
+weaken tests to chase the number.
+
+### 12b. pytest -q (repo green before commit)
+
+```
+$ .venv/bin/python -m pytest -q > /tmp/opencode/pytest-c2p01.log 2>&1; echo "exit=$?"
+exit=0
+$ grep -c "" /tmp/opencode/pytest-c2p01.log  # 12 lines; progress rows:
+........................................................................ [ 65%]
+......................................                                   [100%]
+```
+
+72 + 38 = 110 dots, no F/E, exit 0. (Only warning: numpy RuntimeWarning in
+test_constant_factor_rejected — pre-existing, divide-by-zero on a constant
+factor, the case under test.)
+
+### 12c. ruff status (pre-existing failure, NOT this pass)
+
+```
+$ .venv/bin/ruff check .
+scripts/check_real_data_proof.py:168:1: W293 Blank line contains whitespace
+... (15 W293 errors, all in scripts/check_real_data_proof.py) ...
+Found 15 errors.
+```
+
+All 15 errors are W293 blank-line whitespace in scripts/check_real_data_proof.py,
+which carries uncommitted +109-line modifications from a parallel lane
+(git diff --stat confirms: 1 file changed, 109 insertions). Left untouched —
+not this pass's file. Everything this pass touched (docs/RESEARCH.md,
+EVIDENCE.md) is not Python and is unaffected.
+
+### 12d. Link probes (raw output, 2026-10-12)
+
+```
+$ for u in ...; do code=$(curl -s -o /dev/null -w "%{http_code}" -L --max-time 25 \
+    -A "Mozilla/5.0 (research link verification)" "$u"); echo "$code $u"; done
+200 https://www.nber.org/papers/w28682
+200 https://www.ams.org/notices/201405/rnoti-p458.pdf
+403 https://doi.org/10.1111/1468-0262.00152
+403 https://doi.org/10.1111/0022-1082.00163
+200 https://www.jstor.org/stable/1830708
+403 https://doi.org/10.1080/01621459.1994.10476870
+200 https://doi.org/10.1214/aos/1013699998
+200 https://doi.org/10.1214/aos/1176347265
+403 https://doi.org/10.1111/jofi.12365
+403 https://doi.org/10.1093/rfs/hhx132
+404 https://doi.org/10.1198/073500104000000063
+403 https://doi.org/10.1111/j.1468-0262.2005.00615.x
+200 https://www.nber.org/papers/w19804
+200 https://www.nber.org/papers/w24877
+200 https://www.nber.org/papers/w5711
+200 https://www.nber.org/papers/w2343
+200 https://arxiv.org/abs/1502.00606
+200 https://arxiv.org/abs/1207.3518
+200 https://www.jstor.org/stable/1802789
+200 https://www.jstor.org/stable/2328565
+```
+
+13 new sources at HTTP 200 (5 driving: §8.1–§8.5; 8 context: §8.6); 7 DOI probes
+at 403/404 recorded as NOT claimed (§8.7). Full per-source table: docs/RESEARCH.md §8.8-table.
+
+### 12e. Brief-correction note
+
+The pass brief states scripts/check_real_data_proof.py "is not in the repo". It
+is: tracked, 303 lines, read in full today, plus uncommitted +109-line
+modifications from a parallel lane. No checker was added by this pass (per the
+brief: the checker comes after the research); no `PROOF_COMPLETE` line is
+printed anywhere in this pass's output or files.
