@@ -1626,6 +1626,62 @@ The comparison confirms three design choices made in factorproof:
    design must protect — adding optional extras that require polars or scipy would close the gap
    with ml4t-diagnostic at the cost of the differentiator.
 
+### 6.7 Cycle 2 pass 2 (reopened) competitive update (2026-10-12)
+
+Live GitHub REST API and PyPI JSON API data re-fetched 2026-10-12 (today). All
+calls verified HTTP 200; raw data below.
+
+**Star count changes vs 2026-09-27 (cycle 2 pass 2 first run):**
+
+| Tool | 2026-09-27 | 2026-10-12 | Delta | Last push (2026-10-12) |
+|---|---|---|---|---|
+| MlFinLab | 4,934 | **4,939** | +5 | 2023-10-02 (unchanged — still stale) |
+| alphalens | 4,456 | **4,469** | +13 | 2024-02-12 metadata; last code commit 2020-04-27 |
+| qlib | 48,917 | **49,308** | +391 | **2026-10-08** — actively maintained |
+| purgedcv | 35 | **34** | −1 | **2026-10-10** — v0.1.10 released 2026-10-01 |
+| ml4t-diagnostic | 32 | **34** | +2 | **2026-10-10** — actively maintained |
+| pyanomaly | 132 | **133** | +1 | 2024-03-13 (unchanged — inactive) |
+| alphalens-reloaded | 657 | **668** | +11 | **2026-10-10** |
+| pyfolio-reloaded | 616 | **616** | 0 | **2026-10-10** |
+| empyrical-reloaded | 122 | **125** | +3 | **2026-10-10** |
+
+**Updated §6.1 row for purgedcv (most material change):**
+
+purgedcv released **v0.1.9 (2026-10-01)** and **v0.1.10 (2026-10-01)** since the
+last pass — now at 23 PyPI versions total in approximately 5 months since v0.0.1.
+Version timeline: v0.0.2 (2026-05-16) → v0.0.12 (2026-05-30) → v0.1.0 (2026-06-05)
+→ v0.1.8 (2026-09-26) → v0.1.10 (2026-10-01). The rapid v0.1.x cadence continues.
+The feature gap versus factorproof is unchanged: no IC pipeline, no BH FDR across a
+factor family, no binary promotion verdict. But the velocity confirms it is the most
+actively developed direct neighbour on the CV/statistics axis.
+
+**Competitive conclusion for 2026-10-12:**
+
+The landscape is stable. No new major competitor discovered. The three most-watched
+active tools (qlib, alphalens-reloaded, purgedcv) each gained or maintained stars.
+MlFinLab has not pushed a code commit since 2023-10-02 — the "commercial but stale"
+framing in §6.2 is, if anything, more accurate today. The positioning stated in §6.3
+is unchanged. The one observable new fact: purgedcv at v0.1.10 has now shipped 23
+versions; factorproof's differentiation (IC pipeline + FDR gate + verdict API, §6.3
+items 1–4) must be protected as purgedcv continues to expand.
+
+**Raw API verification table (2026-10-12):**
+
+| Source | URL | HTTP status |
+|---|---|---|
+| MlFinLab GitHub API | https://api.github.com/repos/hudson-and-thames/mlfinlab | 200 |
+| alphalens GitHub API | https://api.github.com/repos/quantopian/alphalens | 200 |
+| alphalens commits API | https://api.github.com/repos/quantopian/alphalens/commits?per_page=1 | 200 |
+| qlib GitHub API | https://api.github.com/repos/microsoft/qlib | 200 |
+| purgedcv GitHub API | https://api.github.com/repos/eslazarev/purged-cross-validation | 200 |
+| purgedcv PyPI JSON | https://pypi.org/pypi/purgedcv/json | 200 |
+| purgedcv v0.1.10 PyPI | https://pypi.org/pypi/purgedcv/0.1.10/json | 200 |
+| ml4t-diagnostic GitHub API | https://api.github.com/repos/ml4t/diagnostic | 200 |
+| pyanomaly GitHub API | https://api.github.com/repos/chulwoohan/pyanomaly | 200 |
+| alphalens-reloaded GitHub API | https://api.github.com/repos/stefan-jansen/alphalens-reloaded | 200 |
+| pyfolio-reloaded GitHub API | https://api.github.com/repos/stefan-jansen/pyfolio-reloaded | 200 |
+| empyrical-reloaded GitHub API | https://api.github.com/repos/stefan-jansen/empyrical-reloaded | 200 |
+
 ### 6.5 Cycle 2 competitive update (2026-09-27)
 
 Live GitHub and PyPI data re-fetched 2026-09-27 reveals one significant change since cycle 1:
