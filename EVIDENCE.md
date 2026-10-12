@@ -611,3 +611,76 @@ is: tracked, 303 lines, read in full today, plus uncommitted +109-line
 modifications from a parallel lane. No checker was added by this pass (per the
 brief: the checker comes after the research); no `PROOF_COMPLETE` line is
 printed anywhere in this pass's output or files.
+
+### 12f. c2-p04-implement-1 (2026-10-12) — core hardening + 16 gap tests
+
+Measured baseline (authoritative: reports/mutation-c1.json): 878/1977 mutants
+killed = 44.4%. Gate: 70%. This pass does not re-derive that number; it adds
+tests aimed at the untested code the gate will probe next cycle.
+
+Work: new file tests/test_significance_gaps.py (16 tests, each with a named
+fault in the top-of-file docstring per the QUALITY-CONTRACT vacuity ban):
+correct_multiple_tests counts/empty (previously imported by tests but never
+called), DSR degenerate-variance clamp both signs, DSR(0,1,T)=0.5 KAT,
+_norm_ppf validation/symmetry/round-trip, min_sample_size Cohen KAT (n=25) +
+monotonicity, Wilson lb<=p_hat property + k=0 KAT, BH step-up-vs-step-down
+distinguishing KAT (p=[0.05,0.06,0.065] must reject all three), BH-superset-of-
+Bonferroni property, bootstrap constant/NaN handling. No production code
+changed; no threshold touched (do-not-tune rule).
+
+```
+$ .venv/bin/python -m pytest -q -p no:warnings
+........................................................................ [ 57%]
+......................................................                   [100%]
+126 passed in 41.06s
+```
+
+(110 pre-existing + 16 new. One new test initially asserted exact DSR==0.5 and
+failed at 0.5000000005248086 — the documented 7.5e-8 A&S CDF error; corrected
+to pytest.approx(abs=1e-6) with the reasoning in the test comment.)
+
+```
+$ .venv/bin/ruff check .
+All checks passed!
+$ .venv/bin/ruff format --check .
+23 files already formatted
+```
+
+```
+$ .venv/bin/python -m factorlab.cli promote noise_control --data signal; echo "exit=$?"
+...
+Best horizon: 20d | IC: -0.0094 | IC-IR: -0.0313
+OOS consistency: 60.00% | Observations: 1480
+
+Result: REJECT
+exit=1
+$ .venv/bin/python -m factorlab.cli promote mom_20 --data signal --plant-signal; echo "exit=$?"
+...
+Best horizon: 5d | IC: 0.0252 | IC-IR: 0.0750
+OOS consistency: 60.00% | Observations: 1475
+
+Result: PROMOTE
+exit=0
+```
+
+Honest tension recorded (not tuned): `screen --data signal` over the full
+13-factor family promotes 0/13 —
+
+```
+Promoted (0): none
+Rejected (13): mom_20, mom_60, rev_5, vol_20, atr_norm_14, rsi_14, volume_z_20, amihud_illiq_20, skew_60, autocorr_5, deflated_mom, noise_control, lookahead_control
+```
+
+— because family-wise BH-FDR rejects the weak planted signal (IC=0.0252) in a
+13-factor family, while single-factor `promote mom_20` (m=1) PROMOTEs. The
+thresholds were left untouched per the do-not-tune guard; the demo still shows
+PROMOTE (step 4) and REJECT (step 3) with exit codes enforced by run_demo.sh
+(rc=0 this pass). results/factor_table.md holds 13 data rows.
+
+Fresh-clone install: could not be fully verified from this sandbox — uv runs
+with networking disabled and pytest 8.2.2 / numpy are absent from the uv
+cache, so `uv pip install --offline -e '.[dev]'` and `-e .` both fail at
+dependency resolution (environment limitation, not a repo defect). Packaging
+metadata resolves (uv reaches project build); pyproject + uv.lock are
+committed and CI installs from network. The committed .venv path runs the full
+demo + suite green as shown above.
