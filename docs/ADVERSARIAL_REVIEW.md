@@ -666,3 +666,209 @@ promotion exit-code contract all survived attack.
 - 6 tests fault-injected: 5/6 fail the suite on their named fault; 1 (T3) masked by embargo → F-T3
 - Full suite green after every mutation restored: `105 passed in 28.93s`, ruff check + format clean
 - 0 blockers, 0 majors, 3 minors open, 1 positioning non-conflict recorded
+
+---
+
+## PASS c2-p10-adversarial-1 (cycle 2, adversarial pass 1 of 2)
+
+Independent reviewer lane. This pass attacks the **claims** (not the property — that is
+c2-p11). Read first: ITERATION-PROTOCOL.md, QUALITY-CONTRACT.md, MARKET-VERDICTS.md,
+specs/factor-lab.md (incl. v0.2 MANDATE), the c1-p10/c1-p11 entries above, and
+reports/mutation-c1.json. No `reports/mutants-survived-c*.txt` exists in the repo.
+
+Measured baseline (authoritative: reports/mutation-c1.json — quoted, not re-derived):
+878/1977 mutants killed = 44.4%. Gate: 70%.
+
+All commands below were actually run; output is verbatim terminal output.
+
+---
+
+## 0. Prior-findings re-verification (F-T3, F-T2, F-L1 — all FIXED)
+
+Commit `f13d8fe test(cv): purge-count KAT isolates purge step; fix F-T3/F-T2/F-L1
+attributions` addressed all three c1-p10 minors. Re-verified, not trusted:
+
+- **F-T3 (purge-only fault masked by embargo):** `tests/test_cv.py::test_purge_no_label_overlap`
+  docstring now states the joint-property scope explicitly and points at the new
+  `test_purge_count_matches_label_geometry`, which asserts `spl.n_purged` against an
+  independently recomputed count. Fault injection this pass (T1 below): zeroing the purge
+  (`days=self.label_horizon` → `days=0`) fails the new test alone. → **fixed**
+- **F-T2 (BH `<=` boundary attribution):** `test_bh_fdr_hand_computed` docstring now notes the
+  boundary fault belongs to `test_bh_fdr_exact_boundary`; injection T2 below confirms that
+  test fails alone on `<` vs `<=`. → **fixed**
+- **F-L1 (DSR DOI wording):** `docs/RESEARCH.md` §2.4 now reads "the arXiv preprint is
+  substantively equivalent" and "DOI enters a redirect loop (curl: maximum 50 redirects
+  followed, 2026-10-12)". Matches live behaviour. → **fixed**
+
+---
+
+## 1. Claims audit — 3 most load-bearing README claims, attacked
+
+### C1 — "Promote a real signal (exit 0) or reject noise (exit 1)"
+
+```
+$ .venv/bin/python -m factorlab.cli promote mom_20 --data signal --plant-signal >/dev/null 2>&1; echo "mom_20_planted=$?"
+mom_20_planted=0
+$ .venv/bin/python -m factorlab.cli promote noise_control --data signal >/dev/null 2>&1; echo "noise=$?"
+noise=1
+```
+
+**Verdict: SUPPORTED.** Exit codes as documented, measured without an intervening pipe.
+
+### C2 — "Real results (from examples/run_demo.sh)": README table is the demo's output
+
+```
+$ bash examples/run_demo.sh > /tmp/c2_demo.txt 2>&1; echo "demo_exit=$?"
+demo_exit=0
+$ grep '^|' /tmp/c2_demo.txt | sort -u > /tmp/c2_dr.txt; grep '^|' README.md | sort -u > /tmp/c2_rr.txt; diff /tmp/c2_dr.txt /tmp/c2_rr.txt && echo ROWS_IDENTICAL
+ROWS_IDENTICAL
+$ grep -n "Promoted" /tmp/c2_demo.txt | head -3
+39:Promoted (0): none
+```
+
+**Verdict: SUPPORTED.** All 13 table rows byte-identical to a fresh run; "0 promoted"
+matches the README "0/13" framing. (Demo takes >120s wall-clock on this box; run with an
+extended timeout — not a repo defect.)
+
+### C3 — Positioning: MlFinLab licence/pricing; Quantopian stack abandoned 2020
+
+```
+$ curl -sS -L https://raw.githubusercontent.com/hudson-and-thames/mlfinlab/master/LICENSE.txt | grep -nE '6\.6|6\.7|14\.2|14\.3|14\.5' | head -6
+160:6.6	The Licensee shall not lease, loan, resell, sublicense or otherwise distribute the Licensed Materials to any other
+164:6.7	The Licensee and its Users undertake not to reverse engineer the Licensed Materials and agrees not to set up in
+354:14.2	The Company possesses information that has been created, researched, or developed by the Company (including
+362:14.3	All Proprietary Information herein shall be the Company's property and its assigns, who shall remain the sole
+373:14.5	The Licensee agrees not to lease, loan, resell, sublicense or otherwise distribute any software or product
+$ curl -sS -L --max-time 20 "https://hudsonthames.org/mlfinlab/" -o /tmp/mlp.html; echo "bytes=$(wc -c < /tmp/mlp.html)"; grep -oiE '(£|\$)[ ]?[0-9]+[^<]{0,30}' /tmp/mlp.html | head -5
+bytes=224252
+£100 (+VAT)
+$ curl -sS --max-time 20 "https://api.github.com/repos/quantopian/alphalens/commits?per_page=1" | head -c 600; echo
+... "date": "2020-04-27T18:40:41Z" ... "message": "Merge pull request #361 from quantopian/perf-improvements ...
+        "date": "2020-02-28T17:30:19Z"   (pyfolio, same probe)
+```
+
+**Verdict: SUPPORTED.** Clauses 6.6/6.7/14.2/14.3/14.5 verbatim; pricing page returns exactly
+`£100 (+VAT)`; alphalens last commit 2020-04-27, pyfolio 2020-02-28. No conflict with
+MARKET-VERDICTS.md positioning to record.
+
+### Incidental badge claim
+
+```
+$ .venv/bin/python -m pytest -p no:warnings 2>&1 | tail -3
+........................................................................ [ 54%]
+.............................................................            [100%]
+133 passed in 51.04s
+```
+
+README badge `tests-133 passed` is accurate. (First attempt at `pytest -q | tail -1` showed
+only the progress bar, not the summary — re-ran with `tail -3` to capture the count line.)
+
+---
+
+## 2. Citation audit — cycle-2 additions (c1-p10 covered the original 40)
+
+c2-p01 probed its 20 new §8 links (13×200, 7 DOI 403/404 explicitly NOT claimed —
+EVIDENCE.md §12d); not re-probed here. This pass probed the 12 ecosystem URLs behind the
+§6.5/§6.7 comparison-table update:
+
+```
+200 https://api.github.com/repos/stefan-jansen/alphalens-reloaded
+200 https://api.github.com/repos/stefan-jansen/empyrical-reloaded
+200 https://api.github.com/repos/stefan-jansen/pyfolio-reloaded
+200 https://api.github.com/repos/dcajasn/Riskfolio-Lib
+200 https://api.github.com/repos/microsoft/qlib
+200 https://api.github.com/repos/eslazarev/purged-cross-validation
+200 https://pypi.org/pypi/purgedcv/json
+200 https://github.com/stefan-jansen/alphalens-reloaded
+200 https://arxiv.org/abs/1803.05024
+200 https://arxiv.org/abs/math/0608017
+200 https://www.nber.org/papers/w14554
+200 https://www.jstor.org/stable/1802789
+```
+
+12/12 resolve. Support spot-checks: arXiv 1803.05024 is the López de Prado & Lewis (2019)
+CPCV paper as cited; NBER w14554 is Asness–Moskowitz–Pedersen (2013) "Value and Momentum
+Everywhere" as cited; JSTOR 1802789 is Shiller (1981) as cited. No contradicting source found.
+
+Live cross-checks against COMPARISONS.md (dated 2026-10-12): mlfinlab `stargazers_count`
+4939 + pushed 2023-10-02 — matches the table exactly; qlib live 49,311 vs table 49,308
+(+3 stars of drift in transit — noise, not a finding).
+
+---
+
+## 3. Test-quality audit — 6 tests sampled, named fault injected, suite run
+
+Driver `/tmp/c2_inject.py` (+`/tmp/c2_inject2.py` for T5r): back up the source file, apply
+one exact string mutation, run the single node, restore, then re-run the subset to prove
+green. Raw outputs abbreviated to the assertion lines.
+
+| # | test | injected fault (one string mutation) | result |
+|---|------|--------------------------------------|--------|
+| T1 | `test_cv.py::test_purge_count_matches_label_geometry` | purge zeroed: `days=self.label_horizon` → `days=0` | exit 1 — DETECTED (`AssertionError` at test_cv.py:126) |
+| T2 | `test_significance.py::test_bh_fdr_exact_boundary` | `if pval <= threshold:` → `if pval < threshold:` | exit 1 — DETECTED (`AssertionError` at test_significance.py:166) |
+| T3 | `test_significance.py::test_wilson_lower_hand_computed` | drop `+ z2 / (4 * n * n)` from Wilson sqrt term | exit 1 — DETECTED (`AssertionError` at test_significance.py:66) |
+| T4 | `test_significance_gaps.py::test_bh_step_up_not_step_down` | BH body forced false (`... and False or pval < 0`) | exit 1 — DETECTED (`AssertionError` at test_significance_gaps.py:247) |
+| T5 | `test_adversarial.py::test_closure_lookahead_rejected_by_runtime_check` | `close.shift(-h)` → `close.shift(h)` inside `check_lookahead_runtime` (correlate against PAST returns) | **exit 0 — NOT DETECTED** (see F-T5) |
+| T6 | `test_adversarial.py::test_html_report_escapes_injected_markup` | `html.escape(c)` → `c` in `_md_table_to_html` | exit 1 — DETECTED (`AssertionError` at test_adversarial.py:781) |
+
+Restore check: `tests/test_cv.py + test_significance.py + test_significance_gaps.py +
+test_adversarial.py` green after every restore (exit 0).
+
+**Score: 5 of 6 named faults fail on their fault.** T1 is the fix-verification for F-T3:
+the new purge-count KAT catches a purge-only fault alone, which the old joint-property test
+could not. T5 is a new finding.
+
+F-T5 mechanism (verified, not speculated): with the past-shift fault applied, the smoothed
+closure-lookahead factor still correlates with past returns at |corr| up to 0.79:
+
+```
+past h= 1 corr= -0.4058
+past h= 5 corr= -0.7878
+past h= 10 corr= -0.7709
+past h= 20 corr= -0.54
+```
+
+so `abs(corr) > 0.30` still fires and the test — which asserts the verdict, not the temporal
+direction — stays green. A fault that inverts the check's arrow of time is invisible to the
+suite. Legitimate factors probed directly (`rev_5/mom_20/rsi_14/noise_control` all `False`
+at threshold 0.30) are unaffected, so this is a test-precision issue, not a live
+false-positive. Related design note: the check uses `abs(corr)`, so a genuinely strong
+reversal factor (|IC| ≥ 0.30 against future returns) would be flagged as lookahead; no such
+factor exists in the library (max |IC| ≈ 0.07), but the docstring does not state this
+ceiling assumption.
+
+---
+
+## 4. Bypass hunt (pass-1 scope: claim-adjacent attempts only)
+
+- **Force flag:** `factor-lab promote --force noise_control` → argparse
+  `error: unrecognized arguments: --force`. No override path exists. (Exit code measured
+  after a `| tail` pipe, so the numeric code is tail's, not the CLI's — the rejection text
+  itself is the evidence.)
+- **Gate relaxation / permissive config:** per c1-p11, user-controlled thresholds are by
+  design; not re-litigated.
+- **README command honesty:** the exact commands in README lines 20-24 re-run unmodified
+  in §C1 above.
+
+---
+
+## 5. Findings table (c2-p10)
+
+| id | severity | finding | evidence | status |
+|----|----------|---------|----------|--------|
+| F-T3 | minor | (c1-p10) purge-only fault masked by embargo in joint-property test | fixed in f13d8fe; T1 injection fails the new KAT alone | fixed |
+| F-T2 | minor | (c1-p10) BH `<=` boundary attribution over-claimed in hand-computed KAT docstring | fixed in f13d8fe; T2 injection fails `test_bh_fdr_exact_boundary` alone | fixed |
+| F-L1 | minor | (c1-p10) DSR DOI described as "302 redirect", live behaviour is a redirect loop | RESEARCH.md §2.4 now says "redirect loop ... arXiv preprint is substantively equivalent" | fixed |
+| F-T5 | minor | `test_closure_lookahead_rejected_by_runtime_check` pins the verdict, not the mechanism: inverting the runtime check to correlate against PAST returns (`shift(-h)`→`shift(h)`) leaves the suite green, because the smoothed-lookahead factor correlates with past returns at |corr|≤0.79 — above the 0.30 threshold either way | T5/T5r injection outputs + corr table in §3 | open |
+| F-S1 | minor | Stale star counts in prose/sources blocks vs the live-verified table: RESEARCH.md body still says alphalens "4,456 stars" / qlib "48,917 stars, last push 2026-09-22" (lines ~1563/1569) while live is 4,939/49,311; COMPARISONS.md Sources block says purgedcv 35 / ml4t-diagnostic 32 / pyanomaly 132 stars vs its own table's 34/34/133 | API output §2; COMPARISONS.md lines 9-14 vs 59-61 | open |
+| P02 | — | Positioning conflict with MARKET-VERDICTS.md: none found (re-checked §C3) | README lines 3, 12-13, 42-46; COMPARISONS.md table | refuted (no conflict) |
+
+Claims C1/C2/C3: all three **supported** — no blocker, no major. The leakage property, the
+gate verdict, and the promotion exit-code contract all survived attack. The two open
+findings are precision/staleness issues; neither promotes noise nor blocks the gate.
+
+### Status key
+
+- `open`: reported for the builder; not yet fixed (reviewer does not fix code)
+- `fixed`: builder fix re-verified with the reviewer's own injection/probe this pass
+- `refuted`: attack attempted, claim held
