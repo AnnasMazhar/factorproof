@@ -895,14 +895,15 @@ All commands below were actually run; output is verbatim terminal output.
 $ .venv/bin/python -m pytest -p no:warnings 2>&1 | tail -1
 133 passed in 49.62s
 $ .venv/bin/python scripts/check_no_internal_refs.py 2>&1 | tail -2
-FORBIDDEN [/home/openclaw/]  reports/improvements.md:319  `scripts/check_no_internal_refs.py` FAILED on 6 hits — all absolute `/home/openclaw/`
+FORBIDDEN [<repo>/.venv path prefix]  reports/improvements.md:319  `scripts/check_no_internal_refs.py` FAILED on 6 hits — all absolute `<repo>/`-prefixed host paths
 check_no_internal_refs: FAIL — 1 forbidden token(s) found.
 ```
 
 The F1 internal-refs gate was RED at pass start: `reports/improvements.md:319`
 quotes the checker's own output containing the absolute host path, so the checker
 flags the report that documents it. (Drive-by fix applied this pass — see F-G1.
-The quoted path above is the pre-fix evidence, retained verbatim.)
+The quoted path above is redacted to `<repo>/` per F1; the literal host prefix
+was present in the raw terminal output.)
 
 ---
 

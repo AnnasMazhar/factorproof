@@ -2847,7 +2847,8 @@ rests on abstract + working-paper excerpts, not the typeset journal PDF.
    scrub belongs to the implement pass (this pass touches no lane but its
    own artifact).
 4. **Branch note:** `feat/v0.1` is checked out in a sibling worktree
-   (`/home/openclaw/portfolio-wt/factorproof-reconcile`), so this pass
+   (`<sibling-worktree>/factorproof-reconcile`; absolute host path redacted per
+   F1), so this pass
    commits on detached HEAD at 811343c for the orchestrator to merge — the
    pass brief's "commit on feat/v0.1" is honoured in content, not in ref
    name, to avoid disturbing the parallel lane.
