@@ -2947,4 +2947,136 @@ the two controls (CV, DSR) closest to our core — worth re-checking every cycle
 Secondary watch: the reloaded forks prove community demand for maintained
 Quantopian-era tooling; if a fork adds FDR/purge, row 2 of the table changes.
 
+---
+
+## 11. Cycle 3 pass 3 — every pass-1/pass-2 open item closed (2026-10-12)
+
+Scope: this pass closes, with executed evidence, every falsifier and loop note
+passes 1–2 left open (§9.8 F-R7…F-R11, §9.9 loop notes, §10.4 watch). No code
+changed. Experiments ran in /tmp (throwaway scripts, repo untouched, database
+read-only); raw outputs pasted verbatim. This section uses no absolute paths
+and names no internal systems (checker-F1 hygiene — see §11.6 item 3).
+
+### 11.1 F-R7 — CLOSED (licence holds with 5x margin)
+
+Rule: HAC-based significance with normal critical values is licensed only at
+L/T < 0.05 (Kiefer-Vogelsang-Bunzel 2000, §9.3). Standing proof numbers,
+re-read today from `reports/real-data-proof.json`: per-factor `n_obs` ≈
+1973–1987 at H ≤ 20, so L = H−1 ≤ 19 and L/T ≤ 19/1973 ≈ 0.0096 — more than
+5x inside the licence. No proof p-value is computed outside it.
+Residual for the adversarial audit: whether KVB's distortion grid bites at
+b = 0.05 or only at b ≥ 0.10 (which would relax the rule). Research cannot
+resolve that from the literature record alone; the rule stays at 0.05 until
+the audit checks the KVB tables.
+
+### 11.2 F-R8 — CLOSED (vacuous hold, verified by grep)
+
+Rule: any proof IC→SR mapping with a bare sqrt and no V correction or IID
+caveat is a checker reject (Lo 2002, §9.2). Observed today:
+`grep -c -i "annual" reports/real-data-proof.md` → **0**. The standing proof
+reports no annualised SR (DSR inputs are horizon-native), so the rule binds
+nothing today — it binds the first proof that annualises. Closed as
+verified-vacuous, not as assumed.
+
+### 11.3 F-R9 — CLOSED (family size is named)
+
+Rule: the checker must reject a proof whose report never names m (§9.1).
+Observed today in `reports/real-data-proof.md`: "Factors with raw p < 0.05
+(naive threshold): **3** out of 13"; "Factors passing BH-FDR q=0.15 across
+family: **3**"; the BH limitation section states the family size explicitly
+("less than 13"). m is recoverable three independent ways (count line,
+procedure + q line, per-factor table rows). Holds.
+
+### 11.4 F-R10 — CLOSED with FINDING (one BH pass is a one-coin artefact)
+
+The specified check (drop the top-|return| coin-week, re-screen) was executed
+today with the leave-one-coin-out worst case added. Raw output:
+
+```
+panel rows=21308 coins=14 dates=2021-04-29..2026-10-12
+rev_5 FULL H=1 ic=+0.0348 ir=+0.0810 t_hac=+3.61 p=0.0003 n=1987
+  top cell: date=2023-07-13 asset=XRP fwd=+0.5563
+  DROP-CELL H=1 ic=+0.0353 t_hac=+3.66 p=0.0002
+  LOCO min-|t|: drop INJ ic=+0.0279 t=+2.75 p=0.0059
+  LOCO max-|t|: drop SOL ic=+0.0413 t=+4.08 p=0.0000
+volume_z_20 FULL H=1 ic=-0.0192 ir=-0.0519 t_hac=-2.30 p=0.0212 n=1973
+  top cell: date=2023-07-13 asset=XRP fwd=+0.5563
+  DROP-CELL H=1 ic=-0.0192 t_hac=-2.31 p=0.0209
+  LOCO min-|t|: drop ATOM ic=-0.0131 t=-1.49 p=0.1364
+  LOCO max-|t|: drop INJ ic=-0.0228 t=-2.58 p=0.0098
+```
+
+Disposition: the falsification condition FIRED for volume_z_20 — its BH-FDR
+pass (p = 0.0212) does not survive removing ATOM (p = 0.1364, not even
+raw-significant). On a 14-coin panel the "factor" is one coin. It did NOT
+fire for rev_5: worst-case LOCO p = 0.0059, still significant, and the
+single-cell drop (XRP +55.6% on the 2023-07-13 ruling day) moves nothing.
+
+**FINDING C3-F1 (severity: major, disposition: implement pass).** A BH-FDR
+pass on a narrow panel is necessary but not sufficient — the proof needs a
+LOCO robustness diagnostic (drop each coin, re-screen, report worst-case p)
+before any promotion. This is the second independent vote against
+volume_z_20 (the first: BY arithmetic drops it 3→2, §8.9 F-R5) and it
+vindicates the standing 0-promoted verdict: promoting volume_z_20 here would
+have promoted a one-coin artefact. The F3b planted-signal route (§8.9 F-R2
+disposition) is unaffected — it tests the gate, not the market.
+
+### 11.5 F-R11 — PARTIAL (resolvability re-confirmed; transcription audit transferred)
+
+All three JSTOR links re-probed today (curl, browser UA): White 2000
+(`stable/2999444`) → 200; Lo 2002 (`stable/4480405`) → 200; KVB 2000
+(`stable/2999605`) → 200. Resolvability holds. The equation-level
+transcription check (Lo V-factor notation, White T_n/bootstrap, Ledoit-Wolf
+block resting on abstract + working-paper excerpts) is TRANSFERRED to the
+adversarial citation audit — research has no further probe that deepens it.
+Pre-flags stand: "symbols differ, factor right" is minor; "factor wrong" is
+blocking.
+
+### 11.6 §9.9 loop notes — re-verified today
+
+1. **Mutation-c2 still VOID.** `reports/mutation-c2.json` re-read: rc=2,
+   killed=0/total=0 (mutmut invoked with a flag the installed version
+   rejects). `reports/mutants-survived-c2.txt` is 0 lines — nothing to
+   disposition. Authoritative kill score remains cycle-1: 44.4%.
+2. **Link rot:** AMS Pseudo-Mathematics PDF still non-200 (was 200, then 403
+   same-day per §9.9). Citation retained; the DSR equation record lives in
+   §2.4 (arXiv, still 200). All 3 JSTOR links (§11.5) and all 6 GitHub API +
+   1 PyPI probes (§11.7) returned 200 today.
+3. **F1 checker still FAILs — recorded, not fixed (implement's job).** The
+   no-internal-refs checker reports failures on absolute-path hits in
+   `docs/ADVERSARIAL_REVIEW.md`, `reports/improvements.md`, and — introduced
+   by c3-p01 itself — `docs/RESEARCH.md:2850` (the worktree branch note).
+   Path scrub belongs to the implement pass; this §11 was written to add no
+   new hits (no absolute paths, no internal-system names above).
+4. **Detached HEAD confirmed** (`rev-parse --abbrev-ref HEAD` → HEAD; the
+   `feat/v0.1` ref is checked out in a sibling worktree). This pass commits
+   on detached HEAD for the orchestrator to merge, as c3-p01 did.
+
+### 11.7 §10.4 watch — re-probed today, none fired
+
+GitHub REST + PyPI, all HTTP 200 today: MlFinLab 4,939 stars / push
+2023-10-02 (no relicensing signal — nothing changed); qlib 49,313 /
+2026-10-08; purgedcv 55 stars / PyPI 0.1.10 (description probe: no IC,
+verdict, FDR, or BH terms — the "factor" substring hits are a CodeFactor
+badge and "refactor"); ml4t-diagnostic 34 / 2026-10-10 (`main`-branch README
+grep for verdict / accept-reject / promotion-gate / promote: zero hits —
+still metrics, not a gate); pyanomaly 133 / 2024-03-13; alphalens-reloaded
+669 / 2026-10-10. Watch item (a) remains the closest threat; re-check next
+cycle.
+
+### 11.8 Falsification — what would prove this pass wrong
+
+- F-R7: a proof p-value computed with HAC normal critical values at L/T ≥
+  0.05 — not present in the standing proof (max 0.0096). The 0.05 boundary
+  itself is falsifiable by the KVB tables (audit item, §11.1).
+- F-R8: a bare-sqrt annualised SR appearing in any proof report — grep
+  count is 0 today.
+- F-R10/C3-F1: an independent LOCO re-run that keeps volume_z_20
+  significant without ATOM — the numbers in §11.4 are the record to beat.
+- This pass's ecosystem cells: any §11.7 number that a same-day re-probe
+  contradicts — all probes returned 200 with values printed above.
+
+F-R1…F-R6 dispositions (§8.9) stand; nothing re-run (no new data — the proof
+JSON is hours old and the dataset grew by <1 day of bars).
+
 (End of file)

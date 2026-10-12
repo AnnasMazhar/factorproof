@@ -596,7 +596,100 @@ exactly which two gates such a proof must address.
 
 ---
 
-*Written 2026-09-26. Integration recipe tested against alphalens-reloaded 0.4.x API documentation.*
+## 9. Cycle 3 update — real-world applicability, closed (2026-10-12, pass c3-p03)
+
+This pass closes every open item passes 1–2 left (dispositions: docs/RESEARCH.md
+§11). No code changed; the recipe, cost table, and failure modes below are the
+cycle-3 record. Experiments ran in /tmp (throwaway scripts, repo untouched,
+database read-only); raw outputs pasted verbatim.
+
+### 9.1 Tuesday recipe status: unchanged, no re-run needed
+
+The §8.1 command is unchanged and the proof it produces
+(`reports/real-data-proof.json`, generated 2026-10-12T16:41:01Z) is hours old;
+the dataset has grown by <1 day of bars since (21,308 daily bars, 14 coins,
+2021-04-29 → 2026-10-12). Re-running a 5-minute proof for <1 day of new bars
+is motion, not evidence — the Tuesday command stands as documented.
+
+### 9.2 New executed failure mode: single-coin fragility (F-R10)
+
+The F-R10 check specified in RESEARCH §9.8 was executed today: drop the
+top-|return| coin-week cell and re-screen; then leave-one-coin-out (LOCO),
+worst case. Raw output:
+
+```
+panel rows=21308 coins=14 dates=2021-04-29..2026-10-12
+rev_5 FULL H=1 ic=+0.0348 ir=+0.0810 t_hac=+3.61 p=0.0003 n=1987
+  top cell: date=2023-07-13 asset=XRP fwd=+0.5563
+  DROP-CELL H=1 ic=+0.0353 t_hac=+3.66 p=0.0002
+  LOCO min-|t|: drop INJ ic=+0.0279 t=+2.75 p=0.0059
+  LOCO max-|t|: drop SOL ic=+0.0413 t=+4.08 p=0.0000
+volume_z_20 FULL H=1 ic=-0.0192 ir=-0.0519 t_hac=-2.30 p=0.0212 n=1973
+  top cell: date=2023-07-13 asset=XRP fwd=+0.5563
+  DROP-CELL H=1 ic=-0.0192 t_hac=-2.31 p=0.0209
+  LOCO min-|t|: drop ATOM ic=-0.0131 t=-1.49 p=0.1364
+  LOCO max-|t|: drop INJ ic=-0.0228 t=-2.58 p=0.0098
+```
+
+Reading: **rev_5 is robust** — removing any single coin leaves p ≤ 0.0059,
+still significant. **volume_z_20 is coin-fragile** — its BH-FDR pass
+(p = 0.0212) depends on ATOM being in the panel; without ATOM, p = 0.1364,
+not even raw-significant. The top cell (XRP +55.6% on 2023-07-13, the Ripple
+ruling day) moves nothing either way — the fragility is coin-level, not
+event-level.
+
+Production consequence: on a 14-coin panel, a BH-FDR pass is necessary but not
+sufficient evidence — the implement pass should add a LOCO robustness
+diagnostic (drop each coin, re-screen, report worst-case p) before any
+promotion on narrow panels. This also vindicates the standing 0-promoted
+verdict: a gate that promoted volume_z_20 on this panel would have promoted a
+one-coin artefact. The Benjamini-Yekutieli note (§8.3) already drops
+volume_z_20 arithmetically; LOCO drops it empirically. Two independent votes.
+
+### 9.3 Ecosystem refresh (live probes, today)
+
+| Tool | Stars | Last push / release | Change vs c3-p02 (hours earlier) |
+|---|---|---|---|
+| MlFinLab | 4,939 | 2023-10-02 (stale) | none |
+| qlib | 49,313 | 2026-10-08 | none |
+| purgedcv | 55 | PyPI 0.1.10 | none; PyPI-description probe: no IC, verdict, FDR, or BH terms ("factor" hits are a CodeFactor badge and "refactor") |
+| ml4t-diagnostic | 34 | 2026-10-10 | none; `main`-branch README grep: no verdict / accept-reject / promotion-gate / promote terms — still metrics, not a gate |
+| pyanomaly | 133 | 2024-03-13 (inactive) | none |
+| alphalens-reloaded | 669 | 2026-10-10 | +1 star; §2 recipe stands (verified end-to-end in cycle 2, API unchanged since) |
+
+§10.4 watch items (a)/(b)/(c): none fired. Closest threat remains (a).
+
+### 9.4 Operational cost: unchanged
+
+No new timing run: the 4 min 48 s wall measurement (§8.5) is from the same
+dataset within a day. The Tuesday cost is still five minutes of one core, no
+GPU, no services, no credentials.
+
+### 9.5 The single most likely reason someone would NOT adopt it (cycle-3 edition)
+
+§8.6 stands and is now stronger: the report says 0/13, and this pass proved
+that even the two BH-FDR passes are one robust factor (rev_5) and one
+one-coin artefact (volume_z_20). A team running the Tuesday command gets a
+report whose headline is rejection all the way down.
+
+What is new is the external verdict that this is *correct*: Grobys et al.
+(2025, RESEARCH §9.4) document crypto momentum dead post-2020 on broad
+panels — on a 2021–2026 14-coin daily panel, "everything rejected" is the
+literature-consistent output, and a tool that promoted here would contradict
+a 2025 peer-reviewed result. The adoption pitch is therefore unchanged but
+re-grounded: adopt this for the delta (raw → FDR → gate attrition in counts
+and names), for the controls (noise rejected, lookahead caught), and now for
+the LOCO check (§9.2) — not for the verdict column on this dataset.
+
+### 9.6 Falsification for this section
+
+- Cost: falsified if a fresh Tuesday run exceeds 15 minutes — not re-tested
+  (dataset delta <1 day); standing measurement 4:48.
+- Fragility claim: falsified if an independent LOCO re-run keeps
+  volume_z_20 significant without ATOM — the numbers above are the standing
+  record to beat (script: /tmp throwaway, method in RESEARCH §11 F-R10).
+- Ecosystem: falsified if any §9.3 cell is stale at the next re-probe —
+  all cells carry today's probe output.
 *Failure modes derived from the statistical assumptions documented in docs/RESEARCH.md §2 and §4.*
 *Cycle 2 pass 3 (2026-09-27): integration recipe and both falsification tests executed for real —
 raw output in §7; timings in §4 updated to measured values; threshold calibration run (§5, §7.3);
@@ -604,3 +697,6 @@ reproducible via examples/cycle2_pass3_falsification.py.*
 *Cycle 2 pass 3 (2026-10-12, reopened v0.2 mandate): §8 Tuesday real-data run — commands in §8.1,
 measured output in §8.2 (4:48 wall), three executed failure-mode findings in §8.4, cost table in
 §8.5. Falsification experiments in /tmp (not committed); raw outputs pasted in docs/RESEARCH.md §8.9.*
+*Cycle 3 pass 3 (2026-10-12): §9 — Tuesday recipe confirmed without re-run, F-R10 single-coin-drop
+executed (rev_5 robust, volume_z_20 ATOM-fragile), ecosystem re-probed (no watch item fired);
+open items closed in docs/RESEARCH.md §11.*
