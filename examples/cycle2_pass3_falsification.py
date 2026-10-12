@@ -21,6 +21,7 @@ import math
 
 import numpy as np
 import pandas as pd
+
 from factorlab.cv import CPurgedCV, PurgedWalkForward, evaluate_walk_forward
 from factorlab.data import synthetic_ohlcv
 from factorlab.evaluate import evaluate_factor, forward_returns, information_coefficient
@@ -33,7 +34,7 @@ PANEL_ARGS = dict(n_days=1500, n_assets=12, seed=7)
 
 def _t_to_p(t: float, n: int) -> float:
     """Two-sided normal-approximation p-value from a t-statistic."""
-    if math.isnan(t) or n < 2:  # noqa: PLR0
+    if math.isnan(t) or n < 2:
         return 1.0
     return 2.0 * (1.0 - _norm_cdf(abs(t)))
 

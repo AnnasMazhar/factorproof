@@ -23,6 +23,7 @@ Faults detected per test:
 from __future__ import annotations
 
 import pytest
+
 from factorlab.data import synthetic_ohlcv
 from factorlab.factors import get_factor
 from factorlab.promote import PromotionConfig, PromotionDecision, promote
@@ -133,6 +134,7 @@ def test_low_coverage_factor_rejected(default_df):
 
     import numpy as np
     import pandas as pd
+
     from factorlab.factors.base import Factor
 
     class SparseFactor(Factor):

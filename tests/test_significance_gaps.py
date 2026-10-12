@@ -45,6 +45,9 @@ from __future__ import annotations
 import math
 
 import pytest
+from hypothesis import given
+from hypothesis import strategies as st
+
 from factorlab.significance import (
     _norm_cdf,
     _norm_ppf,
@@ -56,8 +59,6 @@ from factorlab.significance import (
     min_sample_size,
     wilson_lower,
 )
-from hypothesis import given
-from hypothesis import strategies as st
 
 # ---------------------------------------------------------------------------
 # correct_multiple_tests — previously imported by tests but never called

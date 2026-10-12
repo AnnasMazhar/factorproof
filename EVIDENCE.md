@@ -684,3 +684,127 @@ dependency resolution (environment limitation, not a repo defect). Packaging
 metadata resolves (uv reaches project build); pyproject + uv.lock are
 committed and CI installs from network. The committed .venv path runs the full
 demo + suite green as shown above.
+
+---
+
+## Cycle 2, pass 5 (implement-2) — 2026-10-12
+
+Mutation baseline (cycle 1 gate, authoritative: reports/mutation-c1.json):
+878/1977 mutants killed = 44.4%. Gate: 70%. Not re-derived here; the delta
+this pass targets is suite strength on the byzantine surface, not the score.
+
+### 1. Lint root-cause fix (isort first-party)
+
+`ruff check` under the system ruff 0.11.12 flagged I001 on 9 files while the
+pinned ruff 0.4.10 (CI toolchain) was clean: the two versions disagreed on the
+third-party/first-party boundary because `factorlab` was never declared. Fix:
+`[tool.ruff.lint.isort] known-first-party = ["factorlab"]` in pyproject.toml.
+After the fix BOTH versions pass, plus a stray `# noqa: PLR0` (invalid rule
+code) removed from examples/cycle2_pass3_falsification.py.
+
+```
+$ .venv/bin/ruff check .
+All checks passed!
+$ ruff check .
+All checks passed!
+$ .venv/bin/ruff check .  # (0.4.10, pinned — CI toolchain)
+All checks passed!
+$ .venv/bin/ruff format --check .
+23 files already formatted
+```
+
+### 2. Byzantine fix: HTML report escaping (real finding + fix + test)
+
+`_md_table_to_html` interpolated cell text raw into report.html — a hostile
+factor/asset name such as `<script>alert(1)</script>` landed executable.
+Fix: `html.escape()` on every cell in src/factorlab/report.py. Non-vacuity
+verified: the pre-fix interpolation was reproduced inline and emits the raw
+`<script>` tag, so the new test fails without the fix.
+
+```
+$ .venv/bin/python -m pytest tests/test_adversarial.py
+24 passed, 2 warnings in 4.77s
+```
+
+New tests (fault each detects in the top-of-file docstring):
+- test_html_report_escapes_injected_markup (fails pre-fix)
+- test_cli_promote_unknown_factor_exits_nonzero_no_traceback (regression guard;
+  cmd_promote already returned 1 with "Unknown factor" on stderr)
+- test_malformed_csv_raises_value_error (regression guard; load_ohlcv_csv
+  already raised ValueError naming the missing columns)
+
+### 3. Full suite + gates
+
+```
+$ .venv/bin/python -m pytest
+129 passed, 2 warnings in 44.64s
+$ python3 scripts/check_no_internal_refs.py
+check_no_internal_refs: CLEAN — no forbidden tokens found.
+$ python3 scripts/check_real_data_proof.py
+check_real_data_proof: all checks passed.
+PROOF_COMPLETE
+```
+
+### 4. Demo + acceptance paths (verbatim tails)
+
+```
+$ bash examples/run_demo.sh
+| Factor | H | IC | IC-IR | t-stat | Q-Spread | HR-WLB | Turnover | Coverage | FDR | Verdict |
+|--------|---|-----|-------|--------|----------|--------|----------|----------|-----|---------|
+| lookahead_control | 5 | 0.4415 | 1.4899 | 65.06 | 0.0369 | 0.6510 | 1.1814 | 1.00 | ? | REJECT |
+| rev_5 | 1 | -0.0661 | -0.1916 | -7.41 | -0.0022 | 0.4653 | 0.5291 | 1.00 | Y | REJECT |
+| rsi_14 | 1 | 0.0462 | 0.1421 | 5.48 | 0.0013 | 0.4844 | 0.3334 | 0.99 | Y | REJECT |
+| skew_60 | 20 | -0.0378 | -0.1209 | -1.36 | -0.0053 | 0.4974 | 0.1672 | 0.96 | N | REJECT |
+| mom_20 | 1 | 0.0381 | 0.1109 | 4.27 | 0.0012 | 0.4986 | 0.2763 | 0.99 | N | REJECT |
+| atr_norm_14 | 20 | 0.0347 | 0.1025 | 1.18 | 0.0042 | 0.4721 | 0.2544 | 0.99 | N | REJECT |
+| mom_60 | 20 | 0.0288 | 0.0882 | 0.99 | 0.0049 | 0.5187 | 0.1560 | 0.96 | N | REJECT |
+| vol_20 | 20 | 0.0267 | 0.0776 | 0.82 | 0.0052 | 0.4741 | 0.1684 | 0.99 | N | REJECT |
+| deflated_mom | 1 | 0.0234 | 0.0721 | 2.73 | 0.0008 | 0.4993 | 0.1636 | 0.96 | N | REJECT |
+| autocorr_5 | 20 | -0.0222 | -0.0713 | -1.81 | -0.0043 | 0.4907 | 0.9868 | 1.00 | Y | REJECT |
+| volume_z_20 | 5 | 0.0108 | 0.0350 | 1.40 | 0.0010 | 0.4982 | 1.3072 | 0.99 | N | REJECT |
+| noise_control | 20 | -0.0094 | -0.0313 | -1.21 | -0.0020 | 0.4911 | 1.3184 | 1.00 | N | REJECT |
+| amihud_illiq_20 | 5 | 0.0041 | 0.0122 | 0.25 | 0.0001 | 0.4790 | 0.1038 | 0.99 | N | REJECT |
+
+=== Demo complete. Results in results/ ===
+```
+
+```
+$ .venv/bin/factor-lab promote noise_control --data signal
+Factor:  noise_control
+Verdict: REJECT
+...
+Best horizon: 20d | IC: -0.0094 | IC-IR: -0.0313
+Result: REJECT
+EXIT=1
+$ .venv/bin/factor-lab promote mom_20 --data signal --plant-signal
+...
+Best horizon: 5d | IC: 0.0252 | IC-IR: 0.0750
+OOS consistency: 60.00% | Observations: 1475
+Result: PROMOTE
+EXIT=0
+```
+
+### 5. IC / IC-IR at horizon 5 (default synthetic, seed 7)
+
+```
+mom_20 H=5 IC_pearson= 0.0107 IC-IR= 0.0317
+rsi_14 H=5 IC_pearson= 0.0173 IC-IR= 0.0545
+```
+
+### 6. Launch-surface verification (no rewrites needed)
+
+- README first screen: leads with the licence grievance ("without a
+  £100/month licence"), one plain sentence, who it is for, copy-paste
+  quickstart. Real-results table matches results/factor_table.md exactly
+  (spot-checked: lookahead_control row identical in both files).
+- COMPARISONS.md: current to 2026-10-12 (star counts + last-push dates,
+  MlFinLab-wins section honest). Verified, not recreated.
+- CONTRIBUTING.md, launch/topics.txt (18 tags), docs/demo.sh (asciinema
+  record instructions), .github/workflows/release.yml (trusted publishing,
+  tag-matches-version gate, PYPI_PUBLISH opt-in): all present and inspected.
+- pyproject.toml: installable metadata complete (scripts entry, dev extra,
+  classifiers, project.urls). `pip install factor-lab` path is the release
+  workflow above; not published yet per the pass brief.
+
+results/ artifacts regenerated by the demo run are byte-identical to the
+committed ones (no diff) — determinism holds.

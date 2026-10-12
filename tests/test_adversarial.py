@@ -29,8 +29,17 @@ Faults detected per test:
     test_check_lookahead_source_finds_negative_shifts:
         Fault: check_lookahead_source() missing negative-shift regex, returning [] for
         a factor that contains .shift(-2) and .shift(-5).
-    test_clean_factor_no_negative_shifts:
-        Fault: check_lookahead_source() false positive on clean factors.
+    test_legitimate_factor_passes_runtime_check:
+        Fault: check_lookahead_runtime() false positive on clean factors.
+    test_html_report_escapes_injected_markup:
+        Fault: _md_table_to_html() interpolating raw markup into the HTML
+        report (stored-XSS vector via hostile factor/asset names).
+    test_cli_promote_unknown_factor_exits_nonzero_no_traceback:
+        Fault: cmd_promote() letting KeyError propagate as a traceback
+        (or exiting 0) on an unknown factor name.
+    test_malformed_csv_raises_value_error:
+        Fault: load_ohlcv_csv() silently accepting a CSV with missing
+        columns and producing garbage downstream.
 """
 
 from __future__ import annotations
@@ -40,6 +49,7 @@ import math
 import numpy as np
 import pandas as pd
 import pytest
+
 from factorlab.data import synthetic_ohlcv
 from factorlab.factors import get_factor
 
@@ -745,3 +755,66 @@ def test_legitimate_factor_passes_runtime_check():
         f"Legitimate factor mom_20 flagged as lookahead! Reason: {reason}. "
         "Runtime check threshold may be too sensitive."
     )
+
+
+# ---------------------------------------------------------------------------
+# Hostile-output and hostile-input cases (cycle 2, implement-2)
+# ---------------------------------------------------------------------------
+
+
+def test_html_report_escapes_injected_markup():
+    """Byzantine: a hostile factor name must not break out of the HTML report.
+
+    Fault detected: _md_table_to_html() interpolating cell text raw, so a
+    name like "<script>alert(1)</script>" lands executable in report.html.
+    A naive implementation without escaping fails this test.
+    """
+    from factorlab.report import _md_table_to_html
+
+    md = (
+        "| factor | ic |\n"
+        "|---|---|\n"
+        "| <script>alert(1)</script> | 0.0500 |\n"
+        '| <img src=x onerror="pwn()"> | 0.0100 |\n'
+    )
+    out = _md_table_to_html(md)
+    assert "<script>" not in out, f"raw script tag in HTML output: {out}"
+    assert "<img" not in out, f"raw img tag in HTML output: {out}"
+    assert "&lt;script&gt;" in out, f"expected escaped markup, got: {out}"
+
+
+def test_cli_promote_unknown_factor_exits_nonzero_no_traceback(capsys):
+    """Hostile user: `promote` with a garbage factor name must exit 1 cleanly.
+
+    Fault detected: KeyError from get_factor() propagating as a traceback,
+    or the command exiting 0 on invalid input.
+    """
+    import argparse
+
+    from factorlab.cli import cmd_promote
+
+    args = argparse.Namespace(
+        factor="'; DROP TABLE factors; --",
+        data="noise",
+        seed=7,
+        plant_signal=False,
+    )
+    rc = cmd_promote(args)
+    captured = capsys.readouterr()
+    assert rc == 1, f"expected exit 1 for unknown factor, got {rc}"
+    assert "Traceback" not in captured.err, f"traceback leaked: {captured.err}"
+    assert "Unknown factor" in captured.err, f"expected helpful error: {captured.err}"
+
+
+def test_malformed_csv_raises_value_error(tmp_path):
+    """Malformed input: a CSV missing required OHLCV columns must be rejected.
+
+    Fault detected: load_ohlcv_csv() silently accepting a short-column CSV
+    and producing garbage frames downstream.
+    """
+    from factorlab.data import load_ohlcv_csv
+
+    bad = tmp_path / "bad.csv"
+    bad.write_text("date,asset,close\n2021-01-01,AAA,100.0\n")
+    with pytest.raises(ValueError, match="missing required columns"):
+        load_ohlcv_csv(bad)

@@ -25,6 +25,7 @@ from __future__ import annotations
 
 import pandas as pd
 import pytest
+
 from factorlab.cv import PurgedWalkForward, check_lookahead, evaluate_walk_forward
 from factorlab.data import synthetic_ohlcv
 from factorlab.factors import get_factor

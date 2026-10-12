@@ -31,6 +31,7 @@ from pathlib import Path
 
 import pandas as pd
 import pytest
+
 from factorlab.data import assert_no_lookahead, load_ohlcv_csv, synthetic_ohlcv
 
 # ---------------------------------------------------------------------------

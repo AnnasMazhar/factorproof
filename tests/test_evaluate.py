@@ -35,6 +35,7 @@ import math
 import numpy as np
 import pandas as pd
 import pytest
+
 from factorlab.data import synthetic_ohlcv
 from factorlab.evaluate import (
     _pearson_corr,
