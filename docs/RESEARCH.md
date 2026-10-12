@@ -2878,4 +2878,73 @@ rests on abstract + working-paper excerpts, not the typeset journal PDF.
 | Grobys-Shahzad 2025 (Wiley) | https://doi.org/10.1002/ijfe.70036 | 403 — NOT claimed |
 | Ehsani-Linnainmaa 2022 (Wiley DOI) | https://doi.org/10.1111/jofi.13131 | 403 — NOT claimed |
 
+---
+
+## 10. Ecosystem and competition (cycle 3, pass 2 — 2026-10-12)
+
+This section is the pass-2 deliverable. The maintained detail table lives in
+`COMPARISONS.md` (7 tools, per-feature columns, re-verified today); this section
+records the live numbers fetched for this pass, the comparison summary, the
+claimed gap, and the falsification criterion. No MARKET-VERDICTS position is
+re-litigated: the verdicts file remains authoritative and everything below is
+consistent with it.
+
+### 10.1 Live verification (GitHub REST API + PyPI, probed 2026-10-12)
+
+| Tool | Repo / package | Stars (today) | Last push / release | Licence |
+|------|----------------|---------------|---------------------|---------|
+| MlFinLab (Hudson & Thames) | https://github.com/hudson-and-thames/mlfinlab | 4,939 | 2023-10-02 (no code push since; repo is a paid-product page) | Other (commercial, all rights reserved) |
+| qlib (Microsoft) | https://github.com/microsoft/qlib | 49,313 | 2026-10-08 (active) | MIT |
+| purgedcv (eslazarev) | https://github.com/eslazarev/purged-cross-validation / https://pypi.org/project/purgedcv/ | 55 | PyPI 0.1.10; last push 2026-10-01; created 2026-05-15, JOSS paper | MIT |
+| ml4t-diagnostic (ml4t org) | https://github.com/ml4t/diagnostic | 34 | 2026-10-10 (active; 1 of a 7-library ecosystem) | MIT |
+| pyanomaly (chulwoohan) | https://github.com/chulwoohan/pyanomaly | 133 | 2024-03-13 (no commits since) | MIT |
+| alphalens / pyfolio / empyrical (Quantopian) | https://github.com/quantopian/alphalens et al. | — (abandoned upstream) | 2020-04-27 / 2020-02-28 / 2020-10-14 | Apache-2.0 |
+| alphalens-reloaded / pyfolio-reloaded / empyrical-reloaded (stefan-jansen) | per COMPARISONS.md | 668 / 616 / 125 | 2026-10-10 (all three; installability forks only) | Apache-2.0 |
+
+Deltas vs the COMPARISONS.md values recorded earlier today: purgedcv 34 → 55
+stars (growing fast: created May 2026, 55 stars by October); qlib 49,308 →
+49,313. Both COMPARISONS.md cells are corrected in this same pass. All other
+counts confirmed unchanged.
+
+### 10.2 Comparison table
+
+| Tool | Approach | What it does well | Gap it leaves | What we do differently |
+|------|----------|-------------------|---------------|------------------------|
+| MlFinLab | Full financial-ML library (bars, labelling, ensembles, backtest-overfitting) | The reference implementation: purged/CPCV, haircut + deflated Sharpe, PBO, profit hurdles, track-record length | Commercial licence (£100+VAT/mo/user, no derivatives, improvements assigned to licensor); public repo unpushed since 2023-10-02 | MIT, offline, inspectable: the 4 overfitting controls as a standalone gate, no subscription |
+| Quantopian stack (alphalens/pyfolio/empyrical) | Factor tear-sheets + performance attribution | The mental model for factor analysis; familiar output | Abandoned 2018–2020; no purged CV, no FDR, no DSR, no gate; forks restore installability only | Same tear-sheet intuition (IC decay, quantile returns) plus the statistics the stack never had |
+| qlib (Microsoft) | End-to-end AI quant platform (data, models, experiments) | Scale, model zoo, experiment tracking, 49k-star contributor base | No overfitting-control statistics at all (no purged/embargo, no FDR, no DSR, plain Sharpe only) | Complementary: the gate qlib screens could be passed through before promotion |
+| purgedcv (eslazarev) | sklearn-compatible time-series CV + Sharpe statistics | Correct purged K-fold, walk-forward, CPCV, embargo, DSR/PSR; actively developed (PyPI 0.1.10) | CV/statistics library only: no factor computation, no IC, no quantile spread, no accept/reject verdict | End-to-end screening: factors → IC → HAC-t → FDR → verdict with exit codes, one offline command |
+| ml4t-diagnostic | Signal diagnostics inside a 7-library ML4T ecosystem | Walk-forward/CPCV, FDR, White's Reality Check, DSR, PBO, tearsheets | Metrics, not a gate; Polars + 7-library dependency chain; no standalone accept/reject | Zero-dep-core gate (numpy/pandas/matplotlib only) that says no and exits 1 |
+| pyanomaly | Academic anomaly replication on WRDS/CRSP data | Real-data equity anomalies, factor regressions, quantile portfolios | WRDS subscription required (no offline path); no purged CV, no FDR, no gate | Synthetic-data offline demo plus the full rejection pipeline a WRDS user would still need |
+| reloaded forks (stefan-jansen) | Keep the Quantopian stack installable | Modern-Python compatibility for the tear-sheets | Source-checked: add none of the four controls | Same answer as for the upstream stack |
+
+### 10.3 The gap we claim (explicit)
+
+No live, permissively-licensed tool packages **purged walk-forward CV with
+embargo + Benjamini-Hochberg FDR across the screened family + deflated Sharpe +
+an explicit promotion gate that rejects** in one offline command. MlFinLab has
+all four and more but is proprietary and stale-public; purgedcv has two of the
+four (CV + DSR) and is the nearest competitor; ml4t-diagnostic has the
+statistics but no verdict; the rest have none.
+
+How a user notices it: clone this repo, run `bash examples/run_demo.sh`
+offline, and watch `factor-lab promote noise_control` exit 1 with a 10-row
+reason table (FDR rejection, HAC-corrected t-stat, Wilson bound) while
+`factor-lab promote mom_20` on planted-signal data exits 0. None of the seven
+tools above produces that verdict surface — MlFinLab documents thresholds but
+ships no accept/reject API in its public source.
+
+### 10.4 Falsification for this pass
+
+The positioning is wrong if any of these is observed: (a) purgedcv ships
+factor screening (IC measurement) plus an accept/reject gate — the gap narrows
+to licence/offline-simplicity only; (b) MlFinLab is relicensed under MIT/Apache
+— the gap closes entirely; (c) ml4t-diagnostic adds a standalone verdict API
+usable outside its ecosystem — the gate claim becomes shared, not unique.
+Observed as of 2026-10-12: none of the three. Closest threat is (a): purgedcv
+went from 0 to 55 stars in five months with 23 PyPI releases and owns exactly
+the two controls (CV, DSR) closest to our core — worth re-checking every cycle.
+Secondary watch: the reloaded forks prove community demand for maintained
+Quantopian-era tooling; if a fork adds FDR/purge, row 2 of the table changes.
+
 (End of file)
