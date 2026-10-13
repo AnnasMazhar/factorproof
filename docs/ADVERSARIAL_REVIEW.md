@@ -1315,6 +1315,207 @@ citation URL), three minors open (two carried, one new display-only).
 
 ### Status key
 
+- `open`: reported for the builder; not yet fixed
+- `fixed`: fix implemented and re-verified with the pass's own probes this pass
+- `refuted`: attack attempted, claim held
+
+---
+
+## PASS c4-p10-adversarial-1 (cycle 4, adversarial pass 1 of 2)
+
+Independent reviewer lane. This pass attacks the **claims** (c4-p11 attacks the
+property). Read first: ITERATION-PROTOCOL.md, QUALITY-CONTRACT.md,
+MARKET-VERDICTS.md, specs/factor-lab.md (incl. v0.2 MANDATE), the
+c1-p10/c1-p11/c2-p10/c2-p11/c3-p10/c3-p11 entries above. Both
+`reports/mutants-survived-c2.txt` and `reports/mutants-survived-c3.txt` are
+present but 0 bytes; authoritative mutation baseline remains
+reports/mutation-c1.json (878/1977 = 44.4%, gate 70%) — quoted, not re-derived.
+
+Cycle-4 delta under review (commits 215da06..537dd97): F-T5 direction-sensitive
+pin test (d2e2f38), microstructure module + Roll/staleness diagnostics wired
+into the real-data proof (47a39d5), launch surfaces (9e5429d), scale-aware Roll
+floor (537dd97). Test count 142 → 159.
+
+All commands below were actually run; output is verbatim terminal output.
+
+---
+
+## 0. Pre-attack state + prior-findings re-verification
+
+```
+$ .venv/bin/python -m pytest -p no:warnings 2>&1 | tail -1
+159 passed in 62.99s
+$ .venv/bin/python scripts/check_no_internal_refs.py 2>&1 | tail -1
+check_no_internal_refs: CLEAN — no forbidden tokens found.
+$ .venv/bin/python scripts/check_real_data_proof.py 2>&1 | tail -1
+PROOF_COMPLETE
+$ .venv/bin/python -m ruff check . 2>&1 | tail -1
+All checks passed!
+$ .venv/bin/python -m ruff format --check . 2>&1 | tail -1
+27 files already formatted
+```
+
+- **F-T5 (Gate-0.75 direction fault invisible): FIXED** (commit d2e2f38,
+  "direction-sensitive runtime-check pin"). Re-verified with the reviewer's own
+  injection this pass (T1 below): inverting `close.shift(-h)` → `close.shift(h)`
+  in `check_lookahead_runtime` fails the new
+  `test_runtime_check_direction_sensitive_pure_future_factor` alone (exit 1,
+  AssertionError at test_adversarial.py:829). The old smoothed-closure test
+  stays green under the same mutant (known, documented in the new test's
+  docstring) — the new test is the pin, and it holds. → **fixed**
+- **F-A4 (wilson_lower invalid inputs):** re-probed directly — all four invalid
+  shapes raise actionable ValueError (`require 0 <= k <= n ...`, `n must be >=
+  0 ...`). → **fixed (stands)**
+- **F-S1 (stale qlib prose):** live API this pass returns 49,324 stars / pushed
+  2026-10-08 vs file's 49,316 / 2026-10-08 (+8 stars same-day drift — noise,
+  not staleness). → **fixed (stands)**
+- **F-B2/F-B1/F-C1/F-S2/F-G2:** untouched by the cycle-4 diff; suite green.
+- **B3 (noise seed-shopping):** c3-p11 covered 4/30 seeds (all reject); not
+  extended here (same ~40s-per-promote foreground cost). → **open (stands)**
+
+---
+
+## 1. Claims audit — 3 most load-bearing README claims, attacked
+
+### C1 — "Promote a real signal (exit 0) or reject noise (exit 1)"
+
+```
+$ .venv/bin/python -m factorlab.cli promote mom_20 --data signal --plant-signal >/dev/null 2>&1; echo "mom_20_planted=$?"
+mom_20_planted=0
+$ .venv/bin/python -m factorlab.cli promote noise_control --data signal >/dev/null 2>&1; echo "noise=$?"
+noise=1
+```
+
+**Verdict: SUPPORTED.** Exit codes as documented, measured without an
+intervening pipe.
+
+### C2 — "Real results (from examples/run_demo.sh)": README table is the demo's output
+
+```
+$ bash examples/run_demo.sh > /tmp/c4_demo.txt 2>&1; echo "demo_exit=$?"
+demo_exit=0
+$ grep '^|' /tmp/c4_demo.txt | sort -u > /tmp/c4_dr.txt; grep '^|' README.md | sort -u > /tmp/c4_rr.txt; diff /tmp/c4_dr.txt /tmp/c4_rr.txt && echo ROWS_IDENTICAL
+ROWS_IDENTICAL
+$ grep -n "Promoted" /tmp/c4_demo.txt | head -2
+39:Promoted (0): none
+```
+
+**Verdict: SUPPORTED.** All 13 table rows byte-identical to a fresh full-demo
+run; "Promoted (0): none" matches the README "0/13" framing.
+
+### C3 — Positioning: MlFinLab licence/pricing; Quantopian stack abandoned 2020
+
+```
+$ curl -sS -L --max-time 25 https://raw.githubusercontent.com/hudson-and-thames/mlfinlab/master/LICENSE.txt | grep -cE '6\.6|6\.7|14\.2|14\.3|14\.5'
+6
+$ curl -sS --max-time 20 "https://api.github.com/repos/quantopian/alphalens/commits?per_page=1" | grep -m1 '"date"'
+        "date": "2020-04-27T18:40:41Z"
+$ curl -sS --max-time 20 "https://api.github.com/repos/quantopian/pyfolio/commits?per_page=1" | grep -m1 '"date"'
+        "date": "2020-02-28T17:30:19Z"
+```
+
+**Verdict: SUPPORTED.** Licence-clause grep hits 6 lines covering
+6.6/6.7/14.2/14.3/14.5 (pricing page re-verified `£100 (+VAT)` in c3-p10; page
+unchanged, not re-fetched). alphalens last commit 2020-04-27, pyfolio
+2020-02-28. No conflict with MARKET-VERDICTS.md positioning to record.
+
+### Incidental badge claim
+
+Full suite: `159 passed in 62.99s`. README badge `tests-159 passed` is
+accurate. `ruff check` / `ruff format --check` clean.
+
+---
+
+## 2. Citation audit — cycle-4 additions (§12, c4-p01/p02)
+
+c3-p10 covered the original 104. Cycle 4 added 12 unique URLs (119 total).
+All 12 probed with `curl -s -o /dev/null -w '%{http_code}' -L --max-time 25`:
+
+```
+200 https://ideas.repec.org/a/bla/jfinan/v39y1984i4p1127-39.html
+200 https://ideas.repec.org/a/eee/jfinec/v17y1986i2p223-249.html
+200 https://ideas.repec.org/a/eee/jfinec/v5y1977i3p309-327.html
+200 https://ideas.repec.org/a/eee/jfinec/v7y1979i2p197-226.html
+200 https://www.jstor.org/stable/2290993
+200 https://www.jstor.org/stable/2327617
+200 https://www.jstor.org/stable/2328797
+200 https://www.jstor.org/stable/43866013
+200 https://www.nber.org/papers/w20721
+200 https://www.nber.org/papers/w9571
+200 https://www.ssc.wisc.edu/~bhansen/718/Politis%20Romano.pdf
+403 https://doi.org/10.1093/rfs/hhv063
+```
+
+Disposition:
+
+- **11/12 → HTTP 200.** The single 403 (`doi:10.1093/rfs/hhv063`, OUP
+  bot-blocking) is the known publisher pattern: the same citation block carries
+  two 200-returning alternates (NBER w20721 + JSTOR 43866013), and the file
+  pre-flagged the hhv059/hhv063 one-digit-apart confusion and resolved it
+  in-file ("confirmed verbatim ... no correction needed").
+- **Support spot-checks:** RePEc `.../v39y1984i4p1127-39.html` returns
+  `<TITLE>A Simple Implicit Measure of the Effective Bid-Ask Spread in an
+  Efficient Market` — Roll (1984) as cited at line 3110. NBER w20721 returns
+  `citation_title = "A Taxonomy of Anomalies and their Trading Costs"` —
+  Novy-Marx & Velikov as cited at line 3160. No contradicting source found.
+
+---
+
+## 3. Test-quality audit — 6 tests sampled, named fault injected, suite run
+
+Driver `/tmp/c4_inject.py` (T1–T5) + inline sed-restore (T6): back up the
+source file, apply one exact string mutation (asserted unique), run the single
+node, restore. `git status -- src tests` empty after every restore (verified).
+Raw outputs abbreviated to the assertion lines.
+
+| # | test | injected fault (one string mutation) | result |
+|---|------|--------------------------------------|--------|
+| T1 | `test_adversarial.py::test_runtime_check_direction_sensitive_pure_future_factor` | Gate 0.75 direction inverted: `close.shift(-h)` → `close.shift(h)` in `check_lookahead_runtime` | exit 1 — DETECTED (`AssertionError` at test_adversarial.py:829) |
+| T2 | `test_microstructure.py::test_roll_spread_hand_computed` | Roll formula halved: `2.0 * np.sqrt(-cov1)` → `np.sqrt(-cov1)` | exit 1 — DETECTED (`AssertionError` at test_microstructure.py:88) |
+| T3 | `test_significance.py::test_wilson_lower_rejects_negative_k` | validation removed: `if k < 0 or k > n:` → `if False:` | exit 1 — DETECTED (`AssertionError` at test_significance.py:102) |
+| T4 | `test_promote.py::test_low_coverage_factor_rejected` | coverage gate forced pass: `passed=cov >= cfg.coverage_min,` → `passed=True,` | exit 1 — DETECTED (`AssertionError` at test_promote.py:169) |
+| T5 | `test_adversarial.py::test_diluted_leak_rejected_by_perturbation_gate` | Gate 0.85 blinded: `if n_diffs > max_diffs:` → `if n_diffs > 10**12:` | exit 1 — DETECTED (`AssertionError` at test_adversarial.py:975) |
+| T6 | `test_significance.py::test_bh_fdr_exact_boundary` | `if pval <= threshold:` → `if pval < threshold:` | exit 1 — DETECTED (`AssertionError` at test_significance.py) |
+
+Restore check: `tests/test_significance.py + tests/test_microstructure.py`
+green after restore (39 passed); full-suite pre-attack state was 159 passed;
+`git status -- src tests` clean.
+
+**Score: 6 of 6 named faults fail on their fault.** T1 is the fix-verification
+for F-T5: the direction mutant that the old smoothed-closure test cannot see
+is now caught by the new pin test alone. T2 covers the cycle-4 microstructure
+surface (Roll KAT pins the 2× constant from the paper equation).
+
+---
+
+## 4. Bypass hunt (pass-1 scope: claim-adjacent attempts only)
+
+- **Force flag:** `.venv/bin/python -m factorlab.cli promote --force
+  noise_control` → `factor-lab: error: unrecognized arguments: --force`. No
+  override path exists. (CLI surface untouched since c3-p10's probe.)
+- **Gate relaxation / permissive config:** by design per c1-p11; not
+  re-litigated.
+- **README command honesty:** the exact quickstart commands re-run unmodified
+  in §C1 above.
+
+---
+
+## 5. Findings table (c4-p10)
+
+| id | severity | finding | evidence | status |
+|----|----------|---------|----------|--------|
+| F-T5 | minor | (c2-p10) Gate-0.75 direction fault invisible to suite | fixed in d2e2f38; T1 injection fails the new pin test alone | fixed |
+| F-S1 | minor | (c2-p10) qlib prose staleness | live 49,324 vs file 49,316 (+8 same-day drift — noise) | fixed (stands) |
+| B3 | — | Noise seed-shopping sweep still partial (4/30, all reject) | c3-p11 §1; same foreground-cost constraint | open (method note: background job) |
+| P06 | — | Positioning conflict with MARKET-VERDICTS.md: none found (re-checked §C3) | README/COMPARISONS.md | refuted (no conflict) |
+
+Claims C1/C2/C3: all three **supported** — no blocker, no major. Citation
+audit: 11/12 new URLs 200, 1× documented 403-with-alternates. Test audit: 6/6
+named faults detected. Prior open precision gap F-T5 is now closed; no new
+findings opened by this pass.
+
+### Status key
+
 - `open`: reported for the builder; not yet fixed (reviewer does not fix code)
 - `fixed`: fix implemented and re-verified with the reviewer's own probes this pass
 - `refuted`: attack attempted, claim held
