@@ -45,6 +45,14 @@ Faults detected per test:
     test_malformed_csv_raises_value_error:
         Fault: load_ohlcv_csv() silently accepting a CSV with missing
         columns and producing garbage downstream.
+    test_gap_aimed_leak_rejected_by_dense_tiling (F-B3 FIX):
+        Fault: quartile-spaced perturbation leaving ~355-date gaps a leak
+        can aim at — future reads confined to gaps dodge every gate and
+        flip REJECT into PROMOTE.
+    test_proof_checker_rejects_forged_metrics (F-C2 FIX):
+        Fault: check_real_data_proof.py trusting the JSON's claimed numbers
+        without comparing them to the markdown table (hand-edited JSON
+        printing PROOF_COMPLETE).
 """
 
 from __future__ import annotations
@@ -1103,3 +1111,142 @@ def test_windowed_early_leak_rejected_by_staggered_perturbation():
     ), f"windowed leak promoted: {[(r.code, r.passed) for r in decision.reasons]}"
     codes = [r.code for r in decision.reasons if not r.passed]
     assert "no_future_dependence" in codes, f"expected no_future_dependence FAIL, got {codes}"
+
+
+def _gap_aimed_leak(weight: float = 0.10):
+    """Build a leak that reads future rows only inside tiling gaps (F-B3 shape).
+
+    Quartile-spaced perturbation windows (n_windows=4, tail_days=20 on 1500
+    dates) perturb rows [355,375), [730,750), [1105,1125), [1480,1500) and
+    leave ~355-date gaps untouched. This factor blends future 5-day returns
+    (via np.roll, so no `.shift(-N)` literal exists for Gate 0.5) ONLY where
+    the target row falls in a gap — no perturbed row is ever read, so the
+    quartile check, the tail-only check, and the 0.30 correlation screen
+    all stay blind while the admixture flips REJECT into PROMOTE (clean
+    twin rejects at IC=0.0065/FDR p=0.47; +10% gap leak promotes at
+    IC=0.055, all 11 gates passing, on plain synthetic data, seed 7).
+    """
+    import numpy as np
+    import pandas as pd
+
+    from factorlab.factors.base import Factor
+
+    _w = weight
+    _n_dates, _n_win, _tail = 1500, 4, 20
+    _win_rows: set[int] = set()
+    for _i in range(1, _n_win + 1):
+        _end = (_n_dates * _i) // _n_win
+        _win_rows.update(range(_end - _tail, _end))
+
+    class GapLeak(Factor):
+        name = "gap_aimed_leak"
+        category = "attack"
+        description = "future-data admixture confined to perturbation gaps"
+        params = {}
+        uses_future_data = False  # lie: reads t+5 rows inside gaps
+
+        def compute(self, df: pd.DataFrame) -> pd.Series:
+            close = df.pivot(index="date", columns="asset", values="close")
+            mom = close.pct_change(20)
+            fut = np.roll(close.values, -5, axis=0) / close.values - 1.0
+            fut[-5:, :] = 0.0
+            n = close.shape[0]
+            gap_mask = np.array([(p >= n or p not in _win_rows) for p in (np.arange(n) + 5)])[
+                :, None
+            ]
+            blend = mom.values + _w * np.where(gap_mask, fut, 0.0)
+            vals = pd.DataFrame(blend, index=close.index, columns=close.columns).stack()
+            vals.index.names = ["date", "asset"]
+            return vals
+
+    return GapLeak()
+
+
+def test_gap_aimed_leak_rejected_by_dense_tiling():
+    """F-B3 FIX: a gap-aimed leak must be rejected by contiguous tiling.
+
+    Fault detected: quartile-spaced perturbation windows leave ~355-date
+    gaps; a leak reading future rows only inside those gaps dodges every
+    gate (source inspection sees np.roll, correlation sees IC=0.055 under
+    the 0.30 threshold, quartile/tail perturbation never touches a read
+    row) and flips a clean REJECT into PROMOTE. Contiguous tiling puts
+    every sample row inside some window, so gap-aiming is impossible.
+    """
+    from factorlab.cv import (
+        check_lookahead_perturbation,
+        check_lookahead_runtime,
+        check_lookahead_source,
+    )
+    from factorlab.data import synthetic_ohlcv
+    from factorlab.promote import promote
+
+    df = synthetic_ohlcv(n_days=1500, n_assets=12, seed=7)
+    factor = _gap_aimed_leak(0.10)
+
+    # Preconditions: every pre-tiling gate is blind to this shape.
+    assert check_lookahead_source(factor) == []
+    flagged_rt, _ = check_lookahead_runtime(factor, df, threshold=0.30)
+    assert not flagged_rt, "precondition broken: runtime check now fires; test needs update"
+    flagged_q, _ = check_lookahead_perturbation(factor, df, n_windows=4)
+    assert not flagged_q, "precondition broken: quartile check fires; test needs update"
+    flagged_tail, _ = check_lookahead_perturbation(factor, df, n_windows=1)
+    assert not flagged_tail, "precondition broken: tail-only check fires; test needs update"
+
+    is_lookahead, reason = check_lookahead_perturbation(factor, df)
+    assert is_lookahead, f"dense tiling missed the gap-aimed leak: {reason}"
+
+    decision = promote(factor, df)
+    assert (
+        decision.verdict == "reject"
+    ), f"gap-aimed leak promoted: {[(r.code, r.passed) for r in decision.reasons]}"
+    codes = [r.code for r in decision.reasons if not r.passed]
+    assert "no_future_dependence" in codes, f"expected no_future_dependence FAIL, got {codes}"
+
+
+def _load_proof_checker():
+    """Import scripts/check_real_data_proof.py by path (scripts/ is not a package)."""
+    import importlib.util
+    from pathlib import Path
+
+    path = Path(__file__).resolve().parent.parent / "scripts" / "check_real_data_proof.py"
+    spec = importlib.util.spec_from_file_location("check_real_data_proof", path)
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def test_proof_checker_rejects_forged_metrics():
+    """F-C2 FIX: the F4 checker must reject a hand-edited proof JSON.
+
+    Fault detected: check_real_data_proof.py trusted the JSON's claimed
+    numbers without comparing them to the markdown table, so setting
+    real_factors[0].ic = 0.91 and verdict = 'promote' (keeping real bar
+    counts) printed PROOF_COMPLETE with exit 0 — the loop's finish line
+    crossed by editing two JSON fields. The md/JSON cross-check fails
+    closed on any numeric or verdict divergence.
+    """
+    import json
+    import shutil
+    from pathlib import Path
+
+    checker = _load_proof_checker()
+
+    # Positive control: the committed artifacts are consistent.
+    assert checker.check_md_json_consistency() == []
+
+    # Forgery: inflate one factor row and claim a promotion, keep bars real.
+    forged = Path(checker._PROOF_JSON)
+    tmp_json = Path(str(forged) + ".forgery-test-tmp")
+    try:
+        shutil.copy(forged, tmp_json)
+        data = json.loads(tmp_json.read_text(encoding="utf-8"))
+        data["real_factors"][0]["ic"] = 0.91
+        data["real_factors"][0]["verdict"] = "promote"
+        tmp_json.write_text(json.dumps(data, indent=1), encoding="utf-8")
+        checker._PROOF_JSON = tmp_json
+        fails = checker.check_md_json_consistency()
+        assert fails, "forged JSON passed the md/JSON consistency check"
+        assert any("0.91" in f or "verdict" in f for f in fails), f"unexpected fails: {fails}"
+    finally:
+        tmp_json.unlink(missing_ok=True)

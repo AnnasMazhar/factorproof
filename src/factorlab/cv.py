@@ -460,7 +460,7 @@ def check_lookahead_perturbation(
     df: pd.DataFrame,
     tail_days: int = 20,
     max_diffs: int = 0,
-    n_windows: int = 4,
+    n_windows: int | None = None,
 ) -> tuple[bool, str]:
     """Behavioral detection of lookahead via future perturbation.
 
@@ -472,22 +472,27 @@ def check_lookahead_perturbation(
     it while still flipping a REJECT into a PROMOTE.
 
     This function tests the property directly instead of the mechanism.
-    For each of `n_windows` staggered windows ending at evenly spaced
-    fractions of the sample (the last one is the tail):
+    By default it tiles the sample with contiguous, non-overlapping
+    windows of `tail_days` dates (`n_windows=None` means full tiling:
+    `n_dates // tail_days` windows, step == length so there are no gaps):
 
     1. Compute the factor on the panel (baseline, once).
-    2. Deterministically perturb only the OHLCV rows inside the window
+    2. Deterministically perturb only the OHLCV rows inside each window
        (per-asset value reversal — no RNG, fully reproducible).
     3. Recompute. Factor values at dates strictly BEFORE the perturbed
        window must be bit-identical: a causal factor cannot change its
        past outputs when only future inputs change.
 
-    Staggering matters (F-B2 fix): a tail-only check is blind to a leak
-    confined to early dates — perturbing the last 20 days changes nothing
-    a windowed leak reads, so it stays invisible while still flipping a
-    REJECT into a PROMOTE. Quartile-spaced windows force a verdict-flipping
-    leak (which must span a substantial share of the sample to move
-    full-sample IC/IR/FDR) to overlap at least one window's future.
+    Full tiling matters (F-B3 fix): quartile-spaced windows leave gaps of
+    hundreds of dates, and a leak that reads future rows only inside those
+    gaps is structurally invisible — it flipped a clean REJECT (IC=0.0065)
+    into PROMOTE (IC=0.055) with all gates passing. With contiguous
+    tiling every sample row sits inside some window, so gap-aiming is
+    impossible: any output at date t reading a future row at t+d > t is
+    caught by every window whose start falls in (t, t+d]. A leak can only
+    dodge by keeping its coverage tiny (few enough affected outputs that
+    no window start lands in any (t, t+d] interval) — and such a leak
+    cannot move full-sample IC above the 0.02 floor on its own.
 
     Any differing past value proves the factor reads future rows,
     regardless of how the access is obfuscated. The comparison is exact
@@ -498,13 +503,13 @@ def check_lookahead_perturbation(
     All factors in the shipped library satisfy this (verified by
     test_perturbation_no_false_positives_on_library).
 
-    Residual: a leak confined entirely to one inter-window gap (about a
-    quarter of the sample with the defaults) and never reading rows inside
-    a later window still dodges. Such a leak covers too little of the
-    sample to move full-sample IC above the default 0.02 floor on its own
-    (a 10%-admixture leak needs ~95% coverage to reach IC 0.08), but the
-    window positions are deterministic and documented, so a dedicated
-    adversary could aim for a gap. Increase `n_windows` to shrink them.
+    Residual: passing an explicit small `n_windows` (e.g. 1, tail only)
+    reintroduces gaps and the F-B2/F-B3 shapes dodge again — the
+    regression tests pin that `n_windows=1` stays blind so the default
+    tiling cannot silently regress to it. An attacker who reads rows
+    more than `tail_days` ahead of any tiled window start... cannot:
+    tiling covers the whole sample, so every future row is inside some
+    window; the binding constraint is the (t, t+d] start coverage above.
 
     Parameters
     ----------
@@ -518,8 +523,9 @@ def check_lookahead_perturbation(
     max_diffs:
         Tolerated number of differing past values. Default 0.
     n_windows:
-        Number of staggered perturbation windows. Default 4 (quartile
-        ends, the last being the tail).
+        Number of evenly spaced perturbation windows. Default None means
+        full contiguous tiling (no gaps). Pass an explicit small int only
+        to reproduce legacy spacings in tests — never in the gate path.
 
     Returns
     -------
@@ -532,22 +538,36 @@ def check_lookahead_perturbation(
 
     all_dates = sorted(df["date"].unique())
     n_dates = len(all_dates)
-    n_windows = max(1, min(int(n_windows), n_dates // max(1, int(tail_days))))
+    full_tiling = n_dates // max(1, int(tail_days))
+    if n_windows is None:
+        n_windows = full_tiling
+    n_windows = max(1, min(int(n_windows), full_tiling))
+    # Precompute position/asset index structures once: per-window work is
+    # then a vectorized reversal, not a groupby + isin + loc per window.
+    # (Full tiling runs ~n_dates/tail_days windows; the naive loop costs
+    # ~60ms/window, this one ~5ms.)
+    date_to_pos = {d: i for i, d in enumerate(all_dates)}
+    pos = df["date"].map(date_to_pos).to_numpy()
+    asset_codes = pd.factorize(df["asset"].to_numpy())[0]
+    group_rows = [np.flatnonzero(asset_codes == k) for k in range(int(asset_codes.max()) + 1)]
+    pcols = [c for c in ("open", "high", "low", "close", "volume") if c in df.columns]
+    base_vals = {c: df[c].to_numpy().copy() for c in pcols}
     for i in range(1, n_windows + 1):
         end_pos = (n_dates * i) // n_windows
         start_pos = max(0, end_pos - tail_days)
         window_dates = all_dates[start_pos:end_pos]
         if not window_dates:
             continue
+        in_window = (pos >= start_pos) & (pos < end_pos)
         perturbed = df.copy()
-        for _asset, sub in perturbed.groupby("asset"):
-            for col in ("open", "high", "low", "close", "volume"):
-                if col not in perturbed.columns:
+        for c in pcols:
+            v = base_vals[c].copy()
+            for rows in group_rows:
+                sel = rows[in_window[rows]]
+                if len(sel) == 0:
                     continue
-                vals = sub[col].values.copy()
-                mask = sub["date"].isin(window_dates).values
-                vals[mask] = vals[mask][::-1]
-                perturbed.loc[sub.index, col] = vals
+                v[sel] = v[sel[::-1]]
+            perturbed[c] = v
 
         try:
             retested = factor.compute(perturbed)

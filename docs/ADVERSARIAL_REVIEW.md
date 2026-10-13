@@ -1752,3 +1752,221 @@ Prior findings F-T3/F-T2/F-L1: remain fixed (untouched by this pass's diff).
 - `open`: reported for the builder; not yet fixed
 - `fixed`: fix implemented and re-verified with the pass's own probes this pass
 - `refuted`: attack attempted, claim held
+
+---
+
+## PASS c4-p11-adversarial-2 (cycle 4, adversarial pass 2 of 2)
+
+Independent reviewer lane. This pass attacks the **property** (c4-p10 attacked the
+claims). Read first: ITERATION-PROTOCOL.md, QUALITY-CONTRACT.md,
+MARKET-VERDICTS.md, specs/factor-lab.md (incl. v0.2 MANDATE), all prior
+c1-p10 through c4-p10 entries above. Both `reports/mutants-survived-c2.txt`
+and `reports/mutants-survived-c3.txt` are present but 0 bytes; authoritative
+mutation baseline remains reports/mutation-c1.json (878/1977 = 44.4%, gate
+70%) — quoted, not re-derived.
+
+All commands below were actually run; output is verbatim terminal output.
+
+---
+
+## 0. Pre-attack state
+
+```
+$ git log --oneline -1
+5fe7676 docs(review): cycle 4 adversarial pass 1 — claims hold, F-T5 closed
+$ .venv/bin/python scripts/check_no_internal_refs.py 2>&1 | tail -1
+check_no_internal_refs: CLEAN — no forbidden tokens found.
+$ .venv/bin/python scripts/check_real_data_proof.py 2>&1 | tail -1
+PROOF_COMPLETE
+```
+
+Prior-findings triage: F-T5/F-A4/F-S1 remain fixed (c4-p10 re-verified;
+untouched since). F-B1/F-B2 remain fixed (regressions re-run §4). B3
+(noise seed-shopping) extended this pass: seeds 1-4 (c3-p11) + 5,6,8,9 —
+8/30, all reject (see D2).
+
+---
+
+## 1. Property attacks — defeat the promotion gate
+
+### ATTACK D1: gap-aimed leak — **BYPASSED ALL GATES (BLOCKER F-B3)**
+
+Goal: aim the future admixture at the documented residual — the
+inter-window gaps of the quartile-spaced Gate 0.85 (n_windows=4,
+tail_days=20 on 1500 dates perturbs rows [355,375), [730,750),
+[1105,1125), [1480,1500)). Blend 10% future 5-day returns via `np.roll`
+(no `.shift` literal) ONLY where the target row falls in a gap.
+
+```
+source patterns: []
+flag: False
+runtime: (False, '')
+perturbation: (False, '')
+LEAK verdict: promote
+  not_lookahead: pass=True obs=no
+  not_degenerate: pass=True obs=varied
+  coverage: pass=True obs=0.9866666666666667
+  min_observations: pass=True obs=1479.0
+  min_abs_ic: pass=True obs=0.05498749931538341
+  min_ic_ir: pass=True obs=0.16233913749900747
+  hit_rate_wilson_lb: pass=True obs=0.5135970451019718
+  max_turnover: pass=True obs=0.30234971462456456
+  oos_consistency: pass=True obs=0.8
+  survives_fdr: pass=True obs=0.00034
+TWIN verdict: reject
+  min_abs_ic: pass=False obs=0.006523116630927812
+  min_ic_ir: pass=False obs=0.018939586600449275
+  survives_fdr: pass=False obs=0.46623
+```
+
+Decisiveness proven: the clean twin (same momentum, no future leg) rejects
+at IC=0.0065/FDR p=0.47 on the same plain synthetic data (seed 7, no
+planted signal); adding gap-confined future data flips it to PROMOTE with
+all 11 gates passing and Gates 0.5/0.75/0.85 all blind. Root cause: the
+docstring's residual paragraph was exactly right — deterministic quartile
+positions let a dedicated adversary aim at the ~355-date gaps.
+
+### ATTACK D4: forged proof JSON — **CHECKER PRINTS PROOF_COMPLETE (MAJOR F-C2)**
+
+Goal: cross the F4 finish gate by editing the report instead of running
+the pipeline. Forgery: `real_factors[0].ic = 0.91`, verdict =
+`'promote'`, `f3_sensitivity = {n_promoted: 1, ...}` — bar counts and coin
+lists left real.
+
+```
+$ .venv/bin/python scripts/check_real_data_proof.py
+check_real_data_proof: all checks passed.
+PROOF_COMPLETE
+checker_exit=0
+```
+
+The checker verified structure, F3 thresholds, bars-vs-source, section
+non-emptiness, and internal refs — but never compared the JSON's claimed
+numbers to the markdown table, so a two-field forgery (IC=0.91 vs the real
+0.0322 still sitting in the .md) passed. The loop's finish line was
+crossable without running anything. (Report restored from backup
+afterwards; post-fix state re-verified PROOF_COMPLETE on the real files.)
+
+### ATTACK D2: noise seed-shopping, extended (B3 continued)
+
+```
+seed 5 noise_control: reject
+seed 6 noise_control: reject
+seed 8 noise_control: reject
+seed 9 noise_control: reject
+```
+
+`noise_control` rejects on seeds 5,6,8,9 (plain synthetic, default
+config), now under the dense-tiling gate. Combined with c3-p11 seeds 1-4:
+8/30, all reject, no signal of a specificity hole. Still partial (each
+full `promote()` costs ~45-60s); the remaining 22 seeds stay a background
+job. Recorded as method note, not a finding.
+
+### ATTACK D5: determinism of the rewritten gate — HOLDS
+
+```
+run1: (False, '')
+run2: (False, '')
+deterministic: True
+```
+
+`check_lookahead_perturbation` twice on `mom_20` (seed 7) → identical
+verdicts. The vectorized rewrite introduces no RNG or ordering
+dependence (per-asset reversal over `flatnonzero` index arrays).
+
+---
+
+## 2. Fixes (applied this pass, reviewer-implemented per c2-p11/c3-p11 precedent)
+
+### F-B3 fix: contiguous tiling + vectorized loop (`src/factorlab/cv.py`)
+
+`check_lookahead_perturbation()` now defaults to `n_windows=None` = full
+contiguous tiling (`n_dates // tail_days` windows, step == length, no
+gaps). Every sample row sits inside some window, so gap-aiming is
+impossible: any output at t reading a future row at t+d is caught by
+every window starting in (t, t+d]. A leak can only dodge with tiny
+coverage — which cannot move full-sample IC above the 0.02 floor. Passing
+an explicit small `n_windows` (1 = tail-only, 4 = quartile) reproduces the
+legacy spacings for the regression tests' preconditions — never in the
+gate path (`promote()` calls with defaults). The per-window loop was
+vectorized (precomputed position/asset index arrays; one `df.copy()` +
+in-place reversal per window): full-library sweep 31.1s, zero false
+positives; full suite time 63s → 85s.
+
+Post-fix verification (same D1 shape):
+
+```
+perturbation: (True, 'Factor values at 60 past dates changed when only future
+OHLCV data was perturbed (window 3/75 starting 2019-02-27, tail_days=20).
+A causal factor cannot do this — lookahead contamination.')
+LEAK verdict: reject
+  no_future_dependence: pass=False obs=changed
+TWIN verdict: reject
+```
+
+Tests added (`tests/test_adversarial.py`, fault-naming docstrings +
+top-of-file fault-list entries): `test_gap_aimed_leak_rejected_by_dense_tiling`
+(pins verdict + reason code, with preconditions asserting source, runtime,
+quartile `n_windows=4`, AND tail-only `n_windows=1` all stay blind so the
+test cannot pass vacuously), `test_proof_checker_rejects_forged_metrics`.
+
+### F-C2 fix: md/JSON cross-check (`scripts/check_real_data_proof.py`)
+
+New `check_md_json_consistency()`: parses the §2 per-factor table rows
+from the markdown and compares IC, IC-IR, t-HAC, p-raw, OOS IC, deflated
+Sharpe (tol 2e-4; the .md rounds to 4dp, max err 5e-5) and the verdict
+string against every `real_factors` entry, failing closed when zero rows
+parse. Post-fix, the same forgery fails:
+
+```
+check_real_data_proof: FAIL
+  MD-JSON CONSISTENCY FAIL: mom_20 h=20 ic: JSON=0.91 vs markdown=0.0322
+  (tol 0.0002) — one artifact was doctored.
+  MD-JSON CONSISTENCY FAIL: mom_20 h=20 verdict: JSON=promote vs markdown=reject.
+forged_exit=1
+```
+
+Residual (documented in the fix, not a new finding): a forger who rewrites
+both artifacts coherently still passes — only a full recomputation gate
+closes that, which costs a real-data run per check. The bar is now
+"forge dozens of mutually-consistent numbers across two files" instead of
+"edit two JSON fields".
+
+Post-fix state:
+
+```
+161 passed in 84.84s (0:01:24)
+All checks passed!
+27 files already formatted
+check_no_internal_refs: CLEAN — no forbidden tokens found.
+```
+
+(`ruff check` clean, `ruff format --check` clean — one UP038 auto-flag on
+the new checker code fixed with `int | float` + an explicit `bool`
+exclusion. Positioning re-checked against MARKET-VERDICTS.md while here:
+README still leads with the licence problem, COMPARISONS.md table
+present, MlFinLab-more-complete stated — no conflict to record.)
+
+---
+
+## 3. Findings table (c4-p11)
+
+| id | severity | finding | evidence | status |
+|----|----------|---------|----------|--------|
+| F-B3 | **blocker** | Gap-aimed leak (10% future admixture confined to quartile-tiling gaps, `np.roll` shape, no `.shift` literal) promoted with all 11 gates passing; clean twin rejects (IC=0.0065/FDR p=0.42) so the leak flips the verdict. Deterministic quartile positions let the adversary aim at ~355-date gaps. | D1 outputs §1; pre-fix verdict=promote rows | **fixed** (contiguous `n_windows=None` tiling; post-fix verdict=reject via `no_future_dependence`; 2 tests; §2) |
+| F-C2 | major | `check_real_data_proof.py` trusted the JSON's claimed numbers without comparing them to the markdown table: a two-field forgery (ic=0.91, verdict=promote, real bar counts) printed PROOF_COMPLETE, exit 0. The F4 finish gate was crossable without running the pipeline. | D4 outputs §1; pre-fix `all checks passed` on forged file | **fixed** (md/JSON numeric+verdict cross-check, fail-closed on zero parsed rows; same forgery now exit 1; §2) |
+| F-B1 | blocker | (c2-p11) diluted tail-visible leak | §4 (regression tests re-run green in full suite) | fixed (stands) |
+| F-B2 | blocker | (c2-p11/c3-p11) windowed early leak | §4 (regression test re-run green in full suite) | fixed (stands) |
+| F-T5 | minor | (c2-p10) Gate-0.75 direction fault invisible | fixed in d2e2f38; untouched by this pass | fixed (stands) |
+| B3 | — | Noise seed-shopping sweep: 8/30 seeds (1-4 c3-p11 + 5,6,8,9), all reject | D2 §1 | open (method note: background job for remaining 22) |
+| P07 | — | Positioning conflict with MARKET-VERDICTS.md: none found (re-checked) | README/COMPARISONS.md | refuted (no conflict) |
+
+D2 (seed sweep) and D5 (determinism): attacks attempted, gate held —
+recorded as refuted/evidence. Prior findings F-T3/F-T2/F-L1/F-C1/F-S1/F-S2/
+F-G1/F-G2/F-A4: remain fixed (untouched by this pass's diff, suite green).
+
+### Status key
+
+- `open`: reported for the builder; not yet fixed
+- `fixed`: fix implemented and re-verified with the pass's own probes this pass
+- `refuted`: attack attempted, claim held
