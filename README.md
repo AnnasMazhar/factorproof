@@ -3,7 +3,7 @@
 The overfitting controls that quant research actually needs — without a £100/month licence.
 
 ![Python](https://img.shields.io/badge/python-3.11%2B-blue)
-![Tests](https://img.shields.io/badge/tests-137%20passed-brightgreen)
+![Tests](https://img.shields.io/badge/tests-141%20passed-brightgreen)
 ![Ruff](https://img.shields.io/badge/ruff-clean-brightgreen)
 ![Licence](https://img.shields.io/badge/licence-MIT-green)
 
@@ -42,8 +42,9 @@ or it does not ship.
 The reference implementation of these techniques (MlFinLab) is not open source:
 the licence prohibits redistribution, derivatives, and any competing product, and
 your improvements become the licensor's property. The free Quantopian stack
-(alphalens, pyfolio, empyrical) has none of these controls and was last maintained
-in 2020. See [COMPARISONS.md](COMPARISONS.md) for the full table.
+ (alphalens, pyfolio, empyrical) has none of these controls and was last maintained
+ in 2020; community forks (alphalens-reloaded et al.) keep it installable on
+ modern Python but add none of the controls either. See [COMPARISONS.md](COMPARISONS.md) for the full table.
 
 ## Design
 

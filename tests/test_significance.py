@@ -20,6 +20,14 @@ Faults detected per test:
         Fault: _norm_cdf polynomial coefficients wrong.
     test_bh_empty_input:
         Fault: BH crashing or returning wrong result on empty list.
+    test_wilson_lower_rejects_negative_k:
+        Fault: cryptic `math domain error` (or silent NaN) on k < 0 instead
+            of an actionable ValueError.
+    test_wilson_lower_rejects_k_above_n:
+        Fault: cryptic `math domain error` on k > n instead of an
+            actionable ValueError.
+    test_wilson_lower_rejects_negative_n:
+        Fault: silent 0.0 on negative n instead of an actionable ValueError.
 """
 
 from __future__ import annotations
@@ -83,6 +91,36 @@ def test_wilson_lower_zero_obs():
     """
     lb = wilson_lower(k=0, n=0)
     assert lb == 0.0
+
+
+def test_wilson_lower_rejects_negative_k():
+    """Invalid k < 0 must raise an actionable ValueError, not `math domain error`.
+
+    Fault detected: cryptic `math domain error` from sqrt of a negative
+    term, giving the caller no hint which argument is wrong.
+    """
+    with pytest.raises(ValueError, match=r"0 <= k <= n.*k=-1, n=100"):
+        wilson_lower(k=-1, n=100)
+
+
+def test_wilson_lower_rejects_k_above_n():
+    """Invalid k > n must raise an actionable ValueError, not `math domain error`.
+
+    Fault detected: cryptic `math domain error` from sqrt of a negative
+    term, giving the caller no hint which argument is wrong.
+    """
+    with pytest.raises(ValueError, match=r"0 <= k <= n.*k=101, n=100"):
+        wilson_lower(k=101, n=100)
+
+
+def test_wilson_lower_rejects_negative_n():
+    """Invalid n < 0 must raise an actionable ValueError, not silently return 0.0.
+
+    Fault detected: silent 0.0 on negative n, indistinguishable from the
+    legitimate n == 0 no-evidence case.
+    """
+    with pytest.raises(ValueError, match=r"n must be >= 0.*n=-3"):
+        wilson_lower(k=0, n=-3)
 
 
 def test_wilson_lower_monotone_in_k():

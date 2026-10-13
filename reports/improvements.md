@@ -605,3 +605,183 @@ check_real_data_proof: all checks passed.
 - Branch note: this worktree is detached at 1c79970 (feat/v0.1 is checked
   out in a sibling reconcile worktree and is ahead). Commit below is on
   detached HEAD; orchestrator to cherry-pick or merge onto feat/v0.1.
+
+## Improve pass 2 (cycle 3) — 2026-10-13 — c3-p09-improve-2
+
+Baseline: c3-p08 left 138 passed, suite green (authoritative: this file §
+"Improve pass 1 (cycle 3)"). Open minors at pass start: F-A4 (wilson edge
+cases), F-T5 (runtime-check direction fault invisible), F-S1 (stale star
+counts) — all minor, all from docs/ADVERSARIAL_REVIEW.md c2-p10/c2-p11.
+
+### Scope of this pass (per pass brief)
+
+Ergonomics (stranger-actionable errors), docs matching the code exactly,
+packaging/versioning check, one concrete integration example against a real
+external tool, then the single biggest README credibility gap. F-A4 is the
+ergonomics item and the named next target from c3-p08's handoff notes.
+
+### 1. F-A4 fixed — `wilson_lower` actionable errors
+
+Before (reproduced this pass, verbatim):
+
+```
+$ .venv/bin/python -c "from factorlab.significance import wilson_lower; print(repr(wilson_lower(-1,100)))"
+Traceback (most recent call last):
+  File "<string>", line 1, in <module>
+    from factorlab.significance import wilson_lower; print(repr(wilson_lower(-1,100)))
+                                                                ~~~~~~~~~~~~^^^^^^^^
+  File "src/factorlab/significance.py", line 304, in wilson_lower
+    term = math.sqrt(p_hat * (1 - p_hat) / n + z2 / (4 * n * n))
+ValueError: math domain error
+```
+
+`math domain error` names neither the argument nor the constraint. Negative
+`n` was worse: silent `0.0`, indistinguishable from the legitimate `n == 0`
+no-evidence case.
+
+Fix (`src/factorlab/significance.py::wilson_lower` only; no caller changed —
+`evaluate.hit_rate_metrics` inlines its own formula and constructs valid
+`hits <= n` by construction):
+
+```python
+if n < 0:
+    raise ValueError(
+        f"wilson_lower: n must be >= 0 (number of valid observations), got n={n}."
+    )
+if k < 0 or k > n:
+    raise ValueError(
+        f"wilson_lower: require 0 <= k <= n (successes cannot exceed trials), got k={k}, n={n}."
+    )
+if n == 0:
+    return 0.0
+```
+
+The `n == 0 -> 0.0` boundary is preserved (pinned by
+`test_wilson_lower_zero_obs`; c3-p08 handoff constraint respected).
+
+New tests (`tests/test_significance.py`, fault list updated per quality
+contract): `test_wilson_lower_rejects_negative_k`,
+`test_wilson_lower_rejects_k_above_n`, `test_wilson_lower_rejects_negative_n`
+— each asserts `ValueError` with the argument values in the message, so a
+regression to a bare `math domain error` fails the match.
+
+Pre-existing suites unaffected by construction: hypothesis properties
+`test_wilson_lower_bounded` / `test_wilson_lower_monotone_in_successes` use
+`assume(k <= n)`, `n >= 1` — the new guards never fire there (targeted run:
+35 passed).
+
+After:
+
+```
+$ .venv/bin/python -m pytest -p no:warnings 2>&1 | tail -1
+141 passed in 48.52s
+```
+
+### 2. README credibility gap — stale badge + unqualified "abandoned" claim
+
+A skeptic needs 5 seconds to falsify either of these:
+
+(a) Tests badge said `137 passed`; suite was 138 at pass start (c3-p08's +1
+was never badged). Fixed to `141 passed` (after this pass's +3).
+
+(b) "The free Quantopian stack ... was last maintained in 2020" with no
+qualifier. A reviewer who knows `alphalens-reloaded` (pushed 2026-10-10 per
+docs/ADOPTION.md §9.3) reads this as overstating our position — the originals
+are dead but maintained forks exist. Fixed with one clause: "community forks
+(alphalens-reloaded et al.) keep it installable on modern Python but add none
+of the controls either." Positioning unchanged (MARKET-VERDICTS.md still wins:
+originals abandoned, forks add no gates — now stated, not implied). No
+conflict to record in EVIDENCE.md.
+
+README results table re-verified against `results/factor_table.md`: identical
+(all 13 rows, 0/13 promoted in screen, `mom_20` standalone PROMOTE). No drift.
+
+### 3. Docs-exactness drive-by — COMPARISONS.md Sources block (F-S1, half)
+
+The Sources block contradicted the file's own comparison table (same-file,
+same-date claim): purgedcv "35 stars ... v0.0.2" vs table "55 stars, v0.1.10";
+ml4t-diagnostic "32 stars" vs table "34"; pyanomaly "132 stars" vs table
+"133". Updated the three cells to the table values (live-verified 2026-10-12:
+ADOPTION.md §9.3). The remaining F-S1 half (dated c2-p02 snapshot prose in
+docs/RESEARCH.md §§1543-1707) is intentionally untouched: those sections are
+dated re-verification records, and rewriting them would falsify the record —
+the live numbers live in COMPARISONS.md table + ADOPTION.md §9.3. F-S1 stays
+open for the orchestrator to rule on that convention; F-T5 untouched
+(sequenced, test-precision only, no user-facing effect).
+
+### 4. Integration + packaging (verified, no change needed)
+
+`examples/integrate_alphalens.py` re-run this pass (verbatim):
+
+```
+factorproof verdict for mom_20: promote
+alphalens 0.4.6: factor_data shape (17520, 5)
+alphalens mean IC:
+1D     0.037336
+5D     0.019585
+20D    0.008899
+INTEGRATION_OK
+```
+
+Matches docs/ADOPTION.md §7.1 numbers exactly (0.0373/0.0196/0.0089) — the
+recipe reproduces two cycles later. Packaging: `pyproject.toml` 0.1.0 ==
+`CHANGELOG.md` 0.1.0 entry; `[project.scripts]` entry point live
+(`factor-lab list` runs); CI already runs `check_no_internal_refs.py`
+(`.github/workflows/ci.yml:42`).
+
+Promotion verdicts (no regression): `factor-lab promote mom_20 --data signal
+--plant-signal` → PROMOTE, exit 0; `factor-lab promote noise_control --data
+signal` → REJECT, exit 1.
+
+Full gate state:
+
+```
+$ ruff check .
+All checks passed!
+$ ruff format --check src/factorlab/significance.py
+1 file already formatted
+$ .venv/bin/python scripts/check_no_internal_refs.py 2>&1 | tail -1
+check_no_internal_refs: CLEAN — no forbidden tokens found.
+$ .venv/bin/python scripts/check_real_data_proof.py 2>&1 | tail -2
+check_real_data_proof: all checks passed.
+... (checker prints its own completion line)
+```
+
+(`ruff format --check .` repo-wide drift is pre-existing and untouched — this
+pass's files are format-clean; the one remaining hunk in
+tests/test_significance.py:277 is pre-existing DSR-test spacing, verified not
+in this pass's edited regions.)
+
+### Metrics delta
+
+| Metric | Before (c3-p08) | After | Delta |
+|--------|--------|-------|-------|
+| Test count | 138 | 141 | +3 |
+| F-A4 status | open | fixed (guards + 3 fault-named tests) | ✓ |
+| `wilson_lower(-1, 100)` | `math domain error` | `ValueError: ... require 0 <= k <= n ..., got k=-1, n=100` | ✓ |
+| `wilson_lower(0, -3)` | silent 0.0 | `ValueError: ... n must be >= 0 ..., got n=-3` | ✓ |
+| README Tests badge | 137 (stale) | 141 (correct) | ✓ fixed |
+| README Quantopian claim | unqualified "last maintained in 2020" | fork qualifier added | ✓ fixed |
+| COMPARISONS Sources vs table | contradicted (35/32/132) | matches (55/34/133) | ✓ fixed |
+| alphalens integration | INTEGRATION_OK (cycle 2) | INTEGRATION_OK re-verified, same numbers | no regression |
+| mom_20 / noise_control / lookahead_control verdicts | PROMOTE / REJECT / REJECT | unchanged | no regression |
+| check_no_internal_refs | CLEAN | CLEAN | no change |
+| check_real_data_proof | pass | pass | no change |
+| Ruff check | clean | clean | no change |
+| Open minors F-T5 / F-S1(research half) | open | open (sequenced, rationale above) | not this pass |
+
+### Notes for the next pass
+
+- F-T5 (Gate 0.75 direction-fault invisibility) is the recommended next
+  target; it needs a mechanism-pinning test for `check_lookahead_runtime`
+  analogous to what Gate 0.85's perturbation tests do.
+- Observed while here, deliberately out of scope: a `stash@{0}` entry
+  ("WIP on feat/v0.1: b230876", results/ files only) is present in
+  `git stash list`. This pass intended no stash and uses none — one
+  exploratory `git stash -q` was issued mid-pass to test pre-existing
+  formatter drift, but this worktree's HEAD is 8efa46a, not b230876, so the
+  entry's base does not match this worktree's HEAD. Left untouched;
+  orchestrator to verify ownership before dropping.
+- Branch note: this worktree is detached at 8efa46a (feat/v0.1 is checked
+  out in a sibling reconcile worktree). Commit below is on detached HEAD;
+  orchestrator to cherry-pick or merge onto feat/v0.1.

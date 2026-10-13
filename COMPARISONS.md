@@ -56,9 +56,9 @@ either.
 - MlFinLab repo metadata and source (purged CV, BHY, haircut, deflated Sharpe): GitHub API + `master` tarball
 - alphalens / pyfolio / empyrical metadata, licences, last default-branch commits: GitHub API and commits API
 - qlib metadata: https://api.github.com/repos/microsoft/qlib ; feature search: `master` checkout, no matches for purged/embargo/deflated/Benjamini/"false discovery"/walk-forward
-- purgedcv repo: https://github.com/eslazarev/purged-cross-validation (35 stars, MIT, JOSS paper, v0.0.2 PyPI 2025-04-16); feature list verified against README and API summary table
-- ml4t-diagnostic repo: https://github.com/ml4t/diagnostic (32 stars, MIT, active 2026); feature list from README capability table and ecosystem description
-- pyanomaly repo: https://github.com/chulwoohan/pyanomaly (132 stars, MIT, v1.01 2024-03-13); WRDS requirement from README installation instructions; feature gaps confirmed by source search for "purge", "embargo", "false discovery", "Wilson"
+- purgedcv repo: https://github.com/eslazarev/purged-cross-validation (55 stars, MIT, JOSS paper, v0.1.10 PyPI); feature list verified against README and API summary table
+- ml4t-diagnostic repo: https://github.com/ml4t/diagnostic (34 stars, MIT, active 2026); feature list from README capability table and ecosystem description
+- pyanomaly repo: https://github.com/chulwoohan/pyanomaly (133 stars, MIT, v1.01 2024-03-13); WRDS requirement from README installation instructions; feature gaps confirmed by source search for "purge", "embargo", "false discovery", "Wilson"
 - Topic sizes (GitHub search API, same date) used for `launch/topics.txt`
 
 ## Choose this when…
