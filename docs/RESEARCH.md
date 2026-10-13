@@ -5491,3 +5491,184 @@ PDF (404 — the author PDF URL has moved; NBER w11547 is the verified citation)
 Dobrynskaya 2023 (403 SSRN, 404 pm-research — still boundary; no threshold
 cites it). All 11 design-driving sources (D1–D11) have at least one verified
 200 URL. All 1 context source (C1) has a verified DOI 200.
+
+---
+
+## 17. Ecosystem and competition (cycle 5, pass 2 — 2026-10-13T13:00 UTC)
+
+This section is the pass-2 deliverable for cycle 5. The maintained detail
+table lives in `COMPARISONS.md` (7 tools, per-feature columns, re-verified
+today); this section records the live numbers fetched for this pass, the
+watch-item dispositions from §13.3/§14.7, the comparison table, the claimed
+gap, and the falsification criterion. No MARKET-VERDICTS position is
+re-litigated: the verdicts file remains authoritative. No code changed in
+this pass; all of F-R1…F-R21 stand as last dispositioned.
+
+### 17.1 Live verification (GitHub REST API + PyPI, probed 2026-10-13T13:00 UTC)
+
+Raw `curl -sL` output (stars / pushed_at / licence):
+
+```
+hudson-and-thames/mlfinlab   stars=4939  pushed=2023-10-02T03:05:19Z  licence=other
+microsoft/qlib               stars=49336 pushed=2026-10-08T10:58:43Z  licence=mit
+eslazarev/purged-cross-validation stars=57 pushed=2026-10-01T10:03:02Z licence=mit
+ml4t/diagnostic              stars=34    pushed=2026-10-13T05:27:16Z  licence=mit
+chulwoohan/pyanomaly         stars=133   pushed=2024-03-13T08:03:25Z  licence=mit
+quantopian/alphalens         stars=4469  pushed=2024-02-12T06:44:22Z  licence=apache-2.0
+stefan-jansen/alphalens-reloaded stars=670 pushed=2026-10-13T00:42:32Z licence=apache-2.0
+stefan-jansen/pyfolio-reloaded  stars=617 pushed=2026-10-13T00:42:21Z licence=apache-2.0
+stefan-jansen/empyrical-reloaded stars=125 pushed=2026-10-10T09:38:45Z licence=apache-2.0
+PyPI purgedcv: version=0.1.10 (latest_upload=2026-10-01T09:26:43, 23 releases total)
+```
+
+All 9 GitHub API calls returned HTTP 200; PyPI JSON API returned HTTP 200.
+Probed at 13:00 UTC, 2026-10-13.
+
+Deltas vs §14.7 (probed ~11:00 UTC same day):
+
+| Tool | §14.7 | §17 (13:00) | Delta | Last push |
+|------|-------|-------------|-------|-----------|
+| MlFinLab | 4,939 | **4,939** | 0 | 2023-10-02 (still stale) |
+| qlib | 49,318 | **49,336** | +18 | 2026-10-08 |
+| purgedcv | 55 | **57** | +2 | 2026-10-01 |
+| ml4t-diagnostic | 34 | **34** | 0 | **2026-10-13T05:27Z** (2nd push today) |
+| pyanomaly | 133 | **133** | 0 | 2024-03-13 |
+| alphalens-reloaded | 670 | **670** | 0 | 2026-10-13 |
+| pyfolio-reloaded | 617 | **617** | 0 | 2026-10-13 |
+| empyrical-reloaded | 125 | **125** | 0 | 2026-10-10 |
+
+Notable: purgedcv grew from 55 → 57 (+2) in approximately 2 hours on a single
+day, continuing the fast-growth pattern (0 → 57 stars since May 2026). qlib
+gained +18 over the morning, consistent with its high-velocity profile.
+ml4t-diagnostic had a second push today at 05:27Z; the README was re-fetched
+and re-checked below.
+
+### 17.2 Watch-item dispositions (§13.3 items re-verified at 13:00 UTC today)
+
+**(a) purgedcv ships factor screening + a gate — NOT observed.** PyPI
+description re-fetched (25,555 chars, HTTP 200). Terms checked:
+`information coefficient`, `factor screen`, `accept`, `reject`, `verdict`,
+`benjamini`, `fdr`, `promote`, `quantile`, `turnover`, `wilson`. Results:
+- `accept` — 2 hits, both API-terminology ("accepted" as in "inputs are
+  accepted"), not a gate concept (context printed, verified above).
+- `wilson` — 1 hit, the `wilsonfreitas/awesome-quant` badge URL. Not
+  a Wilson-CI feature.
+- All other terms: absent.
+
+purgedcv remains a CV/statistics library; no IC pipeline, no FDR-across-family,
+no accept/reject verdict. PyPI version unchanged at 0.1.10.
+
+**(b) MlFinLab relicensed — NOT observed.** Licence still `other` (all rights
+reserved, commercial); pushed_at still 2023-10-02. Three years without a public
+code push as of this probe.
+
+**(c) ml4t-diagnostic adds a standalone verdict API — NOT observed, despite
+two pushes today.** Main-branch README re-fetched (6,204 chars, HTTP 200, after
+the 05:27Z push). The README was **restructured today**: it now explicitly lists
+`analyze_signal` as returning IC, HAC-adjusted IC t-stats, quantile spread,
+and turnover, and the feature table adds "FDR control, White's Reality Check" to
+the selection-bias row (new vs. yesterday's §13.3c check). However, `analyze_signal`
+returns a result **object** with fields (`result.ic`, `result.ic_t_stat`,
+`result.spread`) — it is a diagnostics function, not a gate that exits 1 on
+reject. The README contains no `promote`, `verdict`, `accept-reject`, `exit
+code`, `standalone`, or `pass/fail gate` language. The FDR metric is a
+reported field, not a decision function.
+
+**This is the most material new fact for cycle 5:** ml4t-diagnostic now
+explicitly documents HAC-adjusted IC and FDR control in its README. It did not
+have these documented yesterday at this level of explicitness. The feature gap
+versus factorproof has **narrowed on the measurement axis** (they now claim the
+same statistical measurement layer) but the **verdict gap is unchanged** (they
+return metrics; factorproof gates and exits with a code).
+
+**(secondary) Reloaded forks add FDR/purge — NOT observed.** alphalens-reloaded
+README (not re-fetched this pass — no push since §14.7 check; no new install).
+None changed.
+
+### 17.3 Comparison table (cycle 5, 2026-10-13T13:00 UTC)
+
+| Tool | Approach | What it does well | Gap it leaves | What we do differently |
+|------|----------|-------------------|---------------|------------------------|
+| MlFinLab (4,939★, commercial, unpushed since 2023-10-02) | Full financial-ML library (bars, labelling, ensembles, backtest-overfitting) | The reference implementation: purged/CPCV, haircut + deflated Sharpe, PBO, profit hurdles, track-record length | Commercial licence (£100+VAT/mo/user, no derivatives, improvements assigned to licensor); public source 3 years stale | MIT, offline, inspectable: the 4 overfitting controls as a standalone gate, no subscription |
+| Quantopian stack (alphalens 4,469★ / pyfolio / empyrical, Apache-2.0, dead upstream 2020) | Factor tear-sheets + performance attribution | The mental model for factor analysis; familiar output | Abandoned 2018–2020; no purged CV, no FDR, no DSR, no gate; reloaded forks (670/617/125★) restore installability only | Same tear-sheet intuition (IC decay, quantile returns) plus the statistics the stack never had |
+| qlib (Microsoft, MIT, 49,336★, pushed 2026-10-08) | End-to-end AI quant platform (data, models, experiments) | Scale, model zoo, experiment tracking, 49k-star contributor base | No overfitting-control statistics at all (no purged/embargo, no FDR, no DSR, plain Sharpe only) | Complementary: the gate qlib screens could be passed through before promotion |
+| purgedcv (eslazarev, MIT, 57★, PyPI 0.1.10, JOSS paper) | sklearn-compatible time-series CV + Sharpe statistics | Correct purged K-fold, walk-forward, CPCV, embargo, DSR/PSR; 23 versions May→Oct 2026 (fast growth) | CV/statistics library only: no IC measurement, no quantile spread, no BH-FDR across a factor family, no accept/reject verdict | End-to-end screening: factors → IC → HAC-t → FDR → verdict with exit codes, one offline command |
+| ml4t-diagnostic (ml4t org, MIT, 34★, pushed 2026-10-13; 7-library ML4T ecosystem) | Signal diagnostics with HAC IC, purged CV, FDR, PBO, Reality Check | `analyze_signal` returns HAC-adjusted IC, t-stats, FDR metrics, quantile spread — the most feature-complete open competitor; active development | Returns a result object (metrics), not a binary gate verdict; Polars is a required input; 7-library ecosystem dependency chain; no standalone accept/reject exit code | Zero-dep-core gate (numpy/pandas/matplotlib only) that says REJECT and exits 1 — one offline command, no ecosystem |
+| pyanomaly (chulwoohan, MIT, 133★, dead since 2024-03-13) | Academic anomaly replication on WRDS/CRSP data | Real-data equity anomalies, factor regressions, quantile portfolios | WRDS subscription required (no offline path); no purged CV, no FDR, no gate | Synthetic-data offline demo plus the full rejection pipeline a WRDS user would still need |
+| reloaded forks (stefan-jansen, 670/617/125★, pushed 2026-10-10…13) | Keep the Quantopian stack installable | Modern-Python compatibility for the tear-sheets | Source-checked: add none of the four controls | Same answer as for the upstream stack |
+
+### 17.4 Updated feature-by-feature comparison
+
+| Feature | MlFinLab | Quantopian stack | qlib | purgedcv | ml4t-diagnostic | factorproof |
+|---------|----------|------------------|------|----------|-----------------|-------------|
+| Purged/embargoed CV | Yes | No | No | Yes | Yes | Yes |
+| HAC-adjusted IC t-stat | unverified | No | No | No | **Yes (new in README)** | Yes |
+| BH-FDR across screened family | Yes (BHY) | No | No | No | Yes (reported) | Yes (in gate) |
+| Deflated Sharpe | Yes | No | No | Yes | Yes | Yes (diagnostic) |
+| Binary accept/reject verdict (exit code) | No (public source) | No | No | No | **No** | **Yes** |
+| Offline, no subscription, no WRDS | Yes | Yes | Partial | Yes | Yes (core; Polars required) | Yes |
+| Licence | Commercial £100/mo | Apache-2.0 | MIT | MIT | MIT | MIT |
+| Last real code activity | 2023-10-02 | 2020 | 2026-10-08 | 2026-10-01 | 2026-10-13 | Active |
+
+The feature gap has narrowed: ml4t-diagnostic now documents HAC IC and FDR
+in its README explicitly. The **binary accept/reject verdict** remains the
+sole unclaimed feature across all open-source alternatives.
+
+### 17.5 The gap we claim (explicit, re-stated for cycle 5)
+
+No live, permissively-licensed tool packages **purged walk-forward CV with
+embargo + Benjamini-Hochberg FDR across the screened family + deflated
+Sharpe + an explicit binary accept/reject verdict that exits 1 on rejection
+and 0 on promotion** in one offline command, usable from a plain CSV or
+synthetic panel without Polars.
+
+How a user notices the gap: clone this repo, run `bash examples/run_demo.sh`
+offline, and watch `factor-lab promote noise_control` exit 1 with a 10-row
+reason table (FDR rejection, HAC-corrected t-stat, Wilson bound) while
+`factor-lab promote mom_20` on planted-signal data exits 0. Every competitor
+in the table above returns metrics — none returns a gate verdict with a
+documented exit code. MlFinLab's docs describe thresholds; the public source
+ships no `promote()` API that returns `"reject"` and exits 1.
+
+The narrowing: ml4t-diagnostic has the measurement layer (HAC IC, FDR). A
+user with the ML4T ecosystem and Polars could build the verdict gate from
+ml4t-diagnostic's metrics output. factorproof ships that gate as a public API
+with documented exit codes, usable from pandas OHLCV, offline, in one install.
+
+### 17.6 Falsification for this pass
+
+The positioning is wrong if any of these is observed:
+(a) purgedcv ships IC measurement plus an accept/reject gate — gap narrows
+    to licence/offline/simplicity only;
+(b) MlFinLab is relicensed under MIT/Apache — gap closes entirely;
+(c) ml4t-diagnostic publishes a `gate_factor()` or `screen_family()` function
+    that returns a binary verdict with a documented exit code, usable without
+    the full 7-library ecosystem — the gate claim becomes shared;
+(d) any alphalens-reloaded fork adds purge/FDR — row 2 of the table changes.
+
+Observed as of 2026-10-13T13:00 UTC: none of (a)-(d). Closest threat
+remains (c): ml4t-diagnostic is actively developed, documented HAC and FDR
+today, and has a "multiple-testing example" linked in its README (unverified
+content — the quickstart tutorial was not fetched this pass; named for next
+cycle's watch). Secondary: purgedcv 57 stars in 5 months suggests it will
+reach 100 stars within the year; watch for feature expansion into IC/verdict.
+
+This pass is falsified if any §17.1 number is contradicted by a same-day
+re-probe, or if any §17.2 "absent" term is shown present in the fetched text
+— the context snippets above are the record to beat.
+
+### 17.7 Link-verification table (probed 2026-10-13T13:00 UTC, curl -sL)
+
+| Source | URL | HTTP status |
+|--------|-----|-------------|
+| MlFinLab GitHub API | https://api.github.com/repos/hudson-and-thames/mlfinlab | 200 |
+| qlib GitHub API | https://api.github.com/repos/microsoft/qlib | 200 |
+| purgedcv GitHub API | https://api.github.com/repos/eslazarev/purged-cross-validation | 200 |
+| purgedcv PyPI JSON | https://pypi.org/pypi/purgedcv/json | 200 |
+| ml4t-diagnostic GitHub API | https://api.github.com/repos/ml4t/diagnostic | 200 |
+| ml4t-diagnostic README (via API) | https://api.github.com/repos/ml4t/diagnostic/readme | 200 |
+| pyanomaly GitHub API | https://api.github.com/repos/chulwoohan/pyanomaly | 200 |
+| alphalens GitHub API | https://api.github.com/repos/quantopian/alphalens | 200 |
+| alphalens-reloaded GitHub API | https://api.github.com/repos/stefan-jansen/alphalens-reloaded | 200 |
+| pyfolio-reloaded GitHub API | https://api.github.com/repos/stefan-jansen/pyfolio-reloaded | 200 |
+| empyrical-reloaded GitHub API | https://api.github.com/repos/stefan-jansen/empyrical-reloaded | 200 |
