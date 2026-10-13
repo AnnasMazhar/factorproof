@@ -33,7 +33,13 @@ Faults detected per test:
         direction (the exact F-R15 transfer requirement).
     test_roll_spread_scales_linearly:
         Fault: non-homogeneous spread (e.g. variance used where the spread
-        needs the standard-deviation scale).
+        needs the standard-deviation scale). The relative check carries a
+        scale-aware absolute floor: when the true lag-1 autocovariance is ~0,
+        both spreads are float-cancellation residue (~2*sqrt(eps)*rms) that
+        need not scale exactly (observed: cov ratio 32x instead of 9x on
+        products [+1.7e-18, -0.0625, -5.2e-18, +0.0625]). The floor is ~1e6x
+        below any meaningful spread, so the pin keeps full power on real
+        inputs.
     test_roll_spread_nonnegative_when_real:
         Fault: negative spread from a sign error under the square root.
 """
@@ -180,4 +186,7 @@ def test_roll_spread_scales_linearly(returns: list[float], c: float) -> None:
     if math.isnan(s1):
         assert math.isnan(s2)
     else:
-        assert math.isclose(s2, c * s1, rel_tol=1e-9)
+        # Noise-floor allowance: residue-dominated spreads (~1e-9 * rms and
+        # below) need not scale exactly; anything above the floor must.
+        scale = float(np.sqrt(np.mean(r**2))) if r.size else 0.0
+        assert math.isclose(s2, c * s1, rel_tol=1e-9, abs_tol=1e-6 * scale)

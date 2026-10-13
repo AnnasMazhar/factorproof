@@ -903,7 +903,177 @@ owns microstructure.
 
 ### Branch note
 
-`feat/v0.1` is checked out in the sibling reconcile worktree
-(`/home/openclaw/portfolio-wt/factorproof-reconcile`, with uncommitted
+`feat/v0.1` is checked out in the sibling reconcile worktree (with uncommitted
 changes). Commit below is on `tmp-c3p10`; orchestrator to cherry-pick onto
 `feat/v0.1`.
+
+## Improve pass 2 (cycle 4) — 2026-10-13 — c4-p09-improve-2
+
+Baseline: c4-p08 left `1 failed, 158 passed` (authoritative: this file §
+"Improve pass 1 (cycle 4)"), the failure being
+`tests/test_microstructure.py::test_roll_spread_scales_linearly` — flagged
+there as the named next target for the pass that owns microstructure.
+Eval artifacts claim 158 passed / 0 failures (reports/eval-c4-p6.json,
+reports/eval-c4-p7.json).
+
+### Scope of this pass (per pass brief)
+
+Ergonomics (stranger-actionable errors), docs matching the code exactly,
+packaging/versioning check, one concrete integration example against a real
+external tool, then the single biggest README credibility gap.
+
+### 1. Red suite → green: Roll homogeneity test miscalibrated at the noise floor
+
+Before (reproduced this pass, verbatim):
+
+```
+$ .venv/bin/python -m pytest -p no:warnings -q 2>&1 | tail -5
+tests/test_microstructure.py:183: AssertionError
+FAILED tests/test_microstructure.py::test_roll_spread_scales_linearly - asser...
+```
+
+Root cause (probed this pass, verbatim):
+
+```
+$ .venv/bin/python3 -c "
+import numpy as np
+from factorlab.microstructure import lag1_autocov, roll_spread
+r = np.array([0.0, 0.0, 0.5, 0.0, -0.49999999999999994])
+c = 3.0
+cov1 = lag1_autocov(r); cov2 = lag1_autocov(c*r)
+print('cov1', cov1, 'cov2', cov2, 'ratio', cov2/cov1)
+print('s1', roll_spread(r), 's2', roll_spread(c*r))
+print('rms', float(np.sqrt(np.mean(r**2))))
+a, b = r[:-1], r[1:]
+print('products', (a-a.mean())*(b-b.mean()))
+"
+cov1 -2.3129646346357427e-18 cov2 -7.401486830834377e-17 ratio 32.0
+s1 3.041686791657381e-09 s2 1.7206378853011898e-08
+rms 0.31622776601683794
+products [ 1.73472348e-18 -6.25000000e-02 -5.20417043e-18  6.25000000e-02]
+```
+
+Reading: the lag products are -0.0625 and +0.0625 — they cancel EXACTLY in
+real arithmetic, so the true autocovariance is 0 and the true spread is 0.
+What remains (±1e-18) is float mean-subtraction residue, and residue need not
+scale by c^2 = 9 (observed ratio 32x). The implementation (Roll 1984,
+`S = 2*sqrt(-cov)`) is exactly homogeneous; the test demanded 1e-9 relative
+exactness on rounding noise. Same class as the c3-p08 Pearson exact-tie fix:
+test-calibration bug, not an implementation bug. "Fixing" the implementation
+(e.g. snapping tiny |cov| to NaN) would destroy information — a threshold
+would be arbitrary and could mask real small spreads.
+
+Fix (`tests/test_microstructure.py` only, no src change): the relative check
+now carries a scale-aware absolute floor —
+`isclose(s2, c*s1, rel_tol=1e-9, abs_tol=1e-6 * rms)`. Worst-case residue is
+~2e-7 * rms (n^2*eps accumulation over ≤50 terms), so the floor has 5x margin
+over the noise while sitting ~1e6x below any meaningful spread. Fault-list
+docstring updated with the residue mechanism, per the quality contract.
+
+Fault-injection proof (variance-scale mutant `2*sqrt(-cov)` → `2*(-cov)`,
+the test's named fault; scratch copy, reverted, `git status --short src/`
+clean after):
+
+```
+FAILED tests/test_microstructure.py::test_roll_spread_hand_computed - assert ...
+FAILED tests/test_microstructure.py::test_roll_spread_scales_linearly - asser...
+```
+
+Both the KAT and the retouched property test kill the mutant — the floor
+adds slack only where both values are residue, never on real inputs.
+
+After:
+
+```
+$ .venv/bin/python -m pytest -p no:warnings 2>&1 | tail -1
+159 passed in 58.34s
+```
+
+### 2. README credibility gap — stale Tests badge
+
+Badge said `158 passed`; suite was 158-at-eval but the tree carries the
+c4-p08 +1 (F-T5 direction test), so a counter sees 159 green before this
+pass even runs. Fixed to `159 passed` (unchanged by this pass's own edit,
+which retouches a property test without adding one). README results table
+needs no change: no src file touched, so every number stands as verified in
+c3-p09.
+
+### 3. Ergonomics (verified, no change needed)
+
+Both stranger-facing error paths already exit 1 with actionable messages
+(pipe-exit false alarm ruled out by redirect-to-file retest):
+
+```
+$ .venv/bin/factor-lab report --from /bad/path --format md > /tmp/opencode/r.txt 2>&1; echo "report-bad-path EXIT:$?"
+report-bad-path EXIT:1
+$ .venv/bin/factor-lab screen --data /bad/path.csv > /tmp/opencode/s.txt 2>&1; echo "screen-bad-path EXIT:$?"
+screen-bad-path EXIT:1
+```
+
+(`report` prints `Error: /bad/path/factor_table.md not found. Run
+'factor-lab screen' first.`; `screen` prints the data-file hint added in
+c2-p09. Both correct.)
+
+### 4. Integration + packaging (verified, no change needed)
+
+`examples/integrate_alphalens.py` re-run this pass (verbatim):
+
+```
+alphalens 0.4.6: factor_data shape (17520, 5)
+alphalens mean IC:
+1D     0.037336
+5D     0.019585
+20D    0.008899
+INTEGRATION_OK
+```
+
+Matches docs/ADOPTION.md §7.1 numbers exactly (0.0373/0.0196/0.0089) — the
+recipe reproduces three cycles later. Promotion verdicts: `mom_20
+--data signal --plant-signal` → exit 0; `noise_control --data signal` →
+exit 1. Packaging: `pyproject.toml` 0.1.0 == `CHANGELOG.md` 0.1.0 entry;
+`[project.scripts]` entry point live; CI runs `check_no_internal_refs.py`
+(`.github/workflows/ci.yml:42`).
+
+### 5. Drive-by: F1 checker red on evaluator artifacts + own prior entry
+
+`scripts/check_no_internal_refs.py` FAILED on 7 hits: 6 absolute host-path
+prefixes in untracked evaluator artifacts reports/eval-c4-p6.json /
+reports/eval-c4-p7.json (same shape c2-p09/c3-p08 fixed for earlier cycles;
+mechanically scrubbed to `repo/`, both re-validated as JSON), plus 1 hit in
+the TRACKED c4-p08 entry in this file (a worktree absolute path, line 907 —
+reworded to name the worktree without the path). Checker now CLEAN:
+
+```
+$ .venv/bin/python scripts/check_no_internal_refs.py 2>&1 | tail -1
+check_no_internal_refs: CLEAN — no forbidden tokens found.
+```
+
+```
+$ ruff check .
+All checks passed!
+```
+
+### Metrics delta
+
+| Metric | Before (c4-p08) | After | Delta |
+|--------|--------|-------|-------|
+| Test count | 158 passed + 1 failing (roll homogeneity) | 159 passed, 0 failing | ✓ green |
+| Roll homogeneity property | FAIL on residue-dominated draws | PASS (scale-aware floor, mutant still killed) | fixed |
+| Named-fault detection (variance-scale mutant) | detected (KAT) | still detected (KAT + retouched property) | no weakening |
+| README Tests badge | 158 (stale) | 159 (correct) | ✓ fixed |
+| alphalens integration | INTEGRATION_OK (cycle 3) | INTEGRATION_OK re-verified, same numbers | no regression |
+| mom_20 / noise_control verdicts | PROMOTE / REJECT | unchanged | no regression |
+| check_no_internal_refs | FAIL (7 hits) | CLEAN | ✓ drive-by |
+| Ruff check | clean | clean | no change |
+| Open items | F-S1 (research-half, convention ruling pending) | untouched, sequenced | not this pass |
+
+### Notes for the next pass
+
+- F-S1's remaining half (dated c2-p02 snapshot prose in docs/RESEARCH.md
+  §§1543-1707 vs live COMPARISONS.md table) still awaits an orchestrator
+  ruling on the "dated record vs live table" convention proposed in c3-p09.
+- Observed while here, deliberately out of scope: `_pearson_corr` single
+  shared-rescale NaN on wildly-different-magnitude inputs (c3-p08 note) —
+  still unaddressed, still needs a dedicated pass with its own KAT.
+- Branch note: `feat/v0.1` is checked out in the sibling reconcile worktree.
+  Commit below is on `tmp-c3p10`; orchestrator to cherry-pick onto `feat/v0.1`.
