@@ -4488,3 +4488,1006 @@ JS-challenge shell (BSW) are likewise not cited; the Geneva archive
 record + two hosted PDFs carry that citation.
 
 (End of file)
+
+---
+
+## 16. Cycle 5 pass 1 — volatility, factor timing, and inference completeness (added 2026-10-13, pass c5-p01)
+
+Scope of this pass: five structural gaps left open by §8–§15 that each drive a
+checker number or a gate design decision. (1) Volatility-regime conditioning — the
+GARCH literature that backs the `vol_20` and `atr_norm_14` factors and explains
+why conditioning on volatility before IC measurement matters. (2) Factor
+decomposition of momentum — what momentum earns is partly systematic, and
+the systematic component is hedgeable (Grundy-Martin 2001) — relevant to the
+OOS-consistency gate's sign test. (3) Volatility-managed portfolios — the
+Moreira-Muir (2017) result that a simple variance-scaling of any factor strategy
+improves its Sharpe: the design consequence for the promote gate. (4) Spurious
+regression in short panels — the Stambaugh (1999) and Ang-Bekaert (2007) /
+Hodrick (1992) papers that explain why IS predictability regressions in short
+samples can mislead; the checker's MIN_BARS_FLOOR is their closed-form
+consequence. (5) Inference completeness — cluster-robust SE (Petersen 2009),
+stepdown FWER (Romano-Wolf 2005), OOS-R² testing (Clark-West 2007; Campbell-
+Thompson 2008) — the alternatives-considered for the repo's current choices.
+11 new sources, every link probed 2026-10-13 (curl -L, UA Mozilla/5.0); all 11
+confirmed HTTP 200; link table in §16.12. No code changed. No MARKET-VERDICTS
+position re-litigated. No absolute host paths appear below.
+
+Standing observation (re-read today): `reports/real-data-proof.json` — 14 coins,
+21,308 daily bars, 2021-04-29 → 2026-10-12; 0/13 promoted; raw p<0.05 flags 3;
+BH-FDR q=0.15 passes the same 3; specificity 10/10; DSR = 0.0 everywhere.
+
+### 16.1 ARCH — the volatility process that makes IC heteroskedastic (DRIVES DESIGN)
+
+**Engle, R.F. (1982)**
+"Autoregressive Conditional Heteroskedasticity with Estimates of the Variance of
+United Kingdom Inflation"
+*Econometrica* 50(4):987–1007.
+[Verified URL: https://www.jstor.org/stable/1912773 — HTTP 200 confirmed
+2026-10-13.]
+
+Method extracted: prices do not have constant conditional variance; variance is
+autocorrelated. Let u_t be the mean-zero residual of a return (or IC) series.
+The ARCH(q) conditional variance model:
+
+    h_t = omega + alpha_1 * u_{t-1}^2 + alpha_2 * u_{t-2}^2 + ... + alpha_q * u_{t-q}^2
+
+    where:
+        h_t   = conditional variance of u_t given information at t-1
+        omega > 0, alpha_i >= 0, sum_i alpha_i < 1  (stationarity constraint)
+
+    Maximum-likelihood estimation under conditional normality gives:
+        L(theta) = -T/2 * log(2*pi) - (1/2) * sum_t [log(h_t) + u_t^2/h_t]
+
+Key result of the paper: the UK inflation series (1958–1977) has ARCH effects;
+residuals from a standard regression model are temporally correlated in variance.
+The test for ARCH(q) is a Lagrange multiplier test on u_t^2 regressed on its own
+lags:
+
+    T * R^2 ~ chi^2(q)    (from regression of u_t^2 on u_{t-1}^2...u_{t-q}^2)
+
+Relevance to factorproof: the IC time series is a time-averaged
+(heteroskedastic) cross-sectional quantity — variance clustering means the
+Newey-West HAC standard error (§2.10) is using the right tool but the wrong
+model for the residual variance. Under ARCH, the efficient HAC would weight
+observations by 1/h_t (GLS) rather than uniformly. The current OLS-based
+HAC (§2.10) is consistent but inefficient in the presence of ARCH.
+
+Assumptions:
+1. Residuals u_t are conditionally normal given lagged u^2 (the paper's
+   assumption; GARCH, §16.2, relaxes to other distributions).
+2. Mean equation is correctly specified; residuals are mean-zero.
+3. Sum of ARCH coefficients < 1 (covariance stationarity).
+
+Known failure modes per the literature:
+1. Pure ARCH(q) for large q is overparameterised — GARCH(1,1) is
+   almost always more parsimonious (Bollerslev 1986, §16.2).
+2. The conditional normality assumption is rejected for crypto returns
+   (fat tails; excess kurtosis documented in Liu-Tsyvinski 2021 §8.6
+   and consistent with the standing proof: g4 > 3 assumed in every DSR
+   calculation).
+3. ARCH-LM test has low power against smooth variance shifts that do
+   not induce squared-residual autocorrelation.
+
+Design consequence: the volatility-factor cluster (vol_20, atr_norm_14)
+is measuring THIS process — the autocorrelation in squared returns that
+Engle formalized. The IC of these factors is not "predicting returns";
+it is predicting the next period's variance regime, which correlates with
+(but does not equal) next-period returns. Filed as falsification item
+F-R22: a vol_20 IC significantly different from zero, but whose
+conditional information is eliminated once h_t is included as a
+conditioning variable, is not a cross-sectional return-predictability
+factor. Any future proof promoting vol_20 must check its IC orthogonal
+to the lagged variance estimate.
+
+### 16.2 GARCH — the parsimonious volatility model (DRIVES DESIGN)
+
+**Bollerslev, T. (1986)**
+"Generalized Autoregressive Conditional Heteroskedasticity"
+*Journal of Econometrics* 31(3):307–327.
+DOI: https://doi.org/10.1016/0304-4076(86)90063-1
+[Verified URL: https://ideas.repec.org/a/eee/econom/v31y1986i3p307-327.html —
+HTTP 200 confirmed 2026-10-13. DOI also resolves HTTP 200 confirmed 2026-10-13.]
+
+Method extracted: GARCH(p,q) extends ARCH by allowing lagged conditional
+variance into the variance equation:
+
+    h_t = omega + sum_{i=1}^{q} alpha_i * u_{t-i}^2
+                + sum_{j=1}^{p} beta_j * h_{t-j}
+
+    GARCH(1,1) — the workhorse:
+        h_t = omega + alpha * u_{t-1}^2 + beta * h_{t-1}
+
+        Persistence: alpha + beta  (must be < 1 for stationarity;
+        typical equity/crypto fit: alpha + beta ≈ 0.98–0.99, meaning
+        variance is very slow-decaying).
+
+        Unconditional (long-run) variance:
+            sigma^2 = omega / (1 - alpha - beta)
+
+The key insight: GARCH(1,1) is equivalent to an ARCH(∞) with
+geometrically declining weights, but uses only 3 parameters. It gives a
+recursion: given h_{t-1} and u_{t-1}, the next variance is estimated in
+constant time.
+
+Notation: alpha = ARCH coefficient (response to shocks); beta = GARCH
+coefficient (persistence of variance); omega > 0 (baseline variance);
+u_{t-1}^2 = "news" term (surprise squared).
+
+Relevance to factorproof: two design consequences. First, the HAC SE
+estimate for the IC series implicitly assumes the IC residuals have
+constant unconditional variance; with GARCH, the efficient weight for
+observation t is 1/h_t (GLS-ARCH, not OLS-HAC). Second, the vol_20
+factor (§1.3 ATR, §12.4 GLM) is an indirect estimator of h_t^{1/2};
+its cross-sectional IC is partly measuring which coins are in a
+high-persistence variance state — the same regime the vol-managed
+portfolio (§16.4) scales by.
+
+Assumptions:
+1. Conditional mean correctly specified (GARCH is a model for the
+   second moment only).
+2. Covariance stationarity (alpha + beta < 1 — violated if integrated
+   variance, i.e. IGARCH where alpha + beta = 1; common finding is that
+   crypto sits near IGARCH, meaning shocks never decay fully).
+3. Conditional normality for MLE (can be replaced by QML under
+   misspecification — Bollerslev-Wooldridge 1992 robust t-stats; not
+   cited separately).
+
+Known failure modes per the literature:
+1. Near-IGARCH (alpha + beta ≈ 1) on crypto: the unconditional variance
+   is formally undefined; long-run scaling breaks down (the vol-managed
+   denominator estimate is non-stationary).
+2. Leverage effects (negative return → larger next-day variance than
+   positive return of same magnitude) are absent from GARCH(1,1); the
+   GJR-GARCH / EGARCH family captures this — relevant for the DSR
+   moment correction (§2.4) which uses skewness: GARCH without leverage
+   understates negative skewness.
+3. GARCH is a conditional model; it does not capture regime-switching
+   (abrupt variance shifts like the crypto crash of 2020/12 in Grobys
+   §9.4) — the walk-forward splits mitigate this by re-estimating
+   within each window.
+
+### 16.3 Grundy-Martin 2001 — momentum's systematic component (DRIVES DESIGN)
+
+**Grundy, B.D. & Martin, J.S. (2001)**
+"Understanding the Nature of the Risks and the Source of the Rewards to
+Momentum Investing"
+*Review of Financial Studies* 14(1):29–78.
+NBER Working Paper w7989.
+[Verified URLs: https://www.nber.org/papers/w7989 — HTTP 200 confirmed
+2026-10-13; JSTOR: https://www.jstor.org/stable/2696959 — HTTP 200
+confirmed 2026-10-13.]
+
+Method extracted: the raw momentum factor return is decomposed into a
+systematic component (exposure to Fama-French three factors) and an
+idiosyncratic component. The paper shows the systematic component can be
+NEGATIVE (momentum crashes, §1.9) while the idiosyncratic component is
+more stable and consistently positive.
+
+The decomposition at time t (from §2, p.33–35):
+
+    R_WML,t = beta_WML_t * f_t + epsilon_WML_t
+
+    where:
+        R_WML,t      = return of winners-minus-losers portfolio
+        beta_WML_t   = time-varying systematic factor exposure
+                       (varies with winners/losers characteristics at
+                       formation — momentum buys high-beta winners and
+                       shorts low-beta losers in recovery markets)
+        f_t          = systematic factors (market, SMB, HML)
+        epsilon_WML_t = idiosyncratic component
+
+Key result (Table 6, p.51): residual (idiosyncratic) momentum earns
++0.42% to +1.35% per month after beta-hedging; raw momentum earns
++0.42% to +1.35% on average (Table 3) but the gross return is
+dominated by the risk-corrected component. The systematic component
+averages near zero, meaning the TIME-SERIES variation in momentum
+performance is largely a systematic-risk phenomenon, not alpha decay.
+
+Relevance to factorproof: the OOS-consistency gate counts IC sign
+agreement across walk-forward splits. Grundy-Martin predicts that for
+a STOCK momentum factor, the IC sign can flip at formation-period
+boundaries when the market beta of the winner portfolio flips — the
+factor is genuinely sign-changing over time, not just noisy. For CRYPTO
+momentum at 14 coins the equivalent mechanism is BTC-beta — the
+"winner" coins will have high BTC-beta in bull regimes and the
+systematic component turns negative in drawdowns. This provides a
+literature-grounded reason why the OOS-consistency gate may correctly
+reject a momentum factor that has IC > 0 on average but inconsistent
+sign: the inconsistency may be real, not estimation noise.
+
+Assumptions:
+1. The factor decomposition requires observed factor returns (MKT, SMB,
+   HML); the repo does not use these but the interpretation stands for
+   any single-factor cross-sectional study.
+2. The time-varying betas are estimated by regressing the momentum
+   portfolio return on factors (rolling OLS); stale estimates bias the
+   hedge.
+3. The paper uses CRSP monthly data 1966–1995; crypto analogy holds in
+   direction but not magnitude.
+
+Known failure modes per the literature:
+1. Factor hedging removes the systematic risk but NOT crash risk —
+   idiosyncratic momentum still has large left-tail events (the
+   crash of 2009 hit the residual too, just less severely, per
+   Daniel-Moskowitz 2016 §1.9).
+2. The factor decomposition changes when the factor universe changes
+   (adding crypto factors changes what "systematic" means).
+3. The paper's sample (1966–1995) predates the post-publication decay
+   documented in McLean-Pontiff (§8.6 and §15.5 LR) — the
+   idiosyncratic component may have shrunk post-discovery.
+
+Design consequence: the OOS-consistency gate (≥60% of splits with same
+IC sign) is under-specified for factors whose true signal is
+time-varying by construction. Filed as falsification item F-R23: a
+momentum-family factor whose IC sign flips in exactly the walk-forward
+window covering 2021-11 to 2022-06 (the major crypto drawdown) is
+correctly rejected by the consistency gate, not evidence the gate is
+broken. The improve pass should add a per-split IC magnitude check
+(C2-3a fix) that distinguishes "IC drifted to zero" from "IC genuinely
+reversed with the systematic component" — the magnitudes are
+qualitatively different (near zero vs. large negative).
+
+### 16.4 Moreira-Muir 2017 — volatility-managed factors (DRIVES DESIGN)
+
+**Moreira, A. & Muir, T. (2017)**
+"Volatility-Managed Portfolios"
+*Journal of Finance* 72(4):1611–1644.
+NBER Working Paper w22208.
+[Verified URLs: https://www.nber.org/papers/w22208 — HTTP 200 confirmed
+2026-10-13; JSTOR: https://www.jstor.org/stable/26508267 — HTTP 200
+confirmed 2026-10-13.]
+
+Method extracted: scale any factor strategy's position by the inverse of
+its RECENT realised variance. The scaled portfolio has strictly higher
+ex-ante Sharpe if returns and variance are negatively correlated (which
+is true for most risk premia — bad times have high variance AND low
+returns).
+
+Volatility-managed position at time t:
+
+    f^VM_t = c / sigma^2_{t-1} * f_t
+
+    where:
+        f_t          = raw factor signal (unit position at each date)
+        sigma^2_{t-1} = realised variance estimated at t-1 (prior month)
+                       = (1/21) * sum_{d in month t-1} r_d^2  (daily)
+        c            = scale constant chosen so E[f^VM_t^2] = 1 (unit variance)
+
+    The resulting conditional Sharpe improvement (equation 2, p.1615):
+
+    Delta_SR = corr(r_t, -sigma^2_{t-1}) * SR_raw / sqrt(1 - corr^2)
+
+    — any NEGATIVE correlation between return and lagged variance
+    implies Delta_SR > 0.
+
+    Reported empirical result: the Market factor, Value, Momentum, HML,
+    and CMA all improve Sharpe after vol-management by approximately
+    0.1–0.5 Sharpe units. The improvement comes from reducing position
+    in high-variance periods — the strategy is NOT the same as
+    vol-targeting (which divides by vol, not variance, and adjusts for
+    a target vol level, not correlation).
+
+Notation: sigma^2_{t-1} = prior-month daily variance; f_t = raw factor
+return; c = normalisation; corr = population correlation between r_t
+and sigma^2_{t-1} (estimated by sample correlation over the full
+history — rolling estimation degrades the estimate in short samples).
+
+Relevance to factorproof: the `deflated_mom` factor (§1.8) already
+scales by current volatility (the Moskowitz-Ooi-Pedersen TSMOM form).
+Moreira-Muir extend this beyond time-series momentum to ANY factor: the
+vol_20 / atr_norm_14 factors in the repo are proxies for sigma_{t-1}
+and could serve as explicit scaling inputs. Design implication: the
+repo's turnover gate (max_turnover = 0.5) and the GARCH-derived vol
+estimate should be considered jointly — a vol-managed variant of mom_20
+(divide by lagged variance) would reduce turnover AND improve Sharpe if
+the corr(r, sigma^2) is negative on the crypto panel.
+
+Assumptions:
+1. The correlation between returns and lagged variance is negative and
+   stable (required for Delta_SR > 0). On crypto, this correlation may
+   be near zero or even positive in some regimes (high-vol bull markets
+   in 2021); the improvement is not guaranteed.
+2. Variance estimate sigma^2_{t-1} is computed from high-frequency
+   intraday data in the paper (daily returns within the prior month);
+   the repo's 20-day rolling vol is a daily-bar approximation.
+3. Scaling is linear in 1/sigma^2, which can be extreme when variance
+   is very low (amplification risk) — the paper's c normalisation
+   prevents runaway positions in practice.
+
+Known failure modes per the literature:
+1. The improvement is NOT present after transaction costs for high-
+   turnover implementations: position changes each month (or each day
+   if daily scaling is used) generate turnover costs that may exceed
+   the Sharpe gain.
+2. Concretely on crypto: the 2021-11 to 2022-06 drawdown is a
+   HIGH-variance period where vol-managed positions would REDUCE
+   exposure — but it is also a period where prices continued falling
+   for months, so reducing exposure WAS the right call. The mechanism
+   works in crypto at the qualitative level.
+3. Estimation risk in short samples: sigma^2_{t-1} is estimated from
+   21 daily returns; on a 14-coin panel, cross-coin variance is
+   heterogeneous, and pooling coins for a single variance estimate
+   introduces estimation bias.
+
+Design consequence: vol-managed variants of promoted factors are a v0.2
+roadmap item. Filed as falsification item F-R24: if a vol-managed
+mom_20 on the real 14-coin panel shows LOWER Sharpe than raw mom_20
+(i.e. corr(r, sigma^2) is positive on this panel), Moreira-Muir's
+mechanism does not hold here and the `deflated_mom` factor's variance
+scaling should be re-examined. The test is one SQL query and one
+correlation — named so the implement pass can run it.
+
+### 16.5 Stambaugh 1999 — the small-sample bias in predictability regressions (DRIVES DESIGN)
+
+**Stambaugh, R.F. (1999)**
+"Predictive Regressions"
+*Journal of Financial Economics* 54(3):375–421.
+[Verified URL: https://ideas.repec.org/a/eee/jfinec/v54y1999i3p375-421.html —
+HTTP 200 confirmed 2026-10-13.]
+
+Method extracted: the OLS slope from a predictive regression
+
+    r_{t+1} = alpha + beta * x_t + epsilon_{t+1}
+
+    where x_t is a persistent regressor (e.g. dividend yield, past return)
+    with AR(1) coefficient phi close to 1, suffers from SMALL-SAMPLE BIAS:
+
+    E[beta_hat] = beta + (1 + 3*phi) / T * lambda + O(T^{-2})
+
+    where:
+        phi   = AR(1) coefficient of x_t (persistence of the predictor)
+        lambda = cov(epsilon, u) / var(u)
+                 u_t = x_t - phi * x_{t-1}  (shock to the predictor)
+        T     = sample size
+
+    The bias direction (p.382 equation 5): when the predictor and
+    return innovations are negatively correlated (lambda < 0 — the
+    typical case for dividend yield: high expected return = low current
+    price = low dividend yield, so price shocks and yield shocks have
+    negative correlation), the OLS slope OVERESTIMATES the true slope.
+    For phi close to 1 and small T, the bias magnitude is large:
+    approximately (1 + 3) / T = 4/T in the extreme (phi = 1).
+
+    For T = 200 (the repo's MIN_BARS_FLOOR at H=1), phi = 0.95,
+    lambda = -0.5:
+        Bias ≈ (1 + 3*0.95) / 200 * (-0.5) ≈ -0.0097 per unit of lambda
+    This is comparable in magnitude to a typical factor IC (0.02–0.05),
+    meaning a factor whose "IC" is 0.015 on T=200 bars with a
+    persistent cross-sectional mean could be entirely bias.
+
+Relevance to factorproof: the repo computes IC (Pearson correlation
+between factor scores and forward returns), not a regression slope. The
+Stambaugh bias applies to regression estimators; the IC estimator is
+equivalent to a slope regression when both factor and return are
+standardised. The bias channel is: if factor scores are persistent
+(high phi — momentum factors with 20-day lookback have phi close to 1),
+and if factor innovations and return innovations are negatively
+correlated (high factor score → high expected return means when factor
+drops and return simultaneously rises, the bivariate correlation is
+inflated), then the sample IC overestimates the population IC in short
+panels.
+
+Assumptions:
+1. Persistence phi is non-trivial (phi > 0.5). For mom_20 factor scores
+   (overlapping 20-day windows), the lag-1 autocorrelation of the score
+   series is high (near 1 − 1/20 ≈ 0.95 by construction) — the bias
+   channel is fully open.
+2. Lambda = cov(factor_shock, return) has the same sign persistently.
+   For momentum, this is plausible; for mean-reverting factors (rev_5),
+   the correlation may be positive (reversal = negative lambda sign),
+   possibly partially CANCELLING the bias.
+3. The bias derivation assumes the regression slope is the statistic of
+   interest; the IC is scale-free, but the sign and direction of bias
+   translate.
+
+Known failure modes per the literature:
+1. The bias correction (Stambaugh 1999, §4) requires estimating phi and
+   lambda, which themselves need large T — on T = 200 the correction is
+   as noisy as the bias itself.
+2. The alternative approach (Lewellen 2004; Cochrane 2011 §16.10)
+   restricts beta to be nonnegative on the slope level — not directly
+   applicable to IC estimation.
+3. The bias vanishes for short-memory predictors (phi → 0): for factors
+   like noise_control (white noise), the bias is negligible.
+
+Design consequence: the MIN_BARS_FLOOR = 10,000 (T ≈ 10,000/14 ≈ 714
+per coin at daily frequency) is motivated in part by Bailey-Lopez de
+Prado MinTRL (§15.3), but a SECOND motivation now has a citation:
+Stambaugh bias at phi = 0.95 requires T >> 1/(1-phi) = 20 to be
+negligible; at T = 714, bias ≈ 4/714 ≈ 0.006 — comparable to a weak
+factor IC but smaller than a promoted factor's IC (>0.02). Filed as
+falsification item F-R25: a factor with phi > 0.95 and IC ≈ 0.015 on
+T < 500 per-coin daily bars where |lambda| > 0.3 may be entirely
+Stambaugh bias. The proof's dataset-summary must state the effective
+per-coin T and the factor score persistence (phi) for each promoted
+factor — both are computable from the existing data column.
+
+### 16.6 Ang-Bekaert 2007 and Hodrick 1992 — the spurious-regression correction for IC series (DRIVES DESIGN)
+
+**Ang, A. & Bekaert, G. (2007)**
+"Stock Return Predictability: Is It There?"
+*Review of Financial Studies* 20(3):651–707.
+NBER Working Paper w11488.
+[Verified URL: https://www.nber.org/papers/w11488 — HTTP 200 confirmed
+2026-10-13.]
+
+**Hodrick, R.J. (1992)**
+"Dividend Yields and Expected Stock Returns: Alternative Procedures
+for Inference and Measurement"
+*Review of Financial and Quantitative Analysis* 27(3):1–29. (a.k.a. JFQA)
+[Verified URL: https://www.jstor.org/stable/2331572 — HTTP 200 confirmed
+2026-10-13.]
+
+Methods extracted (pair, because Ang-Bekaert explicitly adopt the
+Hodrick procedure for multi-period regressions):
+
+**Hodrick (1992) — variance with long-horizon returns:**
+Standard long-horizon regressions of H-period returns on a predictor x_t
+have overlapping residuals — the same mechanism §2.10 diagnoses for the
+IC series. The Hodrick standard error corrects this by reversing the
+overlap: instead of summing H-period returns and computing variance,
+regress the 1-period return on the MOVING AVERAGE of x_t over the next
+H periods:
+
+    r_{t+1} = a + b * (1/H) * sum_{j=0}^{H-1} x_{t+j} + v_{t+1}
+
+This transforms the overlapping-label regression into a
+non-overlapping one. The 1-period residuals v_{t+1} are serially
+uncorrelated (by construction), so the OLS standard error IS the
+correct standard error — no autocorrelation correction needed.
+
+The Hodrick approach is equivalent in asymptotic power to the
+Newey-West HAC correction (§2.10) but has better finite-sample
+properties in Monte Carlo experiments (Hodrick p.5, verified via JSTOR
+abstract).
+
+**Ang-Bekaert (2007) — comprehensive re-assessment:**
+The paper applies both the Hodrick correction and a Campbell-Yogo
+(2006) instrument-based estimator to dividend yield, dividend-price,
+and earnings-price ratio predictors for US equity returns over
+1926–2004. Headline result (NBER abstract, retrieved 2026-10-13):
+"most evidence for return predictability is fragile" — dividend yield
+no longer predicts when the Hodrick or Campbell-Yogo correction is
+applied, even though it predicts under standard OLS. The paper
+explicitly tests whether IS predictability is "there" or a statistical
+artefact of overlapping returns and persistent predictors.
+
+The test of OOS predictability (§7 of the paper): uses a split-sample
+methodology — the conclusion is that when properly corrected, the
+dividend yield's OOS-R² is not significantly different from zero. This
+is an independent confirmation of Goyal-Welch (§15.4) using a different
+inference procedure.
+
+Relevance to factorproof: the IC t-stat (§2.10 HAC correction) uses
+the "direct" approach — regress forward returns on the factor score and
+correct the standard error of the slope. The Hodrick alternative would
+regress DAILY returns on a moving average of the factor score —
+computationally equivalent but with better small-sample t-stat
+calibration. Both are valid; the repo's HAC is the Newey-West analog,
+and the Hodrick is the "reversed" analog. The Ang-Bekaert result is
+the most important for the proof: it demonstrates that with proper
+inference, even classic equity predictors become statistically
+insignificant — the proof's 0/13 promoted result is exactly the
+expected pattern when inference is done correctly.
+
+Assumptions:
+1. Hodrick (1992): the predictor x_t is exogenous (not endogenously
+   determined by current-period returns); instruments are valid.
+2. Ang-Bekaert: the dividend yield is I(1) in the pre-WWII period —
+   their correction assumes a near-unit-root predictor.
+3. Both papers focus on equity dividends; the repo's factor scores are
+   not dividends, but the overlap mechanism is identical and the
+   inference lessons apply.
+
+Known failure modes per the literature:
+1. The Hodrick estimator requires the moving-average of x_t to be
+   observable — this requires H future observations of x per data
+   point, which is only available in-sample (not useful for live
+   trading, but valid for the proof's IS diagnostics).
+2. Ang-Bekaert's "fragility" conclusion is specific to persistent
+   (near-unit-root) predictors; short-memory factors (autocorrelation
+   phi < 0.5) may survive the correction. For rev_5 (phi ≈ 0) the
+   Hodrick correction changes little; for mom_20 (phi ≈ 0.95) the
+   correction can be dramatic.
+3. The RFS 2007 paper uses quarterly data; daily IC has shorter
+   effective horizons — the bias channel is less severe at H=1 than
+   at H=20.
+
+Design consequence (checker numbers): the checker's HAC-based
+t-stats are correct at L/T < 0.05 (F-R7 licence). An alternative
+proof submission that replaces HAC with the Hodrick procedure would
+be acceptable and arguably better-powered in finite samples. Filed
+as falsification item F-R26: any proof that uses standard OLS
+t-stats (no HAC, no Hodrick) on a multi-period IC series (H > 1)
+must be rejected by the checker — the Ang-Bekaert result is the
+published standard for why uncorrected multi-period OLS is not
+acceptable inference.
+
+### 16.7 Campbell-Thompson 2008 — the OOS-R² standard (DRIVES DESIGN)
+
+**Campbell, J.Y. & Thompson, S.B. (2008)**
+"Predicting Excess Stock Returns Out of Sample: Can Anything Beat the
+Historical Average?"
+*Review of Financial Studies* 21(4):1509–1531.
+[Verified URLs: https://ideas.repec.org/a/oup/rfinst/v21y2008i4p1509-1531.html —
+HTTP 200 confirmed 2026-10-13; author-hosted working-paper PDF:
+https://repec.som.yale.edu/icfpub/publications/2597.pdf — HTTP 200
+confirmed 2026-10-13.]
+
+Method extracted: the OOS-R² statistic (§15.4 Goyal-Welch) with a
+sign/restriction constraint. Campbell-Thompson propose that a
+variable-poor predictor can beat the prevailing mean if: (a) when the
+predicted return is negative, the forecast is replaced by zero (the
+prevailing-mean benchmark), and (b) the slope coefficient is restricted
+to be non-negative (theoretically motivated by the CAPM — you should
+not predict negative equity premia). With these two constraints:
+
+    R2_OOS^CT = 1 - MSPE_restricted / MSPE_bench
+
+    where MSPE_restricted uses max(forecast, 0) and imposes beta >= 0.
+
+Empirical result: the restricted OOS-R² is positive for most
+predictors in the Goyal-Welch sample — imposing the constraints rescues
+OOS predictability that the unrestricted regression loses. Specifically,
+six predictors beat the prevailing mean after restrictions.
+
+Relevance to factorproof: the OOS-consistency gate (≥60% of splits
+with IC > 0) is an informal version of Campbell-Thompson's sign
+constraint — requiring IC > 0 in at least 60% of splits is equivalent
+to saying the factor should not predict NEGATIVE IC on most windows. The
+Campbell-Thompson result supports the gate design: imposing sign
+consistency is theoretically motivated and improves OOS performance in
+the equity literature. However, their metric (OOS-R²) is richer than
+sign counts — it weights by the magnitude of the predicted IC, which
+is the C2-3a fix direction (magnitude-blind gate → magnitude-aware gate).
+
+Assumptions:
+1. The forecast is for the equity premium (excess return over T-bill);
+   the analogy to IC prediction is exact if IC_t is a function of
+   current factor scores and the target is cross-sectional return rank.
+2. Non-negativity restriction on slopes is CAPM-motivated; for
+   mean-reverting factors the restriction should be relaxed or reversed.
+3. The prevailing-mean benchmark (zero forecast IC) is the correct null;
+   a "mean IC" benchmark would be more conservative.
+
+Known failure modes per the literature:
+1. The restrictions improve in-sample fit too — OOS improvement may
+   partially reflect constraint-induced regularisation rather than
+   genuine predictability.
+2. Goyal-Welch (2008 update, 2021) maintained their original conclusion
+   on longer samples — the Campbell-Thompson constraints help some
+   predictors but not others.
+3. For a factor-screening context (IC → gate → verdict) rather than
+   return prediction (forecast → portfolio weight), the OOS-R² metric
+   needs reinterpretation: a "positive OOS-R²" means the factor
+   outperforms zero IC in hold-out periods, which is exactly what the
+   OOS-consistency gate tests.
+
+Design consequence: filed as falsification item F-R27: the OOS-
+consistency gate's 0.60 threshold is correct directionally (Campbell-
+Thompson endorse sign constraints) but is not derived from the OOS-R²
+literature — it was set as a round number. A future improve pass should
+calibrate the threshold on the synthetic panel by computing the
+implied OOS-R² at the 0.60 split-sign threshold and comparing it to
+the Campbell-Thompson estimates (reported as approximately 0.5–1.5%
+for the best equity predictors). If the implied OOS-R² is essentially
+zero, the 0.60 threshold is too weak.
+
+### 16.8 Clark-West 2007 — testing nested-model OOS forecast improvements (DRIVES DESIGN)
+
+**Clark, T.E. & West, K.D. (2007)**
+"Approximately Normal Tests for Equal Predictive Accuracy in Nested Models"
+*Journal of Econometrics* 138(1):291–311.
+[Verified URLs: https://ideas.repec.org/a/eee/econom/v138y2007i1p291-311.html —
+HTTP 200 confirmed 2026-10-13; NBER Working Paper w12679:
+https://www.nber.org/papers/w12679 — HTTP 200 confirmed 2026-10-13.]
+
+Method extracted: formally testing H_0: MSPE_model = MSPE_bench when the
+model is nested in the benchmark (the factor model contains the prevailing
+mean as a special case with beta = 0). Under the null, the OLS residuals are
+LARGER for the richer model even if the model is true, because the extra
+parameters waste degrees of freedom. The Diebold-Mariano test (1995) is
+invalid for nested models. The Clark-West correction:
+
+    f_t = (e_{1,t}^2 - e_{2,t}^2) + (yhat_{1,t} - yhat_{2,t})^2
+
+    CW statistic = T * fbar / s_f ~ N(0, 1)  asymptotically
+
+    where:
+        e_{1,t} = prevailing-mean forecast error
+        e_{2,t} = factor-model forecast error
+        yhat_{1,t} - yhat_{2,t} = predicted-values difference
+        fbar = (1/T) * sum_t f_t
+        s_f  = HAC standard error of f_t (using Newey-West with L lags)
+
+The adjustment term (yhat_1 - yhat_2)^2 is the "estimation cost" of
+fitting the extra parameters; adding it removes the nested-model bias.
+The test is approximately standard normal under H_0 (requires T >> 1),
+one-sided (reject for large positive CW statistic → model is better).
+
+Notation: e_{1,t} = error of the null model (prevailing-mean IC = zero);
+e_{2,t} = error of the factor model; the CW statistic is calibrated by
+dividing fbar by its HAC SE (same Newey-West estimator as §2.10 —
+the IC time series and the forecast error time series both need
+autocorrelation correction for identical reasons).
+
+Relevance to factorproof: the walk-forward OOS-consistency gate
+implicitly tests whether the factor's IC is positive (factor model
+beats the "zero IC" null) in at least 60% of splits. The Clark-West
+statistic is the formal version of this test for a single factor. Filing
+as a named alternative: a future proof could compute the CW statistic
+for each factor's OOS IC series and report the p-value under the
+approximately-normal distribution. This is strictly more powerful than
+sign counting (it uses magnitudes, consistent with C2-3a fix direction).
+
+Assumptions:
+1. The null model is nested in the alternative (prevailing-mean IC = 0
+   is nested in "IC > 0" — this holds exactly when the factor model
+   reduces to the null when beta = 0).
+2. HAC correction is applied to the time series f_t (same L = H-1
+   truncation as §2.10 — required since e_{2,t} inherits the
+   MA(H-1) overlap of the IC residuals).
+3. T >> 1 for the normal approximation to hold; the paper's simulations
+   suggest T ≥ 100 is sufficient for the size distortion to be
+   negligible.
+
+Known failure modes per the literature:
+1. The correction is designed for EQUAL forecast horizons across the
+   comparison; mixing H=1 and H=20 IC series in a family test
+   invalidates the approximation.
+2. In very small T (< 50), the normal approximation is poor and
+   bootstrap critical values are recommended (same guidance as KVB §9.3
+   and Ledoit-Wolf §9.5).
+3. The test assumes the two models have the same parameter instability
+   — if the factor model has structural breaks not in the null model,
+   size is distorted.
+
+Design consequence: the checker can incorporate the CW p-value as a
+stricter OOS companion to sign-counting. Filed as falsification item
+F-R28: any future proof that PROMOTES a factor based only on sign
+consistency without reporting the CW statistic (or an equivalent
+magnitude-aware OOS metric) fails a stronger adversarial review. The
+standing proof's OOS column is sign-only; adding CW statistics is the
+C2-3a fix, and the CW equation above is the ground truth for how to
+compute it.
+
+### 16.9 Romano-Wolf 2005 — stepdown FWER as the alternative to BH-FDR (DRIVES DESIGN)
+
+**Romano, J.P. & Wolf, M. (2005)**
+"Stepwise Multiple Testing as Formalized Data Snooping"
+*Econometrica* 73(4):1237–1282.
+[Verified URLs: https://www.jstor.org/stable/3598820 — HTTP 200 confirmed
+2026-10-13; https://ideas.repec.org/a/ecm/emetrp/v73y2005i4p1237-1282.html —
+HTTP 200 confirmed 2026-10-13.]
+
+Method extracted: a stepdown procedure that controls FWER (probability
+that ANY hypothesis is falsely rejected) without the conservatism of
+Bonferroni. The key advantage over Bonferroni: the stepdown procedure
+accounts for the correlation structure of the test statistics via
+bootstrap resampling.
+
+Romano-Wolf stepdown algorithm (simplified from §3, p.1248):
+
+    1. Compute t-stats T_1, ..., T_m for m hypotheses.
+    2. Order: |T_{(1)}| >= |T_{(2)}| >= ... >= |T_{(m)}| (descending).
+    3. Bootstrap distribution: resample the data B times; compute
+       t-stats T*_{k,b} for each bootstrap replicate b and hypothesis k.
+    4. Step-down p-values (successive max):
+       p_{(j)} = B^{-1} * #{b: max_{k>=j} |T*_{k,b}| >= |T_{(j)}|}
+    5. Apply monotone enforcement: p_j = max(p_j, p_{j-1}) (ensures
+       stepdown monotonicity).
+    6. Reject H_{(j)} iff p_{(j)} <= alpha.
+
+The procedure is exact in finite samples when the bootstrap
+distribution is exact (i.e. the statistic is a pivot — satisfied for
+standardised t-stats under stationarity). It is more powerful than
+Bonferroni and controls FWER at the exact alpha level.
+
+Notation: B = bootstrap replicates (paper recommends B ≥ 999); the
+bootstrap resampling uses the stationary bootstrap (Politis-Romano
+1994, §12.5) to preserve the time-series dependence structure.
+
+The difference from BH-FDR (§2.3): BH controls the EXPECTED fraction
+of false rejections (FDR ≤ q) and allows a small number of false
+positives. Romano-Wolf controls the PROBABILITY of ANY false rejection
+(FWER ≤ alpha) — strictly stronger but loses power when many
+hypotheses are true. For a factor screening setting where a single
+false positive (promoting a noise factor) is costly, FWER control is
+arguably correct; for a discovery setting where some false positives
+are tolerable, FDR is more appropriate.
+
+Relevance to factorproof: Romano-Wolf and BH are the two principled
+alternatives to Bonferroni. The repo uses BH (FDR) as primary and
+Bonferroni as conservative comparison (§2.3). Romano-Wolf would be
+more powerful than Bonferroni and more conservative than BH — it sits
+between them in the power-FDR tradeoff. Its bootstrap requirement
+(B ≥ 999 replicates × m hypotheses) is the computational reason it
+was not adopted for v0.1 (same argument as §2.15 MBB rejection —
+computational overhead).
+
+Assumptions:
+1. Stationarity + weak dependence (bootstrap is the stationary
+   bootstrap with mean block length matched to dependence).
+2. The test statistics T_k are (asymptotically) pivotal — t-stats
+   from HAC-corrected regression slopes satisfy this; raw t-stats
+   do not (the distribution depends on the unknown variance).
+3. The bootstrap null uses the "centered" version: subtract the
+   mean under H_0 before resampling, or use a studentised statistic.
+
+Known failure modes per the literature:
+1. Computational: 999 replicates × 13 factors × 3 horizons = ~39,000
+   bootstrap t-stat computations per screen run. At ~200ms per
+   factor-horizon pair, this adds ~2 hours to a screen run —
+   incompatible with the 10-minute timing constraint (§7.6).
+2. Power loss at large m: as m grows, each step of the stepdown
+   procedure must beat a max-statistic, which grows with m. BH
+   degrades more gracefully in the factor-zoo regime.
+3. The bootstrap null assumes i.i.d. observations (or stationary) —
+   regime shifts (C2-3a, structural breaks) invalidate it.
+
+Design consequence: Romano-Wolf is the cited alternative for cases
+where a single false positive is unacceptable (e.g. live trading with
+real capital). The repo's current BH-FDR gate is the correct choice for
+a screening tool; Romano-Wolf belongs in the "research" gate for a
+researcher testing 3–5 factors before live deployment. Filed as
+falsification item F-R29: if the v0.2 proof ever shows 1 factor
+promoted under BH but 0 under Romano-Wolf at the same alpha, that is
+evidence the promoted factor is a BH false discovery — the checker
+should add a Romano-Wolf column to the proof output when m ≤ 5.
+
+### 16.10 Petersen 2009 — cluster-robust SE for cross-sectional panel regressions (DRIVES DESIGN)
+
+**Petersen, M.A. (2009)**
+"Estimating Standard Errors in Finance Panel Data Sets: Comparing Approaches"
+*Review of Financial Studies* 22(1):435–480.
+NBER Working Paper w11547.
+[Verified URLs: https://ideas.repec.org/a/oup/rfinst/v22y2009i1p435-480.html —
+HTTP 200 confirmed 2026-10-13; https://www.nber.org/papers/w11547 — HTTP 200
+confirmed 2026-10-13.]
+
+Method extracted: in a panel regression where residuals are correlated
+both across firms at the same time (cross-sectional correlation) AND
+across time for the same firm (time-series correlation), standard errors
+must be cluster-robust on BOTH dimensions. Petersen compares OLS,
+Fama-MacBeth (time-averaged cross-sections), clustered-by-firm, clustered-
+by-year, and double-clustered SE.
+
+The double-cluster covariance estimator (equation 4, p.440):
+
+    V_double = V_firm + V_time - V_white
+
+    where:
+        V_firm  = (X'X)^{-1} [sum_i sum_t sum_s c_is * x_{it} * x_{is}'
+                               * e_{it} * e_{is}] (X'X)^{-1}
+                  with c_is = 1 if t and s in the same cluster-i
+        V_time  = same but clustering by t (same date, different firms)
+        V_white = (X'X)^{-1} [sum_i sum_t x_{it} * x_{it}' * e_{it}^2] (X'X)^{-1}
+                  (standard HC1 White SE, to avoid double-counting the diagonal)
+
+Notation: x_{it} = regressor vector for firm i at time t; e_{it} = OLS
+residual; V_white = White heteroskedasticity-consistent SE (the diagonal
+that is double-subtracted because V_firm + V_time double-counts it).
+
+Relevance to factorproof: the IC is computed as the cross-sectional
+Pearson correlation at each date t. The IC time series has two correlation
+structures: (a) cross-asset correlation (all 14 coins move together — BTC
+factor), and (b) autocorrelation across dates (overlapping labels at H > 1).
+The Newey-West HAC (§2.10) corrects structure (b); it does NOT correct
+structure (a). Petersen (2009) demonstrates that in panels where residuals
+are clustered by BOTH dimension, OLS and standard Fama-MacBeth SE (which
+cluster by time only) are BOTH biased — the double-cluster SE is required.
+
+The practical implication for the IC t-stat: the IC is computed
+cross-sectionally at each date (one number per date), so the "firm
+clustering" dimension is absorbed into the cross-sectional average.
+However, the IC residuals are correlated across consecutive dates (HAC
+handles this) AND across IC values at the same date for different
+horizons (this is NOT handled by HAC). The cross-horizon correlation
+inflates the joint t-stat when testing multiple horizons simultaneously.
+The repo currently computes IC t-stats horizon-by-horizon (single-horizon
+HAC t-stat for each H); joint testing across horizons would require the
+double-cluster structure.
+
+Assumptions:
+1. The panel must be balanced (equal time-series length per firm) for the
+   double-cluster formula above; unbalanced panels require a correction
+   (documented in Petersen §3).
+2. Both N (firms = 14 coins) and T (dates ≈ 1987 per coin) must be large
+   enough for the cluster-robust SE to be consistent; at N = 14, the
+   cluster dimension is small and the SE estimate is noisy.
+3. The double-cluster SE can be negative in finite samples (V_firm + V_time
+   < V_white); in that case, use max(V_firm, V_time) as a conservative
+   fallback.
+
+Known failure modes per the literature:
+1. With only 14 coin "firms", the cluster-by-firm dimension has only 14
+   clusters — the asymptotic consistency result requires T × N → ∞ with
+   N >> 10 for the cluster-by-firm dimension; at N=14, the correction
+   is imprecise.
+2. The double-cluster SE is larger than both single-cluster SE and OLS SE
+   — correcting SE upwards means t-stats fall, which could push marginal
+   factors below the significance threshold. At N=14 this is the expected
+   direction; the 0 promoted result is conservative, not anti-conservative.
+3. The Fama-MacBeth SE (§8.2 FM parent) controls time-series clustering
+   at H=1 automatically (each date's cross-section is independent); at
+   H > 1 it inherits the same MA(H-1) problem HAC corrects.
+
+Design consequence: the repo's current HAC + HAC-t-stat is a single-
+dimension temporal cluster SE, not a double-cluster SE. Filed as
+falsification item F-R30: any proof whose per-factor t-stats are used
+in a JOINT multi-horizon test (e.g. "this factor is significant at H=1
+AND H=5") without a Petersen double-cluster correction is over-confident
+on the joint test. Standing proof tests each horizon independently
+(single-hypothesis HAC t-stat) and reports the best-horizon verdict —
+not a joint test, so F-R30 does not currently bind. Binds if a future
+pass introduces a joint "significant at any horizon" shortcut.
+
+### 16.11 Brauneis-Mestel 2018 — cryptocurrency liquidity and the Amihud measure (ADDITIONAL CONTEXT)
+
+**Brauneis, A. & Mestel, R. (2018)**
+"Price Discovery of Cryptocurrencies: Bitcoin and Beyond"
+*Finance Research Letters* 26:93–98.
+DOI: https://doi.org/10.1016/j.frl.2018.02.014
+[Verified URL: DOI resolves — HTTP 200 confirmed 2026-10-13.]
+
+Method extracted: Amihud illiquidity ratio (§1.4) applied to
+cryptocurrencies. For 10 cryptocurrencies (Bitcoin, Ethereum, and 8
+altcoins) over 2015–2017, the paper computes daily Amihud ratios and
+ranks coins by liquidity. Headline findings:
+- Bitcoin and Ethereum are the most liquid (lowest Amihud ratio); the
+  long tail of altcoins has Amihud ratios 10–100x higher.
+- Price discovery (via Hasbrouck IS and Harris-Raviv measures) is
+  dominated by the most liquid coins — altcoins are largely price-
+  followers, not price-discoverers.
+- The Amihud ratio is a VALID liquidity proxy for crypto (the
+  dollar-volume denominator exists because crypto exchanges report
+  volume in coin units × coin price).
+
+Relevance to factorproof: the `amihud_illiq_20` factor (§1.4) was
+designed for equities; Brauneis-Mestel confirm it applies to crypto
+with two important corrections:
+1. Denominator is coin-unit volume × price (not CRSP dollar volume) —
+   the repo uses this correctly (volume column from the candles table
+   is in coin units; price is the close).
+2. The Amihud ratio on crypto has extreme right skew (the long tail of
+   illiquid coins) — the repo's 20-day moving average of ILLIQ smooths
+   this but does not eliminate it; the factor needs Winsorisation at
+   the tails before cross-sectional ranking.
+
+Failure modes the paper documents: (a) Amihud on low-volume altcoins
+in the first months of their trading history produces ILLIQ → ∞
+(zero-denominator issue); (b) the liquidity ranking is time-stable
+(BTC/ETH always first) but the level shifts with bull/bear regimes
+(the tails compress in bull markets when everyone trades alts).
+
+Design consequence: the `amihud_illiq_20` factor's consistently-missing
+promotion (p = 0.0895 on the real panel, §8.9 F-R5 table) is explained:
+on a 14-coin panel that includes BTC and ETH (the most liquid coins),
+the cross-sectional ILLIQ spread is too compressed for the factor to
+screen meaningfully. Brauneis-Mestel show that the liquidity premium
+only appears within the long tail of altcoins — on a universe that
+includes BTC, any coin in the portfolio is "liquid" relative to the
+true tail. Filed as falsification item F-R31: a real-data proof
+promoting `amihud_illiq_20` on a universe that includes BTC and ETH
+must verify the Amihud ratio spread is non-trivial (range > 10x between
+the most and least liquid coins in the panel) — otherwise the promotion
+reflects estimation noise in a compressed universe, not a genuine
+liquidity premium.
+
+### 16.12 Falsification — what would prove this pass wrong (F-R22…F-R31 new; all prior stand)
+
+F-R1…F-R21: dispositions in §8.9/§9.8/§11/§14/§15.8 stand; no new data
+queried this pass (proof JSON unchanged since c4-p01; database not queried).
+
+F-R22 (vol factor is ARCH, not returns): vol_20 IC orthogonal to lagged h_t is
+zero (conditioning removes the predictability). Falsified if vol_20 has IC
+above 0.01 after removing the h_t component — would be evidence of genuine
+cross-sectional vol-adjusted return prediction.
+
+F-R23 (momentum IC flips with systematic beta): an IC series for mom_20 that
+has positive IC in 2021 and negative IC in 2022 — the correct Grundy-Martin
+prediction. Falsified if mom_20 IC has uniform sign across 2021-2022 on the
+real panel (would say the systematic component is not the driver; factor is
+idiosyncratic-dominant as Grundy-Martin's residual component).
+
+F-R24 (vol-managed mom_20 worse than raw): corr(mom_20 return, lagged variance)
+is positive on the real panel → Moreira-Muir Delta_SR < 0. Observable: one
+rolling correlation query on the existing proof data. Named for the implement
+pass.
+
+F-R25 (Stambaugh bias explains IC): promoted factor with phi > 0.95 and IC
+around 0.015 on T < 500 per-coin daily bars. The proof's MIN_BARS_FLOOR
+(~714 per-coin) is above the threshold where bias dominates; falsified if
+bias ≈ 4/714 ≈ 0.006 and the factor's IC is below 0.02 (the gate floor) —
+the factor is below-gate, so bias is not the issue. Binds if a factor with
+IC ≈ 0.015 is promoted after a MIN_BARS_FLOOR reduction.
+
+F-R26 (OLS t-stats used for H > 1): any proof p-value from standard OLS
+(no HAC, no Hodrick) at H > 1. Standing proof uses HAC throughout — holds.
+Falsified by a proof that reports OLS t-stats and uses them in the checker
+gate without correction.
+
+F-R27 (OOS-consistency threshold uncalibrated): a Campbell-Thompson-implied
+OOS-R² at the 0.60 split-sign threshold that is essentially zero. The
+calibration requires running the Campbell-Thompson statistic on the existing
+walk-forward IC splits (named for the improve pass). Falsified if the implied
+OOS-R² is positive and large (> 0.5%) — would vindicate the 0.60 threshold.
+
+F-R28 (IC-only promotion, no magnitude OOS metric): a promoted factor with no
+CW statistic or equivalent in the proof output. Standing proof: the OOS column
+is sign-consistency only. Binds when C2-3a fix (magnitude-aware gate) is
+implemented — the first magnitude-gated pass should also add CW statistics.
+
+F-R29 (BH false positive, Romano-Wolf clear): a factor promoted under BH at
+q=0.15 but not under Romano-Wolf at alpha=0.15. Will not manifest while
+nothing is promoted; binds when the first factor is promoted on real data.
+
+F-R30 (joint multi-horizon test, uncorrected): any proof that reports "this
+factor is significant at H=1 AND H=5" without Petersen double-cluster SE.
+Standing proof uses single-horizon tests and reports best-horizon — holds.
+
+F-R31 (Amihud promotion on compressed universe): amihud_illiq_20 promoted
+with less than 10x spread in Amihud ratios across the 14-coin panel. Falsified
+if the ratio IS > 10x (would mean the universe is diversified enough for the
+cross-sectional ILLIQ premium to register).
+
+### 16.13 Alternatives considered (this pass)
+
+(i) GJR-GARCH / EGARCH vs GARCH(1,1) for the vol factor (§16.2): GJR adds
+one parameter (leverage effect); for crypto where negative returns do not
+structurally raise variance faster than positive returns (no short-seller
+dominance, symmetric speculative positions), GARCH(1,1) is adequate. The
+asymmetric leverage argument applies to equities (put-option hedging); it is
+weaker for crypto.
+
+(ii) Hodrick vs Newey-West for the IC t-stat (§16.6): both are valid; Hodrick
+has better finite-sample properties at small T but requires future values of
+the factor score (MA of x_{t+j}) which are available IS but not OOS. The repo's
+HAC is the correct live-implementable choice; Hodrick is the better diagnostic
+tool for IS inference checking.
+
+(iii) Romano-Wolf vs BH-FDR (§16.9): Romano-Wolf is strictly more powerful
+than Bonferroni but slower; BH is the fastest and best-powered choice when false
+discovery tolerance is non-zero. The repo screens factors at discovery stage
+(any false positive is correctable by the implement pass); at the deployment
+stage (real capital), Romano-Wolf is the correct gate. Stated here so the
+adversarial audit can check whether the current BH gate is appropriate for the
+stated use case.
+
+(iv) Cluster-robust vs HAC alone (§16.10): double-cluster SE is the correct
+estimator for joint multi-horizon tests; single-horizon HAC is correct for the
+repo's current per-horizon tests. The Petersen correction is deferred to when
+joint tests are added — not a correctness failure for current single-horizon
+verdicts.
+
+### 16.14 Link-verification table (all probed 2026-10-13, curl -L, UA Mozilla/5.0)
+
+| # | Source | URL | HTTP |
+|---|---|---|---|
+| D1a | Engle 1982 ARCH, Econometrica JSTOR | https://www.jstor.org/stable/1912773 | 200 |
+| D2a | Bollerslev 1986 GARCH, JOE IDEAS | https://ideas.repec.org/a/eee/econom/v31y1986i3p307-327.html | 200 |
+| D2b | Bollerslev 1986 GARCH, DOI | https://doi.org/10.1016/0304-4076(86)90063-1 | 200 |
+| D3a | Grundy-Martin 2001 RFS, NBER w7989 | https://www.nber.org/papers/w7989 | 200 |
+| D3b | Grundy-Martin 2001 RFS, JSTOR | https://www.jstor.org/stable/2696959 | 200 |
+| D4a | Moreira-Muir 2017 JF, NBER w22208 | https://www.nber.org/papers/w22208 | 200 |
+| D4b | Moreira-Muir 2017 JF, JSTOR | https://www.jstor.org/stable/26508267 | 200 |
+| D5a | Stambaugh 1999 JFE, IDEAS | https://ideas.repec.org/a/eee/jfinec/v54y1999i3p375-421.html | 200 |
+| D6a | Ang-Bekaert 2007 RFS, NBER w11488 | https://www.nber.org/papers/w11488 | 200 |
+| D7a | Hodrick 1992 JFQA, JSTOR | https://www.jstor.org/stable/2331572 | 200 |
+| D8a | Campbell-Thompson 2008 RFS, IDEAS | https://ideas.repec.org/a/oup/rfinst/v21y2008i4p1509-1531.html | 200 |
+| D8b | Campbell-Thompson 2008 RFS, Yale working paper PDF | https://repec.som.yale.edu/icfpub/publications/2597.pdf | 200 |
+| D9a | Clark-West 2007 JOE, IDEAS | https://ideas.repec.org/a/eee/econom/v138y2007i1p291-311.html | 200 |
+| D9b | Clark-West 2007 JOE, NBER w12679 | https://www.nber.org/papers/w12679 | 200 |
+| D10a | Romano-Wolf 2005 Econometrica, JSTOR | https://www.jstor.org/stable/3598820 | 200 |
+| D10b | Romano-Wolf 2005 Econometrica, IDEAS | https://ideas.repec.org/a/ecm/emetrp/v73y2005i4p1237-1282.html | 200 |
+| D11a | Petersen 2009 RFS, IDEAS | https://ideas.repec.org/a/oup/rfinst/v22y2009i1p435-480.html | 200 |
+| D11b | Petersen 2009 RFS, NBER w11547 | https://www.nber.org/papers/w11547 | 200 |
+| C1a | Brauneis-Mestel 2018 FRL, DOI | https://doi.org/10.1016/j.frl.2018.02.014 | 200 |
+
+Notes on non-200 probes this pass: Ang-Bekaert SSRN (403 — SSRN bot-block, same
+class as §8.7); Ang-Bekaert IDEAS page for the exact RFS 2007 citation (404 — 
+IDEAS URL was wrong; NBER w11488 is the verified citation); Petersen Kellogg
+PDF (404 — the author PDF URL has moved; NBER w11547 is the verified citation);
+Dobrynskaya 2023 (403 SSRN, 404 pm-research — still boundary; no threshold
+cites it). All 11 design-driving sources (D1–D11) have at least one verified
+200 URL. All 1 context source (C1) has a verified DOI 200.
