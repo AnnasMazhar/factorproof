@@ -3081,4 +3081,460 @@ cycle.
 F-R1…F-R6 dispositions (§8.9) stand; nothing re-run (no new data — the proof
 JSON is hours old and the dataset grew by <1 day of bars).
 
+## 12. Cycle 4 pass 1 — microstructure + trading-cost ground truth (added 2026-10-13, pass c4-p01)
+
+Scope: the first of the reopened brief's three research passes — the real-data
+proof the spec names, part III. Cycles 2–3 (§8–§11) derived checker numbers
+from the factor, inference, and crypto-momentum literatures. Two threats to a
+real-data proof were never grounded: (a) thin-trading/nonsynchronicity on a
+14-coin panel (what the data-generating process does to OLS-family statistics
+before the gate ever runs), and (b) whether a statistically-passing factor
+survives trading costs (what the gate's turnover row is actually worth). This
+pass grounds both. 10 new sources, every link probed today (curl -L, UA
+Mozilla/5.0); 10 verified HTTP 200, 1 recorded as boundary (§12.7). Five drive
+the design (§12.1–§12.5, full method/equations/assumptions/failure modes); five
+are context (§12.6).
+
+Standing data (re-read today): `reports/real-data-proof.json` — 14 coins,
+21,308 daily bars, 2021-04-29 → 2026-10-12; 0/13 promoted; raw p<0.05 flags 3
+(rev_5, volume_z_20, lookahead_control); BH-FDR q=0.15 passes the same 3;
+specificity 10/10; DSR = 0.0 everywhere; C3-F1 (volume_z_20 is a one-coin
+artefact) stands.
+
+### 12.1 Roll's implied spread — what rev_5 is actually measuring (DRIVES DESIGN)
+
+**Roll, R. (1984)**
+"A Simple Implicit Measure of the Effective Bid-Ask Spread in an Efficient Market"
+*Journal of Finance* 39(4):1127–1139
+[Verified URL: https://www.jstor.org/stable/2327617 — HTTP 200 confirmed
+2026-10-13. Second verified record: https://ideas.repec.org/a/bla/jfinan/v39y1984i4p1127-39.html
+— HTTP 200 confirmed 2026-10-13. Abstract text verified against the Wiley
+page, retrieved via search 2026-10-13 and cross-checked with the JSTOR record.]
+
+Method extracted: in an efficient market the fundamental value fluctuates
+randomly, but trading costs induce negative serial dependence in successive
+observed price changes — and that dependence IS the spread. The effective
+spread is inferred from prices alone:
+
+    Spread = 2 * sqrt(-cov)
+
+    where cov = first-order serial covariance of price changes
+                (cov(ΔP_t, ΔP_{t-1}), ΔP_t = P_t - P_{t-1}).
+
+Notation: P_t = observed transaction price; the model is P_t = V_t + (S/2)*Q_t
+where V_t = fundamental value (random walk), S = effective spread,
+Q_t ∈ {+1,-1} = trade direction (buy/sell). Under the assumptions below,
+cov(ΔP_t, ΔP_{t-1}) = -S²/4, hence the estimator. Roll's empirical check:
+using daily data, the average implicit spread across stocks/time is 0.298%,
+validated indirectly by its relation to firm size (smaller firms, larger
+spreads).
+
+Assumptions (verified abstract text): (a) the asset trades in an
+informationally efficient market (fundamental value is a random walk — no
+true return autocorrelation); (b) the distribution of observed price changes
+is stationary over the estimation window ("at least for short intervals of,
+say, two months").
+
+Known failure modes: (a) if the fundamental value itself is autocorrelated
+(momentum at the sampled frequency), cov mixes spread-bounce with true
+autocorrelation and the estimator misattributes; (b) positive autocovariance
+(days when cov > 0) makes sqrt(-cov) imaginary — the estimator simply does
+not exist on trending stretches, which is itself a diagnostic; (c) assumes
+equal probability of buy/sell (order-flow imbalance breaks Q_t symmetry).
+
+Design consequence: rev_5 (negated 5-day return) passed BH-FDR on the real
+panel (p = 0.0005, §8.9 F-R5 table). Roll says a short-horizon negative-autocorrelation
+signal without spread adjustment measures liquidity provision compensated by
+the bid-ask bounce — not predictability. The rev_5 pass is therefore the
+expected appearance of the Roll mechanism, and promoting it on IC alone would
+promote the spread. Filed as falsification item F-R12: any proof promoting a
+reversal factor must report the Roll-implied spread beside the factor's gross
+quintile spread — if gross < implied spread, the "factor" is liquidity
+provision and the checker must reject the promotion.
+
+### 12.2 The 50%-turnover rule — the max_turnover default, literature-backed (DRIVES DESIGN)
+
+**Novy-Marx, R. & Velikov, M. (2016)**
+"A Taxonomy of Anomalies and Their Trading Costs"
+*Review of Financial Studies* 29(1):104–147
+DOI: https://doi.org/10.1093/rfs/hhv063 (note: hhv063 — hhv059 is the
+Harvey-Liu-Zhu factor-zoo paper, §2.7; the two suffixes differ by one digit
+and are flagged for the citation audit)
+[Verified URL: https://www.nber.org/papers/w20721 (NBER WP 20721, Dec 2014,
+substantively equivalent working version) — HTTP 200 confirmed 2026-10-13.
+Verified record: https://www.jstor.org/stable/43866013 — HTTP 200 confirmed
+via search record 2026-10-13 (probed as boundary; NBER version is the cited
+verified URL). Publisher abstract verified via Oxford Academic record,
+retrieved via search 2026-10-13.]
+
+Method extracted: after-trading-cost performance of a large anomaly family,
+with transaction-cost mitigation techniques. Two headline results (verified
+abstract text): (1) "Introducing a buy/hold spread, with more stringent
+requirements for establishing positions than for maintaining them, is the
+most effective cost mitigation technique." (2) "Most anomalies with less than
+50% turnover per month generate significant net spreads when designed to
+mitigate transaction costs; few with higher turnover do." Further (verified
+NBER abstract): "Transaction costs always reduce strategy profitability,
+increasing data-snooping concerns" — costs are a second multiple-testing
+problem, because a gross-significant anomaly that is net-insignificant is a
+false discovery in economic terms.
+
+Assumptions: (a) effective-spread + price-impact cost model calibrated on
+TAQ-era equity data (costs are equity-magnitude; crypto spreads are wider,
+so the equity 50% line is lenient for crypto, not strict); (b) value-weighted
+portfolios rebalanced monthly; (c) mitigation (buy/hold spread) is actually
+implemented — unmitigated high-turnover strategies do worse than the headline.
+
+Known failure modes: (a) the 50% line is monthly one-sided equity turnover —
+a daily-rebalanced crypto factor at turnover 1.31 (the §8.9 planted-signal
+round-1 observation) is an order of magnitude above it; (b) capacity
+interacts: "the extent to which new capital reduces strategy profitability
+is inversely related to turnover" — small panels concentrate impact;
+(c) crypto cost structure (funding, exchange fees, 24/7 impact) is absent
+from the calibration, all in the direction of higher costs.
+
+Design consequence: the repo's `max_turnover = 0.5` default gate now has a
+literature citation instead of a round number. Filed as falsification item
+F-R13: the checker must reject any proof that raises max_turnover above 0.5
+(or promotes a factor with turnover above it) without a net-of-cost analysis
+paragraph naming the cost model. Standing proof is unaffected (nothing
+promoted; rev_5 turnover is gated, not waived).
+
+### 12.3 Nonsynchronous trading — the thin-coin bias on a 14-coin panel (DRIVES DESIGN)
+
+**Scholes, M. & Williams, J. (1977)**
+"Estimating Betas from Nonsynchronous Data"
+*Journal of Financial Economics* 5(3):309–327
+[Verified URL: https://ideas.repec.org/a/eee/jfinec/v5y1977i3p309-327.html
+— HTTP 200 confirmed 2026-10-13. Abstract verified via ScienceDirect record,
+retrieved via search 2026-10-13: "Nonsynchronous trading of securities
+introduces into the market model a potentially serious econometric problem
+of errors in variables."]
+
+Method extracted: when securities trade nonsynchronously with the market
+index, OLS market-model slopes are biased and inconsistent (thin securities
+biased toward zero). The consistent estimator combines three OLS slopes —
+on the lagged, contemporaneous, and leading market return — normalised by
+the market's own autocorrelation:
+
+    beta_SW = (beta⁻ + beta⁰ + beta⁺) / (1 + 2*rho_m)
+
+    where beta⁻ = slope of R_{i,t} on R_{m,t-1} (lagged market),
+          beta⁰ = slope of R_{i,t} on R_{m,t}   (contemporaneous),
+          beta⁺ = slope of R_{i,t} on R_{m,t+1} (leading market),
+          rho_m = first-order autocorrelation of the market return.
+
+(Transcription note: this is the paper's standard estimator form as
+reproduced in Dimson 1979's review, §12.6 — the RePEc record above verifies
+existence/bibliography; the equation transcription is flagged F-R16-class
+for the citation audit, minor if the normalisation factor is right.)
+
+Assumptions: (a) nonsynchronous trading is the only friction (no spread
+bounce — the Roll mechanism of §12.1 is assumed away); (b) the market return
+is autocorrelated only at lag 1 (higher-order rho_m = 0); (c) every security
+trades at least once within the sampling interval (stale prices beyond one
+interval break the three-slope construction).
+
+Known failure modes: (a) assumption (c) fails for the thinnest coins — a
+coin with multi-day gaps needs more leads/lags than the three-slope form
+(this is exactly Dimson's generalisation, §12.6); (b) on a 14-coin panel
+where every alt loads on BTC (cf. §8.2 failure mode (c)), the "market" is
+one coin and rho_m is the BTC autocorrelation — the correction inherits
+single-asset noise; (c) the estimator fixes slopes, not correlations — IC
+attenuation from staleness is the same EIV mechanism but needs its own
+correction, which the repo does not implement.
+
+Design consequence: the §8.2 EIV paragraph (Fama-MacBeth failure mode (a))
+now has its mechanism paper. On the real 14-coin panel, thin alts have stale
+daily closes; their factor scores are measured with error, attenuating IC
+toward zero — a third reason (with §8.1 decile-thinness and §8.2 beta noise)
+that 0/13 promoted is unsurprising. Filed as falsification item F-R14: the
+dataset-summary leg of the proof must flag coins with >5% zero-volume days
+(a staleness diagnostic the implement pass can compute from the existing
+volume column); a proof silent on staleness while screening thin coins
+overstates its effective cross-section.
+
+### 12.4 Smoothed returns — why serial correlation flatters Sharpe ratios (DRIVES DESIGN)
+
+**Getmansky, M., Lo, A.W. & Makarov, I. (2004)**
+"An Econometric Model of Serial Correlation and Illiquidity in Hedge Fund Returns"
+*Journal of Financial Economics* 74(3):529–609
+[Verified URL: https://www.nber.org/papers/w9571 (NBER WP 9571, Mar 2003,
+substantively equivalent working version) — HTTP 200 confirmed 2026-10-13.
+Abstract verified via NBER + ScienceDirect records, retrieved via search
+2026-10-13.]
+
+Method extracted: observed returns on illiquid portfolios are a distributed
+lag of true economic returns (smoothing from stale marks / nonsynchronous
+prices — the §12.3 mechanism, generalised):
+
+    R_{o,t} = theta_0 * R_t + theta_1 * R_{t-1} + ... + theta_k * R_{t-k}
+
+    where theta_j ∈ [0,1], sum_j theta_j = 1 (smoothing profile),
+          R_t = true (unobservable) economic return,
+          R_{o,t} = observed/reported return.
+
+Consequences derived in the paper (verified abstract text): "reported
+returns will tend to be smoother than true economic returns, which will
+understate volatility and increase risk-adjusted performance measures such
+as the Sharpe ratio." The paper develops estimators for the smoothing
+profile and a smoothing-adjusted Sharpe ratio; on 908 TASS funds, "funds
+with the highest serial correlation tend to be the more illiquid funds" and
+"after correcting for the effects of smoothed returns, some of the most
+successful types of funds tend to have considerably less attractive
+performance characteristics." (Exact profile-estimator equations flagged
+F-R16-class for audit; the MA equation above and the direction of the Sharpe
+bias are the design-relevant content.)
+
+Assumptions: (a) true returns serially uncorrelated (smoothing is the only
+autocorrelation source — same identifying assumption as Roll §12.1, and the
+two compete: bounce gives negative lag-1, smoothing gives positive lag-1);
+(b) smoothing profile stable over the estimation window; (c) linear
+smoothing (no asymmetric stale-mark behaviour in crashes).
+
+Known failure modes: (a) cannot separate smoothing from genuine
+autocorrelation (momentum) — the decomposition is identified only by the
+assumption; on crypto, momentum (§9.4) and staleness coexist, so the
+correction direction is ambiguous without a liquidity sort; (b) profile
+estimates need long T (same floor argument as §8.5); (c) 24/7 crypto has no
+"stale mark" convention — staleness appears as zero-volume intervals, so the
+diagnostic is volume-based (links to F-R14), not return-based.
+
+Design consequence: the DSR inputs in the proof are computed on return
+series whose lag-1 autocorrelation is never reported. Filed as falsification
+item F-R15: any proof DSR input computed on a series with lag-1
+autocorrelation above 0.2 must carry a smoothing caveat (vol understated →
+Sharpe overstated → DSR optimistic), or report the smoothing-adjusted
+volatility. Standing proof is unaffected in verdict (DSR = 0.0 everywhere —
+an optimistic bias on a zero still rejects), but the reported DSR magnitudes
+are upper bounds, not point estimates, and the report must say so.
+
+### 12.5 The stationary bootstrap — White's dependency, verified (DRIVES DESIGN)
+
+**Politis, D.N. & Romano, J.P. (1994)**
+"The Stationary Bootstrap"
+*Journal of the American Statistical Association* 89(428):1303–1313
+[Verified URL: https://www.jstor.org/stable/2290993 — HTTP 200 confirmed
+2026-10-13. Second verified URL (author-hosted PDF scan of the published
+paper): https://www.ssc.wisc.edu/~bhansen/718/Politis%20Romano.pdf — HTTP
+200 confirmed 2026-10-13. Abstract verified via T&F record, retrieved via
+search 2026-10-13. This closes the §8.7 boundary item for this source —
+which was listed as bot-blocked at its DOI but is fully verified via JSTOR
+and the author-hosted PDF.]
+
+Method extracted: the resampling procedure White's Reality Check (§9.1)
+depends on. Blocks of RANDOM length are resampled with replacement, where
+each block length has a geometric distribution:
+
+    P(block length = k) = p * (1-p)^{k-1},   k = 1, 2, ...
+    mean block length = 1/p.
+
+Concatenated blocks form the pseudo-time series, on which the statistic is
+recomputed; repeating builds the sampling distribution. The point of random
+lengths (vs the fixed-length moving-block bootstrap of §8.4/Künsch): the
+pseudo-series is stationary conditional on the original data (verified
+abstract text: "the resampled pseudo-time series [is] stationary
+(conditional on the original data)"), and the paper develops "fundamental
+consistency and weak convergence properties."
+
+Assumptions: (a) weakly dependent stationary observations (same as §8.4);
+(b) mean block length 1/p grows with n but slower (p → 0 as n → ∞);
+(c) no structural break inside the window (cf. C2-3a — breaks violate this
+for stationary bootstrap exactly as for HAC and MBB).
+
+Known failure modes: (a) p choice = block-length choice by another name —
+mean length 1/p must cover the dependence (l ≈ H argument, §8.4, unchanged:
+set 1/p ≈ H for the IC series); (b) geometric lengths add resampling noise
+vs fixed blocks (extra variance in short pseudo-series); (c) stationarity of
+the pseudo-series does not cure non-stationarity of the original — a break
+panel resampled stationarily still misleads.
+
+Design consequence: the §9.1 Reality Check entry rested on an unverified
+dependency (Politis-Romano was §8.7-boundary). It is now verified, so a
+future RC/SPa implementation has both citations in hand — no checker change
+today (F-R9 stands: the repo's max-over-family answer remains BH plus the
+CPCV diagnostic). The block-length rule filed under §8.4/F-R7 (l ≈ H, and
+reject any proof with l < H) is confirmed as the same rule in stationary
+form (1/p ≈ H).
+
+### 12.6 Context sources (5, verified today)
+
+**Dimson, E. (1979)** "Risk measurement when shares are subject to infrequent
+trading", *JFE* 7(2):197–226.
+[Verified URL: https://ideas.repec.org/a/eee/jfinec/v7y1979i2p197-226.html
+— HTTP 200 confirmed 2026-10-13.] Generalises §12.3: beta estimated from
+multiple leads/lags (sum of slope coefficients on R_{m,t-k}..R_{m,t+k}),
+consistent under thinner trading than SW's three-slope form. Relevance: the
+estimator-form precedent for F-R14 — if the proof ever risk-adjusts returns
+before IC (Fama-1991 joint-hypothesis move, §8.6), thin-coin betas must use
+Dimson leads/lags, not OLS. Alternatives-considered: Fowler-Rorke (1983)
+argue the Dimson summation is inconsistent in general while SW remains
+consistent — the repo uses neither (no beta estimation in the pipeline), so
+no position is taken; both are cited as diagnostic background only.
+
+**Amihud, Y. & Mendelson, H. (1986)** "Asset pricing and the bid-ask spread",
+*JFE* 17(2):223–249.
+[Verified URL: https://ideas.repec.org/a/eee/jfinec/v17y1986i2p223-249.html
+— HTTP 200 confirmed 2026-10-13. Second verified URL (course-hosted PDF scan):
+Buffalo course page (acsu.buffalo.edu) — HTTP 200 confirmed 2026-10-13.]
+Testable hypothesis (verified ScienceDirect abstract): "market-observed
+expected return is an increasing and concave function of the spread"
+(clientele effect — short-horizon holders avoid wide-spread assets).
+Relevance: the spread-level companion to §12.1 (Roll = spread from
+time-series; AM86 = returns priced against spread in cross-section) and the
+theoretical parent of the Amihud-2002 ILLIQ ratio (§1.4) the repo already
+implements. Design note: amihud_illiq_20's real-data BH outcome
+(p = 0.0895, not passing at q = 0.15 per §8.9 F-R5 table) is consistent —
+on 14 coins the spread clientele cannot sort.
+
+**Jegadeesh, N. (1990)** "Evidence of Predictable Behavior of Security Returns",
+*JF* 45(3):881–898.
+[Verified URL: https://www.jstor.org/stable/2328797 — HTTP 200 confirmed
+2026-10-13. Abstract verified via Wiley record, retrieved via search
+2026-10-13.] Headline (verified abstract): "The negative first-order serial
+correlation in monthly stock returns is highly significant. Furthermore,
+significant positive serial correlation is found at longer lags, and the
+twelve-month serial correlation is particularly strong"; extreme-decile
+spread 2.49%/month over 1934–1987. Relevance: gives rev_5 a second
+peer-reviewed antecedent beside Lo-Mamaysky-Wang (§8.6) — monthly reversal
+is the frequency where the Roll bounce (§12.1) aggregates into a tradable
+pattern. Failure mode documented in the same literature (skipped-week
+convention, JT 1993 §1.1): one-week skip removes bounce/pressure effects —
+the repo's rev_5 has no skip, so its signal mechanically includes the Roll
+component (F-R12).
+
+**Lehmann, B.N. (1990)** "Fads, Martingales, and Market Efficiency",
+*QJE* 105(1):1–28.
+[Verified URL: https://www.jstor.org/stable/2937816 — HTTP 200 confirmed
+2026-10-13. Abstract verified via Oxford Academic record, retrieved via
+search 2026-10-13.] Headline (verified abstract): one-week winners/losers
+"experience sizeable return reversals the next week in a way that reflects
+apparent arbitrage profits which persist after corrections for bid-ask
+spreads and plausible transactions costs. This probably reflects
+inefficiency in the market for liquidity around large price changes."
+Relevance: the strongest pro-reversal citation in this file — reversal
+survives spread + cost corrections on US equities at weekly frequency.
+Consequence for the mandate: rev_5's real-data BH pass (p = 0.0005) can no
+longer be waved away as pure bounce; it must be adjudicated by the fuller
+gate (turnover per F-R13, LOCO per C3-F1) — which is exactly what the
+standing proof does (rejected by other gates, 0 promoted). A future proof
+that promotes rev_5 must beat Lehmann-aware scrutiny, not bounce dismissal.
+
+**Frazzini, A., Israel, R. & Moskowitz, T.J. (2012)**
+"Trading Costs of Asset Pricing Anomalies", AQR Working Paper (first draft
+Oct 2012; this draft Dec 5, 2012).
+[Verified URL: https://www.aqr.com/Insights/Research/Working-Paper/Trading-Costs-of-Asset-Pricing-Anomalies
+— HTTP 200 confirmed 2026-10-13. Second verified URL (NBER-conference PDF
+of the same draft): https://conference.nber.org/confer/2013/APs13/Frazzini_Israel_Moskowitz.pdf
+— HTTP 200 confirmed 2026-10-13. Findings verified against the AQR abstract,
+retrieved via search 2026-10-13.] Method: $1T live institutional trade data,
+19 developed markets 1998–2011, price-impact estimated from a real
+arbitrageur (not TAQ aggregates) + portfolio optimisation for cost-aware
+construction. Headlines (verified abstract): costs "many times smaller" than
+the literature claims and capacities "more than an order of magnitude
+larger" — BUT "Short-term reversals, however, do not survive trading costs
+at reasonable size and do not benefit much from portfolio optimization,"
+while "size, value and momentum can be deployed at very high asset size and
+still survive." Relevance: the asymmetric verdict — momentum yes, reversal
+no — is the cost-side mirror of this pass's statistical picture (mom_20
+promotes on synthetic; rev_5 passes BH but fails the fuller gate on real
+data). Design note: FIM's "optimise the construction" is the literature
+parent of NMV's buy/hold spread (§12.2); the repo's gate has no construction
+optimiser, so its turnover row must stay a hard reject, not a soft warning.
+
+### 12.7 Boundary — NOT claimed as verified
+
+- Amihud-Mendelson ScienceDirect article page
+  (https://www.sciencedirect.com/science/article/pii/0304405X86900656) → 403
+  (Elsevier bot-detection, same pattern as §8.7). RePEc record + hosted PDF
+  verified instead; no threshold cites the ScienceDirect URL.
+- Novy-Marx-Velikov JSTOR stable/43866013 → recorded from the search index
+  only, not curl-probed this pass; the NBER w20721 URL is the verified
+  citation. A later pass may probe the JSTOR link directly.
+- Chordia-Subrahmanyam-Tong (2014) anomaly attenuation: no verified URL in
+  hand — NOT cited. Its slot (post-publication decay magnitudes) is held by
+  McLean-Pontiff (§8.6, NBER-verified). A later pass may ground it.
+- Shanken (1992) EIV correction: still never probed (§9.6 note stands).
+
+### 12.8 Falsification — what would prove this pass wrong (F-R12…F-R16 new; F-R1…F-R11 stand)
+
+F-R1…F-R11: dispositions in §8.9/§9.8/§11 stand; nothing re-run (proof JSON
+unchanged since c3-p03, dataset grew by <1 day of bars).
+
+F-R12 (reversal-is-spread): a proof promoting a reversal factor whose gross
+quintile spread is below the Roll-implied spread 2√(-cov) computed on the
+same panel. Standing proof promotes nothing — holds vacuously; binds the
+first promotion of rev_5 or any reversal-family factor. This pass is
+falsified if Roll's estimator on the real panel returns imaginary spreads
+(cov > 0) at every horizon — then the bounce mechanism is absent and F-R12
+is vacuous rather than binding (checkable in one /tmp script, implement's
+call whether to run it).
+
+F-R13 (turnover bar moved): any proof raising max_turnover above 0.5, or any
+promotion with turnover above 0.5, without a net-of-cost paragraph naming
+its cost model. Falsified (the pass, not the repo) if Novy-Marx-Velikov's
+50% line is shown to rest on pre-decimalisation cost data that no longer
+binds — the audit should check the sample window (1990s–2000s US equities)
+against the claim; for crypto the line is lenient-direction anyway, so the
+rule errs conservative.
+
+F-R14 (staleness silence): a proof screening thin coins (>5% zero-volume
+days for any coin) whose dataset-summary never mentions staleness. Falsified
+if the real panel has zero zero-volume coin-days — then the diagnostic is
+vacuous and the item closes (one read-only SQL query; named for implement).
+
+F-R15 (smoothed-Sharpe optimism): any proof DSR input computed on a series
+with lag-1 autocorrelation above 0.2 and no smoothing caveat. Standing
+proof: DSR = 0.0 everywhere — an optimistic bias on a zero still rejects,
+so the verdicts hold but the magnitudes are upper bounds; the report-update
+that says so belongs to the implement pass. Falsified if GLM's bias
+direction is shown inverted for negatively-autocorrelated (bounce-type)
+series — fair: smoothing flatters positively-autocorrelated series; for
+bounce-dominated series the vol is OVERstated and DSR is conservative, not
+optimistic. The 0.2 rule as stated covers |rho_1| > 0.2 in either direction;
+the caveat text must name the direction.
+
+F-R16 (this pass's own transcriptions): the Scholes-Williams normalisation
+(1 + 2·rho_m), the GLM profile-estimator detail beyond the MA equation, and
+the Novy-Marx DOI suffix (hhv063 vs hhv059 — one digit apart, pre-flagged)
+are the three spots most likely to need correction. "Symbols differ, factor
+right" is minor; "factor wrong" (e.g. the SW denominator, the Roll
+2√(-cov)) is blocking. The adversarial citation audit must open every
+§12.9-table link and check the transcription against the abstract or full
+text it can access.
+
+### 12.9 Link-verification table (all probed 2026-10-13, curl -L, UA Mozilla/5.0)
+
+| Source | URL | HTTP status |
+|--------|-----|-------------|
+| Scholes & Williams 1977 (RePEc) | https://ideas.repec.org/a/eee/jfinec/v5y1977i3p309-327.html | 200 |
+| Roll 1984 (JSTOR) | https://www.jstor.org/stable/2327617 | 200 |
+| Roll 1984 (RePEc) | https://ideas.repec.org/a/bla/jfinan/v39y1984i4p1127-39.html | 200 |
+| Lehmann 1990 (JSTOR) | https://www.jstor.org/stable/2937816 | 200 |
+| Jegadeesh 1990 (JSTOR) | https://www.jstor.org/stable/2328797 | 200 |
+| Novy-Marx & Velikov 2016 (NBER w20721) | https://www.nber.org/papers/w20721 | 200 |
+| Frazzini-Israel-Moskowitz 2012 (AQR) | https://www.aqr.com/Insights/Research/Working-Paper/Trading-Costs-of-Asset-Pricing-Anomalies | 200 |
+| Frazzini-Israel-Moskowitz 2012 (NBER conf PDF) | https://conference.nber.org/confer/2013/APs13/Frazzini_Israel_Moskowitz.pdf | 200 |
+| Getmansky-Lo-Makarov 2004 (NBER w9571) | https://www.nber.org/papers/w9571 | 200 |
+| Dimson 1979 (RePEc) | https://ideas.repec.org/a/eee/jfinec/v7y1979i2p197-226.html | 200 |
+| Amihud & Mendelson 1986 (RePEc) | https://ideas.repec.org/a/eee/jfinec/v17y1986i2p223-249.html | 200 |
+| Amihud & Mendelson 1986 (hosted PDF) | Buffalo course page (acsu.buffalo.edu) | 200 |
+| Politis & Romano 1994 (JSTOR) | https://www.jstor.org/stable/2290993 | 200 |
+| Politis & Romano 1994 (author-hosted PDF) | https://www.ssc.wisc.edu/~bhansen/718/Politis%20Romano.pdf | 200 |
+| Amihud & Mendelson 1986 (ScienceDirect — boundary) | https://www.sciencedirect.com/science/article/pii/0304405X86900656 | 403 — NOT claimed |
+
+### 12.10 Alternatives considered (this pass)
+
+(i) Dimson leads/lags vs Scholes-Williams three-slope for thin-coin
+diagnostics — neither is wired (no beta estimation in the pipeline); both
+are background for F-R14. Fowler-Rorke's consistency objection to Dimson is
+noted without a position. (ii) Buy/hold-spread mitigation (NMV) vs hard
+turnover reject — mitigation retained as NOT implemented (no construction
+optimiser in the repo); the gate stays a hard reject per F-R13, which is the
+conservative direction FIM endorses for reversal. (iii) Stationary vs
+fixed-length block bootstrap for a future RC leg — stationary (geometric
+lengths) is the verified White dependency; fixed-length MBB (§8.4) remains
+the simpler diagnostic. No code change in any case — research records the
+options, implement chooses.
+
 (End of file)
