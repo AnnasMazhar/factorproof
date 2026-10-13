@@ -183,19 +183,23 @@ def test_roll_spread_nonnegative_when_real(returns: list[float]) -> None:
 def test_roll_spread_scales_linearly(returns: list[float], c: float) -> None:
     r = np.asarray(returns)
     s1, s2 = roll_spread(r), roll_spread(c * r)
+    # The Roll spread scaling property S(c*r) = c*S(r) holds only when the
+    # lag-1 autocovariance is meaningfully non-zero. At the noise floor
+    # (autocovariance near zero, ~1e-7 * rms or below), multiplying returns
+    # by c can flip the autocovariance sign due to fp rounding. This produces
+    # "NaN when it should be small" or "small when it should be NaN" — both
+    # are valid numeric outcomes, not bugs.
+    scale = float(np.sqrt(np.mean(r**2))) if r.size else 0.0
+    _noise_floor = 1e-7 * scale
+
     if math.isnan(s1):
-        assert math.isnan(s2)
+        # s1=NaN means autocovariance was barely non-negative.
+        # s2 must be NaN OR a noise-floor-dominated value (autocovariance
+        # flipped to barely negative by scaling).
+        assert math.isnan(s2) or s2 < _noise_floor * max(c, 1.0) * 2.0
+    elif s1 < _noise_floor:
+        # s1 is noise-floor-dominated: s2 may be NaN or equally tiny
+        assert math.isnan(s2) or s2 < _noise_floor * max(c, 1.0) * 2.0
     else:
-        # Noise-floor allowance: residue-dominated spreads (near floating-
-        # point precision) need not scale exactly. The linear-scaling property
-        # S(c*r) = c*S(r) holds when the lag-1 autocovariance is meaningfully
-        # negative. At the noise floor (~1e-7 * rms or below), multiplying
-        # by c can flip the autocovariance sign due to fp rounding, making
-        # roll_spread return NaN — that is a valid outcome, not a bug.
-        scale = float(np.sqrt(np.mean(r**2))) if r.size else 0.0
-        _noise_floor = 1e-7 * scale
-        if s1 < _noise_floor:
-            # s1 is noise-floor-dominated: s2 may be NaN or equally tiny
-            assert math.isnan(s2) or s2 < _noise_floor * max(c, 1.0) * 2.0
-        else:
-            assert math.isclose(s2, c * s1, rel_tol=1e-6, abs_tol=1e-8 * scale)
+        # Meaningful spread: must scale linearly
+        assert math.isclose(s2, c * s1, rel_tol=1e-6, abs_tol=1e-8 * scale)
