@@ -274,3 +274,38 @@ This embeds a genuine short-term momentum signal. With rho=0.15, n=1500 days,
         gates on the planted-signal dataset at horizon 5
 
 **Reference:** Jegadeesh & Titman (1993) motivate the AR(1) structure in returns.
+
+## 13. Market-Microstructure Diagnostics (Roll Spread, Staleness, DSR Caveat)
+
+**Reference:** Roll, R. (1984) Journal of Finance 39(4):1127-1139.
+    S = 2 * sqrt(-cov(r_t, r_{t-1}))
+Under Roll's model (efficient price = random walk + bid-ask bounce), the
+first-order return autocovariance equals -S^2/4. Positive sample autocovariance
+gives an imaginary spread — reported as NaN, never clamped (F-R12).
+
+**Reference:** Getmansky, Lo & Makarov (2004), NBER w9571 — bias direction:
+positive lag-1 autocorrelation understates vol (DSR optimistic); negative
+lag-1 (bounce-type) overstates vol (DSR conservative). The report caveat must
+name the direction, not just the 0.2 threshold (F-R15).
+
+**Reference:** Scholes & Williams (1977) / Dimson (1979) background for the
+staleness diagnostic: thin coins have stale closes; coins with >5% zero-volume
+days are flagged (F-R14). The diagnostic is armed on every proof run and stays
+silent on the current panel (correct output — zero-volume rows exist, so it is
+non-vacuous).
+
+**Implementation:**
+    `src/factorlab/microstructure.py:roll_spread` — 2*sqrt(-cov), NaN when cov >= 0
+    `src/factorlab/microstructure.py:lag1_autocorr` / `lag1_autocov` — Pearson lag-1 (ddof=1)
+    `src/factorlab/microstructure.py:zero_volume_share` / `staleness_flags` — 5% trigger
+    `src/factorlab/microstructure.py:find_missing_dates` — full-panel feed gaps
+    `src/factorlab/microstructure.py:panel_bias_direction` / `dsr_bias_caveat` — direction sentence
+    `scripts/prove_on_real_data.py:microstructure_panel` — wires all of the above into §1/§8/JSON
+
+**Tests (KAT — hand computed, derivation in test file header):**
+    `tests/test_microstructure.py:test_roll_spread_hand_computed` (spread = 0.0424264...)
+    `tests/test_microstructure.py:test_lag1_autocorr_hand_computed` (rho = -0.8525371...)
+    `tests/test_microstructure.py:test_zero_volume_share_hand_computed`
+    `tests/test_microstructure.py:test_roll_spread_positive_cov_is_nan` (imaginary stays NaN)
+    `tests/test_microstructure.py:test_dsr_bias_caveat_names_direction` (F-R15 transfer)
+    plus hypothesis properties: spread non-negative when real, linear scaling.

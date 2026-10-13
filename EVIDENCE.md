@@ -894,3 +894,116 @@ check_no_internal_refs: CLEAN — no forbidden tokens found.
 $ .venv/bin/python scripts/check_real_data_proof.py
 CHECKER_EXIT=0
 ```
+
+---
+
+## Cycle 4, implement pass 1 (2026-10-13) — F-R12/F-R14/F-R15 transfers
+
+Scope: the two transfers §14.8 assigns to implement (report-update sentence
+with named bias direction; dataset-summary sentences with gap + asymmetry)
+plus the F-R14 staleness diagnostic armed from the existing volume column.
+No gate thresholds changed. No MARKET-VERDICTS position touched.
+
+### 1. New core module + tests
+
+```
+$ .venv/bin/python -m pytest tests/test_microstructure.py -p no:warnings
+15 passed in 1.00s
+```
+
+`src/factorlab/microstructure.py`: `roll_spread` (Roll 1984, NaN when
+imaginary — never clamped), `lag1_autocorr`/`lag1_autocov`, `zero_volume_share`,
+`staleness_flags` (5%), `find_missing_dates`, `panel_bias_direction`,
+`dsr_bias_caveat`. KAT values hand-computed in the test header
+(cov=-0.00045, spread=0.0424264, rho=-0.8525371) and independently verified.
+
+### 2. Full suite + lint after the change
+
+```
+$ .venv/bin/python -m pytest -p no:warnings
+157 passed in 55.23s
+$ .venv/bin/ruff check .
+All checks passed!
+$ .venv/bin/ruff format --check .
+27 files already formatted
+```
+
+### 3. Real-data proof re-run (read-only; dataset backfilled since c4p3)
+
+```
+$ uv run python scripts/prove_on_real_data.py --db <prices.sqlite> --horizons 1,5,20 --noise-factors 10
+Loading data from <prices.sqlite> ...
+Dataset: 14 coins, 21,320 bars, 2021-04-29 to 2026-10-13, 60.23 MB
+Running factor evaluation (this may take a few minutes) ...
+Wrote reports/real-data-proof.md
+Wrote reports/real-data-proof.json
+
+--- Summary ---
+Promoted: 0/13
+Noise rejection rate: 10/10 (100.0%) — target >=90%
+Stability flips: 0 — target 0
+```
+
+(Path above is the local dataset path with the host prefix redacted per F1;
+the committed report records only `prices.sqlite`, size, and mtime.)
+
+### 4. Honest discrepancies vs the §14 research record (all favour the gate)
+
+(a) 2026-04-30 feed gap (c4p3 §14.3) is ABSENT on re-query — backfilled:
+
+```
+rows on 2026-04-30: 3744
+rows on 2026-04-29: 3744
+rows on 2026-05-01: 3744
+```
+
+The report therefore states "Feed gaps: none". Per §14.8 this falsifies the
+c4p3 record on that point; the counts above are the new record. Verdicts are
+unaffected (a backfilled gap only adds legitimate bars).
+
+(b) Raw zero-volume counts confirm §14.3 exactly (ATOM 15 rows, FIL 7 rows,
+1 row on every other coin) but the "~0.75%" share in §14.3 mixes estimands:
+15/54,018 raw rows = 0.03%. The report states both estimands — raw-level
+worst coin ATOM 15/54,018 (0.03%), aggregated-daily max 0.05% — both two
+orders of magnitude below the 5% trigger. Diagnostic armed and silent, which
+is the correct output; it is non-vacuous (zero-volume rows exist).
+
+(c) Roll spreads in the report are computed on DAILY aggregated log-returns
+(the strategy frequency), not on raw intraday rows like the §14.1 /tmp table,
+so magnitudes differ (e.g. BTC 0.011566 daily vs 0.002328 intraday). The
+report states the frequency explicitly. Sign agreement: ARB/FIL/RENDER are
+imaginary (positive lag-1 cov) at both frequencies; TON is imaginary at daily
+frequency (rho=+0.077 over 692 bars) but real at intraday frequency — a
+short-panel effect, recorded here, not hidden.
+
+(d) Coverage asymmetry is now machine-generated, not hand-typed: AAVE 1 bar,
+FIL 573 bars, RENDER 810 bars, TON 692 bars (all <50% of the panel median).
+FIL sparsity (573 daily bars over a 2021→present range) was not in the §14.3
+record and is now stated in the report.
+
+### 5. Mandate gates after this pass
+
+```
+$ python3 scripts/check_real_data_proof.py
+check_real_data_proof: all checks passed.
+$ python3 scripts/check_no_internal_refs.py
+check_no_internal_refs: CLEAN — no forbidden tokens found.
+```
+
+### 6. Acceptance-criteria spot checks (synthetic demo, unchanged behaviour)
+
+```
+$ .venv/bin/factor-lab promote noise_control --data signal
+Best horizon: 20d | IC: -0.0094 | IC-IR: -0.0313
+OOS consistency: 60.00% | Observations: 1480
+Result: REJECT
+NOISE_EXIT=1
+$ .venv/bin/factor-lab promote mom_20 --data signal --plant-signal
+Best horizon: 5d | IC: 0.0252 | IC-IR: 0.0750
+OOS consistency: 60.00% | Observations: 1475
+Result: PROMOTE
+MOM_EXIT=0
+```
+
+noise_control REJECTS (exit 1); planted-signal mom_20 PROMOTES (exit 0).
+README §Real results untouched — demo numbers byte-identical to the table.
