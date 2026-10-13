@@ -1076,3 +1076,245 @@ this pass's diff, suite still green).
 - `open`: reported for the builder; not yet fixed
 - `fixed`: fix implemented and re-verified with the pass's own probes this pass
 - `refuted`: attack attempted, claim held
+
+---
+
+## PASS c3-p10-adversarial-1 (cycle 3, adversarial pass 1 of 2)
+
+Independent reviewer lane. This pass attacks the **claims** (c3-p11 attacks the
+property). Read first: ITERATION-PROTOCOL.md, QUALITY-CONTRACT.md,
+MARKET-VERDICTS.md, specs/factor-lab.md (incl. v0.2 MANDATE), the
+c1-p10/c1-p11/c2-p10/c2-p11 entries above. No `reports/mutants-survived-c*.txt`
+with content exists (file is present but 0 bytes); authoritative mutation
+baseline remains reports/mutation-c1.json (878/1977 = 44.4%, gate 70%),
+with reports/mutation-c2.json recording a 0/0 infra failure (rc=2) — quoted,
+not re-derived.
+
+Branch note: `feat/v0.1` is checked out by a worktree at
+`/home/openclaw/portfolio-wt/factorproof-reconcile`, so this pass worked on a
+branch cut at the same commit (448084b). The artifact below is committed in
+this repo; the content is branch-independent.
+
+All commands below were actually run; output is verbatim terminal output.
+
+---
+
+## 0. Pre-attack state + prior-findings re-verification
+
+```
+$ .venv/bin/python -m pytest -p no:warnings 2>&1 | tail -1
+141 passed in 49.26s
+```
+
+- **F-A4 (wilson_lower invalid inputs): FIXED** (commit 448084b
+  "actionable wilson_lower errors"). Re-verified, not trusted:
+
+```
+$ .venv/bin/python -c "from factorlab.significance import wilson_lower; ..."
+k=-1 ValueError wilson_lower: require 0 <= k <= n (successes cannot exceed trials), got k=-1, n=10.
+k>n ValueError wilson_lower: require 0 <= k <= n (successes cannot exceed trials), got k=15, n=10.
+n<0 ValueError wilson_lower: n must be >= 0 (number of valid observations), got n=-1.
+n=0 ValueError wilson_lower: require 0 <= k <= n (successes cannot exceed trials), got k=5, n=0.
+```
+
+  Every invalid shape now raises an actionable ValueError naming the
+  constraint (previously `math domain error` / silent 0.0). → **fixed**
+- **F-T5 (runtime-check direction fault invisible):** re-probed as T5 below —
+  still green on the inverted check. → **open (stands)**
+- **F-S1 (stale star counts in prose):** re-probed live this pass — prose at
+  lines 1544/1569 still says qlib "48,917 stars, last push 2026-09-22" while
+  live is 49,316 / pushed 2026-10-08 (table at line 1641 says 49,308, i.e.
+  table drift is noise, prose staleness is real). → **open (stands)**
+- **B3 (noise seed-shopping):** not attempted (same cost constraint as c2-p11:
+  ~30-60s per promote x N seeds exceeds the foreground budget). → **open**
+
+---
+
+## 1. Claims audit — 3 most load-bearing README claims, attacked
+
+### C1 — "Promote a real signal (exit 0) or reject noise (exit 1)"
+
+```
+$ .venv/bin/python -m factorlab.cli promote mom_20 --data signal --plant-signal >/dev/null 2>&1; echo "mom_20_planted=$?"
+mom_20_planted=0
+$ .venv/bin/python -m factorlab.cli promote noise_control --data signal >/dev/null 2>&1; echo "noise=$?"
+noise=1
+```
+
+**Verdict: SUPPORTED.** Exit codes as documented, measured without an
+intervening pipe.
+
+### C2 — "Real results (from examples/run_demo.sh)": README table is the demo's output
+
+```
+$ .venv/bin/python -m factorlab.cli screen --data signal --horizons 1,5,20 --out /tmp/c3_screen/ > /tmp/c3_screen_out.txt 2>&1; echo "screen_exit=$?"
+screen_exit=0
+$ grep '^|' /tmp/c3_screen_out.txt | sort -u > /tmp/c3_scr.txt; grep '^|' README.md | sort -u > /tmp/c3_rd.txt; diff /tmp/c3_scr.txt /tmp/c3_rd.txt && echo ROWS_IDENTICAL
+ROWS_IDENTICAL
+$ grep -n "Promoted" /tmp/c3_screen_out.txt | head -2
+19:Promoted (0): none
+```
+
+**Verdict: SUPPORTED.** All 13 table rows byte-identical to a fresh run
+(screen step of the demo pipeline; the full demo script was verified
+row-identical in c1-p10/c2-p10 and the screen output is its table source).
+"0 promoted" matches the README "0/13" framing.
+
+### C3 — Positioning: MlFinLab licence/pricing; Quantopian stack abandoned 2020
+
+```
+$ curl -sS -L --max-time 25 https://raw.githubusercontent.com/hudson-and-thames/mlfinlab/master/LICENSE.txt | grep -cE '6\.6|6\.7|14\.2|14\.3|14\.5'
+6
+$ curl -sS -L --max-time 25 "https://hudsonthames.org/mlfinlab/" -o /tmp/c3_mlp.html; echo "bytes=$(wc -c < /tmp/c3_mlp.html)"
+bytes=224252
+$ grep -oiE '£100[^<]{0,10}' /tmp/c3_mlp.html | head -2
+£100 (+VAT)
+$ curl -sS --max-time 20 "https://api.github.com/repos/quantopian/alphalens/commits?per_page=1" | grep -m1 '"date"'
+        "date": "2020-04-27T18:40:41Z"
+$ curl -sS --max-time 20 "https://api.github.com/repos/quantopian/pyfolio/commits?per_page=1" | grep -m1 '"date"'
+        "date": "2020-02-28T17:30:19Z"
+```
+
+**Verdict: SUPPORTED.** Licence-clause grep hits 6 lines covering
+6.6/6.7/14.2/14.3/14.5; pricing page returns exactly `£100 (+VAT)`;
+alphalens last master commit 2020-04-27, pyfolio 2020-02-28. No conflict
+with MARKET-VERDICTS.md positioning to record.
+
+### Incidental badge claim
+
+```
+$ .venv/bin/python -m pytest -p no:warnings 2>&1 | tail -1
+141 passed in 49.26s
+```
+
+README badge `tests-141 passed` is accurate. (`ruff check` / `ruff format
+--check` were clean at commit 448084b per its message; not re-run here —
+the reviewer touched no Python files, only appended to this markdown file.)
+
+---
+
+## 2. Citation audit — all 104 unique URLs in docs/RESEARCH.md
+
+Method: extracted 104 unique `https://` URLs, probed each with
+`curl -s -o /dev/null -w '%{http_code}' -L --max-time 25` (16-way parallel,
+research UA). One table entry is a display-truncated URL
+(`taylorfrancis.com/.../9780429246593/...` at line 1875 — the full URL is
+cited in §2.5 and returns 200); 103 probed.
+
+```
+probed=103
+     79 200
+     21 403
+      1 404
+      2 redirect-loop (curl exit 47, last code 302)
+```
+
+Non-200 detail (raw):
+
+```
+403 https://doi.org/10.1002/ijfe.70036
+403 https://doi.org/10.1080/01621459.1994.10476870
+403 https://doi.org/10.1093/rfs/hhv059
+403 https://doi.org/10.1093/rfs/hhx132
+403 https://doi.org/10.1111/0022-1082.00247
+403 https://doi.org/10.1111/0022-1082.00163
+403 https://doi.org/10.1093/rfs/1.1.41
+403 https://doi.org/10.1080/01621459.1927.10502953
+403 https://doi.org/10.1111/1468-0262.00152
+403 https://doi.org/10.1111/j.1468-0262.2005.00615.x
+403 https://doi.org/10.1111/j.1540-6261.1985.tb05004.x
+403 https://doi.org/10.1111/jofi.12365
+403 https://doi.org/10.1111/j.1540-6261.1993.tb04702.x
+403 https://doi.org/10.1111/jofi.12021
+403 https://doi.org/10.1111/jofi.13131
+403 https://doi.org/10.2307/2297912
+403 https://doi.org/10.2469/faj.v58.n4.2453
+404 https://doi.org/10.1198/073500104000000063
+403 https://papers.ssrn.com/sol3/papers.cfm?abstract_id=377260
+403 https://papers.ssrn.com/sol3/papers.cfm?abstract_id=3913263
+403 https://www.tandfonline.com/doi/abs/10.2469/faj.v58.n4.2453
+403 https://www.pm-research.com/content/iijaltinv/early/2023/03/25/jai.2023.1.189.full.pdf
+redirect-loop https://doi.org/10.3905/jpm.2014.40.5.094
+redirect-loop https://doi.org/10.3905/jai.2023.1.189
+```
+
+Disposition:
+
+- **79/103 → HTTP 200**, including every JSTOR/NBER/arXiv/GitHub-API/PyPI
+  alternate the file promises and all 12 c2 ecosystem re-check URLs.
+- **21× 403**: publisher DOI resolvers + SSRN + T&F/PM-Research bot-blocking.
+  Each affected citation block carries a 200-returning alternate (JSTOR/NBER)
+  or is explicitly marked NOT claimed (§8.7 table, lines 2317/2874-2878 for
+  the 404/SSRN/DOI-throttled cases) — verified present by grep.
+- **1× 404** (`doi:10.1198/...`): documented "404 — NOT claimed" at line 2317.
+- **2× redirect loop** (both IPR-Journals `10.3905` DOIs): the DSR DOI loop is
+  documented in §2.4; the `jai.2023.1.189` DOI is documented "429 — NOT
+  claimed" at line 2874 (today it loops rather than 429s — same disposition:
+  not claimed, alternate SSRN also not claimed).
+- **Support spot-checks:** `nber.org/papers/w25882` citation meta returns
+  `citation_title = "Common Risk Factors in Cryptocurrency"` (see F-C1);
+  springer landing+PDF both 200 with the DOI-suffixed URL matching the cited
+  Grobys et al. 2025 reference (page body sits behind a "Client Challenge"
+  bot wall via curl, so support rests on the DOI identifier match, not
+  fetched text — noted, not a finding).
+- **One citation resolves to the WRONG paper → F-C1 (major).**
+
+---
+
+## 3. Test-quality audit — 6 tests sampled, named fault injected, suite run
+
+Driver `/tmp/c3_inject.py` (+`/tmp/c3_t6.py` for T6): back up the source
+file, apply one exact string mutation (asserted unique, except T6 where the
+two `evaluate_*` blocks are byte-identical and the fault was scoped to the
+`evaluate_cpcv` half), run the single node, restore, then re-run the subset
+to prove green. `git diff --stat` empty after every restore (verified).
+
+| # | test | injected fault (one string mutation) | result |
+|---|------|--------------------------------------|--------|
+| T1 | `test_adversarial.py::test_diluted_leak_rejected_by_perturbation_gate` | Gate 0.85 blinded: `if n_diffs > max_diffs:` → `if n_diffs > 10**12:` | exit 1 — DETECTED (`AssertionError` at test_adversarial.py:899) |
+| T2 | `test_significance.py::test_wilson_lower_rejects_negative_k` | validation removed: `if k < 0 or k > n:` → `if False:` | exit 1 — DETECTED (`AssertionError` at test_significance.py:102) |
+| T3 | `test_promote.py::test_low_coverage_factor_rejected` | coverage gate forced pass: `passed=cov >= cfg.coverage_min,` → `passed=True,` | exit 1 — DETECTED (`AssertionError` at test_promote.py:169) |
+| T4 | `test_significance.py::test_deflated_sharpe_invalid_args` | validation removed: `if n_trials < 1:` → `if False:` | exit 1 — DETECTED (ZeroDivisionError at significance.py:173 — the test expects ValueError, the fault surfaces a crash instead) |
+| T5 | `test_adversarial.py::test_closure_lookahead_rejected_by_runtime_check` | Gate 0.75 direction inverted: `close.shift(-h)` → `close.shift(h)` (correlate against PAST returns) | **exit 0 — NOT DETECTED** (see F-T5, stands) |
+| T6 | `test_cv.py::test_evaluate_cpcv_returns_valid_oos_ic` | OOS aggregation broken: `append(m.ic_pearson)` → `append(float("nan"))` inside `evaluate_cpcv` only | exit 1 — DETECTED (`AssertionError` at test_cv.py:405) |
+
+Restore check: `tests/test_cv.py` green after restore (exit 0); full-suite
+`git diff --stat` empty; pre-attack full suite was 141 passed.
+
+**Score: 5 of 6 named faults fail on their fault.** T5 is the known F-T5
+gap (re-confirmed, not newly introduced).
+
+---
+
+## 4. Bypass hunt (pass-1 scope: claim-adjacent attempts only)
+
+- **Force flag:** not re-probed (c1-p10/c2-p10 both confirm `--force` is
+  rejected by argparse; CLI surface untouched since — `git log` shows no
+  cli.py changes after those probes).
+- **Gate relaxation / permissive config:** by design per c1-p11; not
+  re-litigated.
+- **README command honesty:** the exact quickstart commands re-run
+  unmodified in §C1 above.
+
+---
+
+## 5. Findings table (c3-p10)
+
+| id | severity | finding | evidence | status |
+|----|----------|---------|----------|--------|
+| F-C1 | major | RESEARCH.md §8.1 cites "Liu, Tsyvinski & Wu (2022), Common Risk Factors in Cryptocurrency" at NBER URL `w28682` — but live `nber.org/papers/w28682` is Borjas & Edo (2021), "Gender, Selection into Employment, and the Wage Impact of Immigration" (citation_title meta + citation_doi 10.3386/w28682, fetched 2026-10-13). Transposed digits: the Liu et al. paper is **w25882** (verified: its NBER page returns `citation_title = "Common Risk Factors in Cryptocurrency"`). Same wrong URL repeated in the §8.8 verification table (line ~2299). The claim itself is true and the method extracted matches the real paper — only the WP number/URL is wrong — so this is a one-line builder fix, but per QUALITY-CONTRACT §3 a citation that does not support its claim is a blocking-class defect. | NBER fetches §2; RESEARCH.md lines 1929-1931, ~2299 | open |
+| F-T5 | minor | (c2-p10) Gate-0.75 direction fault still invisible: T5 inversion stays green. The Gate-0.85 perturbation tests pin mechanism for the new gate, but the 0.75 test-precision gap stands. | T5 output §3 | open |
+| F-S1 | minor | (c2-p10) RESEARCH.md prose lines 1544/1569 still say qlib "48,917 stars, last push 2026-09-22"; live is 49,316 / pushed 2026-10-08 (table line 1641 says 49,308 — table drift is noise, prose staleness is real). | API output §0 | open |
+| F-S2 | minor | Verification table line 1875 records the Efron & Tibshirani URL truncated with a literal `...` (`.../9780429246593/...`). Display-only: the full URL is cited in §2.5 and returns 200 today. One-line cleanup. | grep §2; audit file | open |
+| F-A4 | minor | (c1-p11) wilson_lower invalid-input handling | fixed in 448084b; re-verified §0 | fixed |
+| B3 | — | Noise seed-shopping sweep still not attempted (same foreground-cost constraint). | c2-p11 §1; this pass §0 | open (method note: background job) |
+| P04 | — | Positioning conflict with MARKET-VERDICTS.md: none found (re-checked §C3). | README/COMPARISONS.md | refuted (no conflict) |
+
+Claims C1/C2/C3: all three **supported** — no blocker. One major (wrong-paper
+citation URL), three minors open (two carried, one new display-only).
+
+### Status key
+
+- `open`: reported for the builder; not yet fixed (reviewer does not fix code)
+- `fixed`: fix implemented and re-verified with the reviewer's own probes this pass
+- `refuted`: attack attempted, claim held
