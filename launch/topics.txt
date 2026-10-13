@@ -16,3 +16,4 @@ python
 statistics
 financial-engineering
 research-software
+good-first-issue

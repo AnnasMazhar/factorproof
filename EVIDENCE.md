@@ -768,3 +768,23 @@ $ .venv/bin/python -m pytest 2>&1 | tail -1
 The CPCV path produces more OOS combinations than walk-forward (C(6,2)=15 vs 5),
 giving tighter sign-consistency estimates at the cost of smaller training sets.
 Default remains `cv_method='walk_forward'` for backward compatibility.
+
+## c4-p05-implement-2 appendix (2026-10-13) — launch surfaces verified, code on lane branch
+
+Launch-surface pass ran on lane branch tmp-c3p10 (commit 9e5429d), which holds
+this cycle's implement-2 code delta and is merged back separately:
+
+- `pytest -q`: 158 passed, 0 failed. `ruff check .` + `ruff format --check .` clean.
+- `bash examples/run_demo.sh` exit 0; README ranked table byte-identical to
+  `results/factor_table.md`; badge updated to 158 on the lane branch.
+- New byzantine test `test_promote_hostile_factor_name_clean_error`
+  (path-traversal / shell-metachar / empty factor names -> exit 1, one-line
+  Error, no traceback); hostile CLI probes also verified live (exit 1).
+- `scripts/check_real_data_proof.py` satisfied; `check_no_internal_refs.py` CLEAN.
+- `COMPARISONS.md` (re-verified 2026-10-13), `CONTRIBUTING.md`, `docs/demo.sh`
+  verified current, not rewritten.
+- `launch/topics.txt`: + `good-first-issue` (this commit; 19 tags, within 8-20).
+- Packaging: pyproject metadata complete; `.github/workflows/release.yml`
+  (trusted publishing, PYPI_PUBLISH-gated, tag==version guard) present.
+  Local wheel build not possible offline (no setuptools/wheel in venv);
+  not claimed as verified — CI builds on tag push.
