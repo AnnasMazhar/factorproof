@@ -3,7 +3,7 @@
 The overfitting controls that quant research actually needs — without a £100/month licence.
 
 ![Python](https://img.shields.io/badge/python-3.11%2B-blue)
-![Tests](https://img.shields.io/badge/tests-161%20passed-brightgreen)
+![Tests](https://img.shields.io/badge/tests-164%20passed-brightgreen)
 ![Ruff](https://img.shields.io/badge/ruff-clean-brightgreen)
 ![Licence](https://img.shields.io/badge/licence-MIT-green)
 
@@ -75,6 +75,9 @@ report.to_markdown / to_html
 ## Install
 
 ```bash
+# From source (no PyPI release yet):
+git clone https://github.com/AnnasMazhar/factorproof
+cd factorproof
 uv venv && uv pip install -e '.[dev]'
 ```
 
@@ -96,6 +99,8 @@ factor-lab list
 # Full pipeline demo
 bash examples/run_demo.sh
 ```
+
+If this is useful, a GitHub star helps others find it.
 
 ## Real results (from examples/run_demo.sh)
 
