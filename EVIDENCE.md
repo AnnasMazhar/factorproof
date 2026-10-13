@@ -1007,3 +1007,28 @@ MOM_EXIT=0
 
 noise_control REJECTS (exit 1); planted-signal mom_20 PROMOTES (exit 0).
 README §Real results untouched — demo numbers byte-identical to the table.
+
+## c4-p05-implement-2 (2026-10-13) — launch-readiness + byzantine CLI hardening
+
+```
+$ .venv/bin/python -m pytest -q -p no:warnings
+72 dots [...45%] + 72 dots [...91%] + 14 dots [100%] — 158 passed, 0 failed
+$ .venv/bin/python -m ruff check . && .venv/bin/python -m ruff format --check .
+All checks passed! / 27 files already formatted
+$ bash examples/run_demo.sh (exit=0); README ranked table diffed byte-identical
+$ .venv/bin/factor-lab promote "../../etc/passwd" -> hostile-factor-exit=1
+$ .venv/bin/factor-lab screen --data signal --horizons abc -> bad-horizons-exit=1
+$ .venv/bin/python scripts/check_no_internal_refs.py
+check_no_internal_refs: CLEAN — no forbidden tokens found.
+$ .venv/bin/python scripts/check_real_data_proof.py (exit=0, checker satisfied)
+```
+
+Changes: tests/test_cli.py + test_promote_hostile_factor_name_clean_error
+(path-traversal / shell-metachar / empty factor names -> exit 1, one-line
+Error, no traceback); README badge 141 -> 158 passed; launch/topics.txt +
+good-first-issue (19 tags, within 8-20). COMPARISONS.md, CONTRIBUTING.md,
+docs/demo.sh verified current — not rewritten. Packaging: pyproject metadata
+complete, release.yml (trusted publishing, PYPI_PUBLISH-gated, tag=version
+guard) present; local wheel build not possible offline (no setuptools/wheel in
+venv, `uv build --offline` needs registry) — CI builds on tag push. Not
+claimed as verified locally.

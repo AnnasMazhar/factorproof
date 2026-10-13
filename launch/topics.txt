@@ -16,3 +16,4 @@ python
 statistics
 machine-learning
 quant
+good-first-issue

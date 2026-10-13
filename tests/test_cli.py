@@ -11,13 +11,17 @@ Faults detected per test:
     test_explain_unknown_factor_clean_error:
         Fault: cmd_explain printing the KeyError repr (extra quoting) for an
         unknown factor name instead of a plain actionable message.
+    test_promote_hostile_factor_name_clean_error:
+        Fault: cmd_promote treating a path-traversal / shell-metachar factor
+        name as a lookup path or crashing with a traceback instead of a
+        one-line actionable error with exit 1.
 """
 
 from __future__ import annotations
 
 import argparse
 
-from factorlab.cli import cmd_explain, cmd_screen
+from factorlab.cli import cmd_explain, cmd_promote, cmd_screen
 
 
 def _screen_args(horizons: str) -> argparse.Namespace:
@@ -46,3 +50,14 @@ def test_explain_unknown_factor_clean_error(capsys) -> None:
     err = capsys.readouterr().err
     assert err.startswith("Error: Unknown factor: 'nosuchfactor'.")
     assert "Available:" in err
+
+
+def test_promote_hostile_factor_name_clean_error(capsys) -> None:
+    for hostile in ("../../etc/passwd", "mom_20; rm -rf /", "mom_20$(id)", ""):
+        args = argparse.Namespace(factor=hostile, data="signal", seed=7, plant_signal=False)
+        rc = cmd_promote(args)
+        assert rc == 1
+        err = capsys.readouterr().err
+        assert err.startswith("Error: Unknown factor:")
+        assert "Available:" in err
+        assert "Traceback" not in err
