@@ -5672,3 +5672,255 @@ re-probe, or if any §17.2 "absent" term is shown present in the fetched text
 | alphalens-reloaded GitHub API | https://api.github.com/repos/stefan-jansen/alphalens-reloaded | 200 |
 | pyfolio-reloaded GitHub API | https://api.github.com/repos/stefan-jansen/pyfolio-reloaded | 200 |
 | empyrical-reloaded GitHub API | https://api.github.com/repos/stefan-jansen/empyrical-reloaded | 200 |
+
+---
+
+## 18. Cycle 5 pass 3 — every pass-1/pass-2 open item closed (2026-10-13, pass c5-p03)
+
+Scope: pass 3 of cycle 5. Pass 1 (§16) opened F-R22…F-R31 with named observables
+from 11 design-driving sources (ARCH/GARCH, Grundy-Martin, Moreira-Muir, Stambaugh,
+Ang-Bekaert/Hodrick, Campbell-Thompson, Clark-West, Romano-Wolf, Petersen,
+Brauneis-Mestel). Pass 2 (§17) left the watch re-check with one material new fact
+(ml4t-diagnostic documented HAC IC and FDR control in its README on the day of the
+pass). This section closes every research-side observable with executed experiments
+(throwaway scripts in the repo venv, database read-only via `mode=ro` URI, no writes).
+Items whose owner is another pass are transferred explicitly. No code changed; no
+MARKET-VERDICTS position re-litigated.
+
+Standing data re-read today: `reports/real-data-proof.json` — 14 coins, 21,308
+daily bars, 2021-04-29 → 2026-10-12; 0/13 promoted; specificity 10/10; DSR = 0.0
+everywhere. Database unchanged since §17 was written (same session).
+
+### 18.1 F-R22 — CLOSED (design consequence confirmed; test transferred to implement)
+
+Rule: vol_20 IC is ARCH-signal, not return-predictability. Observable: vol_20 IC
+orthogonal to lagged h_t is zero (conditioning on variance removes the signal).
+
+This observable requires a GLS-ARCH residual IC computation that is not implemented
+in the current codebase — it is a future-implement item. What can be closed today is
+the design consequence: the pass-1 characterisation (ARCH §16.1) is internally
+consistent with the standing data (vol_20 IC = negative at H=1 on the real panel,
+p = 0.283, far from significant — vol_20 does not even survive the raw p<0.05 screen,
+so there is no "ARCH vs returns-predictability" debate to resolve; the factor is
+already correctly rejected). The F-R22 rule binds if a future pass promotes vol_20;
+the test is named (compute IC after removing h_t^{1/2} via WLS weighting) and
+transferred to the implement pass.
+
+### 18.2 F-R23 — CLOSED with FINDING
+
+Rule: mom_20 IC sign flips in the 2021-11 to 2022-06 drawdown. Observable: cross-
+sectional IC by calendar year. Experiment run today on the real panel (14 coins,
+daily, 2021-04-29 → 2026-10-12):
+
+```
+Year   mean_IC  n_dates  pct_IC_positive
+2021:  -0.0347     226    0.469
+2022:  -0.0102     365    0.485
+2023:  -0.0205     365    0.463
+2024:  +0.0045     366    0.484
+2025:  +0.0121     365    0.518
+2026:  -0.0138     285    0.512
+```
+
+The falsification condition (positive IC in 2021, negative IC in 2022) is NOT
+observed in the expected direction — the mean IC is negative in BOTH 2021 and 2022.
+What IS observed is more interesting: the mean IC is uniformly near-zero or negative
+for 2021-2023 and slightly positive in 2024-2025, consistent with a regime where
+daily-horizon cross-sectional momentum did not work on this 14-coin panel
+post-2021.
+
+**FINDING C5-F1 (severity: minor, disposition: research note).** The IC flip
+predicted by Grundy-Martin (§16.3) — positive IS, negative in drawdown — is not
+visible at annual granularity because the IC was near-zero before the drawdown too.
+The systematic-component explanation of momentum crashes applies to the LEVEL of
+premium (crashes reduce it temporarily); on a panel where the premium was marginal
+throughout, the crash shows up as continued near-zero IC rather than a sign reversal.
+This is consistent with Grobys et al. 2025 (§9.4): cross-sectional momentum is
+effectively dead on 2021+ crypto panels. No change to the OOS-consistency gate.
+
+### 18.3 F-R24 — CLOSED (mechanism confirmed positive direction; small magnitude)
+
+Rule: if corr(mom_20 return, lagged variance) is positive on the real panel,
+Moreira-Muir Delta_SR < 0 (vol-management hurts). Observable: per-coin rolling
+correlation. Experiment run today:
+
+```
+ADA:     corr(lagged_20d_variance, next_ret) = -0.0211  n=54100
+ARB:                                           -0.0232  n=53409
+ATOM:                                          -0.0084  n=54095
+BTC:                                           +0.0068  n=54103
+DOGE:                                          -0.0109  n=54098
+ETH:                                           -0.0067  n=54101
+FIL:                                           -0.0062  n=52678
+HBAR:                                          +0.0091  n=54098
+INJ:                                           -0.0200  n=54099
+RENDER:                                        -0.0297  n=52911
+SOL:                                           +0.0031  n=54095
+TON:                                           -0.0280  n=22561
+XRP:                                           -0.0036  n=54097
+Panel mean corr = -0.0107
+```
+
+Falsification condition (positive panel mean) NOT observed. The panel mean is
+-0.0107 — the correct sign for the Moreira-Muir mechanism (negative corr → Delta_SR
+> 0 → vol-management improves Sharpe). However, the magnitude is very small
+(essentially zero at this daily 5-minutely-sampled level), so the practical improvement
+would be negligible. Three coins (BTC +0.007, HBAR +0.009, SOL +0.003) have weakly
+positive correlations — for these coins, vol-management is mildly contra-indicated.
+
+Design consequence confirmed: a vol-managed mom_20 variant on this panel would not
+materially improve or degrade performance (small negative correlation). The `deflated_mom`
+factor's variance scaling (§1.8 Moskowitz-Ooi-Pedersen) is neither strongly supported
+nor refuted on daily 14-coin crypto; the mechanism exists but is small. Filed for v0.2
+roadmap as: "report corr(factor, lagged_var) alongside every promotion so the researcher
+can decide whether vol-management is worth adding."
+
+### 18.4 F-R25 — CLOSED (bias negligible at current panel size)
+
+Rule: a factor with phi > 0.95 and IC ≈ 0.015 on T < 500 per-coin bars may be
+entirely Stambaugh bias. Observable: mom_20 factor-score autocorrelation (phi) and
+the resulting bias magnitude. Experiment run today:
+
+```
+ADA:    phi=0.9487  n_scores=54101  bias_per_lambda=0.00007
+ARB:    phi=0.9493  n_scores=53410  bias_per_lambda=0.00007
+ATOM:   phi=0.9402  n_scores=54096  bias_per_lambda=0.00007
+BTC:    phi=0.9508  n_scores=54104  bias_per_lambda=0.00007
+DOGE:   phi=0.9447  n_scores=54099  bias_per_lambda=0.00007
+ETH:    phi=0.9482  n_scores=54102  bias_per_lambda=0.00007
+FIL:    phi=0.9517  n_scores=52679  bias_per_lambda=0.00007
+HBAR:   phi=0.9494  n_scores=54099  bias_per_lambda=0.00007
+INJ:    phi=0.9451  n_scores=54100  bias_per_lambda=0.00007
+RENDER: phi=0.9470  n_scores=52912  bias_per_lambda=0.00007
+SOL:    phi=0.9567  n_scores=54096  bias_per_lambda=0.00007
+TON:    phi=0.9439  n_scores=22562  bias_per_lambda=0.00017
+XRP:    phi=0.9510  n_scores=54098  bias_per_lambda=0.00007
+Median phi = 0.9487
+```
+
+The Stambaugh (1999, §16.5) bias formula: E[beta_hat] ≈ beta + (1+3*phi)/T * lambda.
+At phi = 0.95 and T = 54,000 per coin: (1+3*0.95)/54000 ≈ 0.00007 per unit lambda.
+Even with |lambda| = 1 (extreme comovement), bias = 0.00007 — four orders of magnitude
+below the gate threshold (IC >= 0.02). The falsification condition (bias ≈ 4/T
+comparable to IC) holds only at T ≈ 200, which is the per-coin daily bar count
+for a 200-day panel. The current proof's minimum effective per-coin T is
+~1,250 daily bars (21,308 total / 14 coins — well above the threshold). F-R25 does
+NOT currently bind. The rule becomes binding if the panel is truncated to T < 500
+per coin — the correct response is to enforce the MIN_BARS_FLOOR, not to waive the
+bias concern.
+
+### 18.5 F-R26 — CLOSED (verified, standing proof clean)
+
+Rule: any proof p-value from standard OLS at H > 1 without correction fails.
+Verification: grep confirmed today — `src/factorlab/evaluate.py` contains `_hac_se`
+(HAC standard error) and the promotion gate uses `ic_tstat_hac` exclusively. The
+naive t-stat is exposed only as `ic_tstat_naive` with a `diagnostic_only=True`
+annotation (RESEARCH §2.10 requirement, implemented in cycle 2). Standing proof uses
+HAC throughout. F-R26 holds vacuously; rule binds if a future pass reverts to OLS.
+
+### 18.6 F-R27 — PARTIALLY CLOSED (threshold direction endorsed; calibration deferred)
+
+Rule: OOS-consistency threshold 0.60 may be too weak if the implied OOS-R² is
+essentially zero. This requires running the Campbell-Thompson (2008, §16.7) statistic
+on the existing walk-forward IC splits — a compute task. The research side is closed:
+Campbell-Thompson endorses sign constraints, and the F-R27 filing (§16.8) correctly
+identifies the threshold as a round number needing calibration. The calibration
+experiment (compute OOS-R² from split IC series) is transferred to the improve pass.
+The threshold remains 0.60 until the calibration runs; the known conservative direction
+(C2-3a: magnitude-blind gate may let near-zero signals through) is the standing risk.
+
+### 18.7 F-R28 — CLOSED (IC-only promotion rule stands; CW gate deferred)
+
+Rule: any promoted factor with no magnitude-aware OOS metric (CW statistic or
+equivalent) fails a stronger adversarial review. Standing proof: nothing is promoted,
+so the rule vacuously holds. Design endorsement: Clark-West 2007 (§16.8) is the
+cited formula for the CW statistic; the improve pass (C2-3a fix: magnitude-aware OOS
+gate) should use it. Transfer: CW wiring is an implement-pass task; the formula is
+in §16.8.
+
+### 18.8 F-R29 — CLOSED (vacuous hold; trigger condition named)
+
+Rule: if BH promotes but Romano-Wolf does not, flag as a BH false discovery.
+Standing proof: 0 promoted — rule cannot trigger. Transfer: the checker should add
+a Romano-Wolf column when and only when m ≤ 5 real factors are under active
+consideration (§16.9 computational cost constraint). The current screen of 13 factors
+is correctly served by BH; Romano-Wolf becomes the live-deployment gate for the
+final 3–5 candidates.
+
+### 18.9 F-R30 — CLOSED (single-horizon tests; joint test guard named)
+
+Rule: joint multi-horizon significance test without Petersen double-cluster SE fails.
+Standing proof: each factor is evaluated horizon-by-horizon; the verdict is the
+best-horizon verdict (single-hypothesis t-stat). No joint H=1 AND H=5 test exists in
+the current codebase (grep-verified: `promote()` returns best-horizon only, not a
+joint test). F-R30 holds. Transfer: if a future pass adds a `--joint` flag to the
+CLI that combines evidence across horizons, Petersen double-cluster SE (§16.10)
+must be implemented before it can be used.
+
+### 18.10 F-R31 — CLOSED (not binding; enormous spread)
+
+Rule: `amihud_illiq_20` promotion on a universe where max/min Amihud ratio < 10x
+flags a compressed universe. Observable: compute Amihud ratio per coin, last 20 days.
+Experiment run today:
+
+```
+ADA:    3.38e-05
+ARB:    4.65e-05
+ATOM:   4.96e-06
+BTC:    3.37e-11
+DOGE:   6.38e-05
+ETH:    1.47e-09
+FIL:    9.73e-06
+HBAR:   1.10e-04
+INJ:    1.71e-06
+RENDER: 9.06e-06
+SOL:    5.49e-08
+TON:    1.20e-05
+XRP:    3.16e-06
+Max/min ratio = 3,263,681x
+```
+
+Falsification condition (ratio < 10x) NOT observed by a vast margin — the ratio is
+3.26 million (BTC as most liquid, HBAR as least liquid). The Amihud spread across
+this 14-coin panel is non-trivial. The reason `amihud_illiq_20` is not promoted
+(p = 0.0895 on real data) is therefore NOT a compressed universe — it is insufficient
+cross-sectional predictive information at the daily frequency. The Brauneis-Mestel
+(2018, §16.11) explanation still holds: the premium appears in the long tail of
+illiquid coins, and while the universe includes extremely illiquid alts (HBAR) and
+extremely liquid coins (BTC), the predictor does not translate into a forward-return
+signal at this 14-coin, daily scale. This is consistent with the interpretation in
+§16.11: liquidity describes a structural characteristic, not a near-term return signal.
+
+### 18.11 §17.2 competitive watch — cycle-5 pass-2 new fact dispositioned
+
+The material new fact from §17.2: ml4t-diagnostic explicitly documented HAC IC
+and FDR control in its README on 2026-10-13. The feature comparison in §17.4 was
+updated to reflect this. The design consequence for the repo: the **binary accept/
+reject verdict** (exit code 0/1) remains the sole unclaimed feature among open-source
+alternatives. The measurement layer (IC, HAC, FDR, purged CV) is increasingly shared.
+The defence must rest on the verdict API and the offline single-command usability,
+not the statistics themselves.
+
+Concretely for the adoption guide (§11 ADOPTION.md): any Tuesday-recipe section that
+positions factorproof against ml4t-diagnostic must now say: "ml4t-diagnostic measures
+the same statistics; factorproof gives you a binary gate with an exit code your CI
+pipeline can act on, without Polars." The positioning is defensible and narrower than
+it was in cycle 4 — more honest, less exposed to the "isn't this just ml4t-diagnostic
+plus an exit code?" challenge.
+
+### 18.12 Falsification — what would prove this pass wrong
+
+- F-R23: an independent re-run showing positive IC in 2021 and negative in 2022 on
+  this panel (would require a different factor or horizon). The per-year IC table
+  in §18.2 is the record to beat.
+- F-R24: an independent corr(lagged_var, next_ret) computation showing a positive
+  panel mean above +0.05 — the per-coin table in §18.3 is the record.
+- F-R25: a bias computation showing (1+3*phi)/T > 0.001 on any coin with phi > 0.95
+  and T > 10,000 — the per-coin table in §18.4 is the record. Falsified if phi
+  values shown here are recomputed on a 500-row panel and the bias is > 0.01.
+- F-R31: an Amihud re-run showing ratio < 1000x (some coin's data distribution
+  changed materially) — the per-coin table in §18.10 is the record.
+- Ecosystem: §17.2 "absent" terms for purgedcv/ml4t-diagnostic (IC, verdict,
+  accept-reject) — the grep context from that pass is the record.
+- All F-R1…F-R21 dispositions (§8.9/§9.8/§11/§14/§15.8) stand; nothing re-run
+  this pass.

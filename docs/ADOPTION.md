@@ -238,20 +238,22 @@ is small. For large families with strong factor correlation (IC pairwise > 0.5),
 Storey's (2002) adaptive pi_0 estimate (v0.3 roadmap). See §4.6 (closed) for
 the quantitative bound.
 
-### 3.5 Lookahead in custom factors is not automatically detected
+### 3.5 Lookahead in custom factors is caught in two layers (residual: evasion)
 
 The `lookahead_control` factor is correctly rejected because it is flagged with
-`uses_future_data = True`. A researcher implementing a custom factor that accidentally
-uses future data (e.g. by forgetting `.shift(1)` after computing forward-looking
-features) will not have that flag set.
+`uses_future_data = True`. Since the M01 fix, `promote()` additionally scans the
+`compute()` source for negative `.shift(-N)` patterns and rejects before any
+statistics run — accidental lookahead via negative shifts IS caught (executed
+evidence: §8.4, a `shift(-5)` custom factor hard-rejects with `no_negative_shifts`).
 
-`assert_no_lookahead(features, targets, horizon)` catches overlap at the index level but
-does not catch subtle contamination inside a custom factor's compute function.
+`assert_no_lookahead(features, targets, horizon)` catches overlap at the index level.
+What remains uncaught is future access hidden from source inspection (index slicing,
+helper functions) — the documented residual risk, now bounded to deliberate evasion
+rather than accidents.
 
-**Mitigation:** write tests for custom factors that confirm they produce `NaN` on the
-first `horizon` rows (no values to use that would require future knowledge). See
-`docs/ADVERSARIAL-REVIEW.md` finding M01 for details on what `assert_no_lookahead` does
-and does not catch.
+**Mitigation:** set `uses_future_data = True` on any factor that intentionally touches
+future rows; write tests for custom factors that confirm they produce `NaN` on the
+first `horizon` rows. See `docs/ADVERSARIAL-REVIEW.md` finding M01 (fixed) for details.
 
 ### 3.6 Multi-asset universes with staggered trading calendars
 
@@ -455,10 +457,502 @@ every screen run (both panels above). Cosmetic — the PNG and table are produce
 but a researcher piping screen output into CI logs will see it every time. Recorded for
 the improve pass; not a gate or correctness issue.
 
+## 8. Tuesday Run on Real Data (v0.2 mandate — added 2026-10-12, cycle 2 pass 3)
+
+The synthetic Tuesday (§1) answers "does the tool work". The real-data Tuesday
+answers "does the tool work on my market". One command, read-only, ~5 minutes.
+
+### 8.1 The exact commands
+
+```bash
+python scripts/prove_on_real_data.py --db <prices.sqlite> --horizons 1,5,20 --noise-factors 10
+python scripts/check_real_data_proof.py
+python scripts/check_no_internal_refs.py
+```
+
+Notes: the DB connection is read-only (`mode=ro` URI — the script cannot write,
+VACUUM, or copy raw rows; the published artifact is aggregate statistics only).
+If the database is absent (CI, fresh clone) the script prints SKIP and exits 0.
+Never commit a CSV/parquet of the data. The third command enforces the
+no-internal-references rule on every tracked file plus generated reports.
+
+### 8.2 Measured run — raw output (2026-10-12)
+
+```
+$ time .venv/bin/python scripts/prove_on_real_data.py --db <prices.sqlite> --horizons 1,5,20 --noise-factors 10
+Loading data from <prices.sqlite> ...
+Dataset: 14 coins, 21,308 bars, 2021-04-29 to 2026-10-12, 60.38 MB
+Running factor evaluation (this may take a few minutes) ...
+Wrote reports/real-data-proof.md
+Wrote reports/real-data-proof.json
+
+--- Summary ---
+Promoted: 0/13
+Noise rejection rate: 10/10 (100.0%) — target >=90%
+Stability flips: 0 — target 0
+
+reports/real-data-proof.md written.
+reports/real-data-proof.json written.
+287.83s user 0.27s system 100% cpu 4:48.01 total
+
+$ .venv/bin/python scripts/check_real_data_proof.py
+check_real_data_proof: all checks passed.
+PROOF_COMPLETE
+$ .venv/bin/python scripts/check_no_internal_refs.py
+check_no_internal_refs: CLEAN — no forbidden tokens found.
+```
+
+Proof JSON (`reports/real-data-proof.json`, generated 2026-10-12T16:41:01Z):
+delta = raw-p<0.05: 3, BH-FDR q=0.15: 3, promoted: 0.
+BH passes: rev_5 (p=0.0003), volume_z_20 (p=0.0214), lookahead_control (p=0.0000).
+Specificity 10/10, sensitivity 0 promoted, stability 0 flips.
+
+### 8.3 What the numbers mean for adoption
+
+The delta (3 → 3 → 0) IS the product working: three factors look significant at
+raw p<0.05, the full gate promotes none — lookahead dies at the leakage gate,
+rev_5 and volume_z_20 at other gates. Two honest caveats a team must know:
+
+1. The middle equality (raw == BH at q=0.15, 3 == 3) is a soft spot: at this q
+   the family correction adds nothing over raw p. Benjamini-Yekutieli would
+   harden it to 2, dropping exactly volume_z_20 (machine-verified in
+   docs/RESEARCH.md §8.9 F-R5). If your family is large or correlated, run BY.
+2. DSR = 0.0 for every factor is mathematically correct, not a display bug:
+   IC-IR ≈ 0.09 against E[max SR] ≈ 1.70 under 13 trials. Daily crypto bars do
+   not clear a 13-trial deflation bar. 0/13 on a 14-coin daily panel is
+   consistent with the literature (weekly momentum on broad panels is where the
+   crypto premium lives — RESEARCH §8.1); it is not evidence the gate is broken.
+
+### 8.4 New failure modes found this pass (executed, not theorised)
+
+**A planted signal is detected but not promoted.** A pre-registered planted
+factor (seed 1234, achieved corr +0.104 with 5-day forward returns on the real
+panel) prints H=5 IC=+0.1528, t_HAC=+19.06, OOS consistency 1.0, FDR pass — and
+the verdict is still REJECT, on `max_turnover` (1.31 > 0.5) and
+`hit_rate_wilson_lb` (0.4658 < 0.50). The detection chain sees real
+predictability clearly; the tradability-flavoured gates block a daily-rebalanced
+rank factor on 14 coins. Mitigation: weekly rebalance or smoothed ranks for the
+sensitivity demo; treat the Wilson-LB gate as the category error the spec
+already names it as (a binomial CI is not the right interval for IC — report
+the block bootstrap CI instead). Full numbers: docs/RESEARCH.md §8.9 F-R2.
+
+**The source-scan tripwire works.** A custom factor using `shift(-5)` in its
+`compute()` source is hard-rejected with `no_negative_shifts` before any
+statistics run (observed this pass). This strengthens §3.5: accidental
+lookahead via negative shifts IS caught at `promote()` time. What remains
+uncaught is future access hidden from source inspection (index slicing) —
+the documented residual risk, now bounded to deliberate evasion rather than
+accidents.
+
+**The stability leg varies nothing.** `_stability_check` re-runs `promote()`
+with the identical config (`alt_seed` is accepted and unused), so "0 flips"
+passes by construction — doubly so when nothing is promoted. A stability check
+that cannot fail is decorative. Mitigation (named for the implement pass): vary
+`n_wf_splits` and `cv_method` inside the check. Reference observation executed
+this pass on synthetic planted data: mom_20 promotes under 4 CV geometries
+(walk-forward 4/5/6 splits, CPCV(6,2)) with 0 flips — that is what a
+non-vacuous stability leg looks like.
+
+### 8.5 Operational cost (real-data run)
+
+| Item | Measured |
+|---|---|
+| Full proof, 14 coins × 21,308 daily bars, 13 factors × 3 horizons + 10 noise | **4 min 48 s** wall, single CPU core |
+| Dataset on disk | 60.38 MB SQLite, read-only |
+| Dependencies | 4 (numpy, pandas, matplotlib, pyyaml) — unchanged |
+| Network | none (local SQLite read only) |
+| Memory | trivial (21k-row panel) |
+
+No GPU, no services, no credentials. The Tuesday cost is five minutes of one core.
+
+### 8.6 The single most likely reason someone would NOT adopt it (real-data edition)
+
+**The report says "everything rejected" — including real signals.** A team that
+runs the Tuesday command gets 0/13 promoted, and this pass proved the rejection
+extends even to a planted t=19 signal (via turnover and Wilson LB). The tool
+answers "is it statistically significant?" but the promotion verdict couples
+that with tradability gates calibrated for a different market rhythm
+(low-turnover equity-style factors). On daily crypto the verdict is a constant
+REJECT, and a constant verdict carries no information.
+
+The honest framing, which the README Limitations must keep: this is a
+*significance filter with a tradability pre-screen*, not a strategy approval.
+Adopt it for the delta (raw → FDR → gate attrition in counts and names) and
+for the controls (noise rejected, lookahead caught) — not for the verdict
+column on this dataset. The fix is recalibration to the team's own rhythm
+(weekly horizons, turnover measured against their execution), not a lower bar:
+F3b explicitly allows a planted-signal sensitivity proof, and §8.4 shows
+exactly which two gates such a proof must address.
+
+### 8.7 Falsification for this section
+
+- Cost: falsified if the Tuesday run exceeds 15 minutes on this panel —
+  **not observed** (4:48).
+- "Promotes nothing": falsified if a weekly-horizon re-run promotes a real
+  factor — **not tested this pass**; named test for the implement pass
+  (re-run proof at weekly aggregation, report verdict flips).
+- Specificity: falsified if fresh-seed noise passes BH-FDR — **not observed**
+  (10 new seeds, max |t_HAC| = 1.50, 0 discoveries; RESEARCH §8.9 F-R1).
+
 ---
 
-*Written 2026-09-26. Integration recipe tested against alphalens-reloaded 0.4.x API documentation.*
+## 9. Cycle 3 update — real-world applicability, closed (2026-10-12, pass c3-p03)
+
+This pass closes every open item passes 1–2 left (dispositions: docs/RESEARCH.md
+§11). No code changed; the recipe, cost table, and failure modes below are the
+cycle-3 record. Experiments ran in /tmp (throwaway scripts, repo untouched,
+database read-only); raw outputs pasted verbatim.
+
+### 9.1 Tuesday recipe status: unchanged, no re-run needed
+
+The §8.1 command is unchanged and the proof it produces
+(`reports/real-data-proof.json`, generated 2026-10-12T16:41:01Z) is hours old;
+the dataset has grown by <1 day of bars since (21,308 daily bars, 14 coins,
+2021-04-29 → 2026-10-12). Re-running a 5-minute proof for <1 day of new bars
+is motion, not evidence — the Tuesday command stands as documented.
+
+### 9.2 New executed failure mode: single-coin fragility (F-R10)
+
+The F-R10 check specified in RESEARCH §9.8 was executed today: drop the
+top-|return| coin-week cell and re-screen; then leave-one-coin-out (LOCO),
+worst case. Raw output:
+
+```
+panel rows=21308 coins=14 dates=2021-04-29..2026-10-12
+rev_5 FULL H=1 ic=+0.0348 ir=+0.0810 t_hac=+3.61 p=0.0003 n=1987
+  top cell: date=2023-07-13 asset=XRP fwd=+0.5563
+  DROP-CELL H=1 ic=+0.0353 t_hac=+3.66 p=0.0002
+  LOCO min-|t|: drop INJ ic=+0.0279 t=+2.75 p=0.0059
+  LOCO max-|t|: drop SOL ic=+0.0413 t=+4.08 p=0.0000
+volume_z_20 FULL H=1 ic=-0.0192 ir=-0.0519 t_hac=-2.30 p=0.0212 n=1973
+  top cell: date=2023-07-13 asset=XRP fwd=+0.5563
+  DROP-CELL H=1 ic=-0.0192 t_hac=-2.31 p=0.0209
+  LOCO min-|t|: drop ATOM ic=-0.0131 t=-1.49 p=0.1364
+  LOCO max-|t|: drop INJ ic=-0.0228 t=-2.58 p=0.0098
+```
+
+Reading: **rev_5 is robust** — removing any single coin leaves p ≤ 0.0059,
+still significant. **volume_z_20 is coin-fragile** — its BH-FDR pass
+(p = 0.0212) depends on ATOM being in the panel; without ATOM, p = 0.1364,
+not even raw-significant. The top cell (XRP +55.6% on 2023-07-13, the Ripple
+ruling day) moves nothing either way — the fragility is coin-level, not
+event-level.
+
+Production consequence: on a 14-coin panel, a BH-FDR pass is necessary but not
+sufficient evidence — the implement pass should add a LOCO robustness
+diagnostic (drop each coin, re-screen, report worst-case p) before any
+promotion on narrow panels. This also vindicates the standing 0-promoted
+verdict: a gate that promoted volume_z_20 on this panel would have promoted a
+one-coin artefact. The Benjamini-Yekutieli note (§8.3) already drops
+volume_z_20 arithmetically; LOCO drops it empirically. Two independent votes.
+
+### 9.3 Ecosystem refresh (live probes, today)
+
+| Tool | Stars | Last push / release | Change vs c3-p02 (hours earlier) |
+|---|---|---|---|
+| MlFinLab | 4,939 | 2023-10-02 (stale) | none |
+| qlib | 49,313 | 2026-10-08 | none |
+| purgedcv | 55 | PyPI 0.1.10 | none; PyPI-description probe: no IC, verdict, FDR, or BH terms ("factor" hits are a CodeFactor badge and "refactor") |
+| ml4t-diagnostic | 34 | 2026-10-10 | none; `main`-branch README grep: no verdict / accept-reject / promotion-gate / promote terms — still metrics, not a gate |
+| pyanomaly | 133 | 2024-03-13 (inactive) | none |
+| alphalens-reloaded | 669 | 2026-10-10 | +1 star; §2 recipe stands (verified end-to-end in cycle 2, API unchanged since) |
+
+§10.4 watch items (a)/(b)/(c): none fired. Closest threat remains (a).
+
+### 9.4 Operational cost: unchanged
+
+No new timing run: the 4 min 48 s wall measurement (§8.5) is from the same
+dataset within a day. The Tuesday cost is still five minutes of one core, no
+GPU, no services, no credentials.
+
+### 9.5 The single most likely reason someone would NOT adopt it (cycle-3 edition)
+
+§8.6 stands and is now stronger: the report says 0/13, and this pass proved
+that even the two BH-FDR passes are one robust factor (rev_5) and one
+one-coin artefact (volume_z_20). A team running the Tuesday command gets a
+report whose headline is rejection all the way down.
+
+What is new is the external verdict that this is *correct*: Grobys et al.
+(2025, RESEARCH §9.4) document crypto momentum dead post-2020 on broad
+panels — on a 2021–2026 14-coin daily panel, "everything rejected" is the
+literature-consistent output, and a tool that promoted here would contradict
+a 2025 peer-reviewed result. The adoption pitch is therefore unchanged but
+re-grounded: adopt this for the delta (raw → FDR → gate attrition in counts
+and names), for the controls (noise rejected, lookahead caught), and now for
+the LOCO check (§9.2) — not for the verdict column on this dataset.
+
+### 9.6 Falsification for this section
+
+- Cost: falsified if a fresh Tuesday run exceeds 15 minutes — not re-tested
+  (dataset delta <1 day); standing measurement 4:48.
+- Fragility claim: falsified if an independent LOCO re-run keeps
+  volume_z_20 significant without ATOM — the numbers above are the standing
+  record to beat (script: /tmp throwaway, method in RESEARCH §11 F-R10).
+- Ecosystem: falsified if any §9.3 cell is stale at the next re-probe —
+  all cells carry today's probe output.
+## 10. Cycle 4 update — microstructure-aware Tuesday (2026-10-13, pass c4-p03)
+
+Cycle 4 pass 1 (§12 in RESEARCH) grounded the promotion gates in
+microstructure and trading-cost literature (Roll 1984, Novy-Marx–Velikov
+2016, Scholes–Williams 1977, Getmansky–Lo–Makarov 2004). This section
+turns that ground truth into Tuesday commands. No code changed; all
+numbers below were executed today in /tmp against the read-only panel
+(667,436 rows, 14 coins, daily bars, 2021-04-29 → present).
+
+### 10.1 Pre-screen the panel before you screen the factors (2 minutes)
+
+Three read-only checks that decide what the Tuesday run can even claim.
+Run these first; if any fires, note it in the research log alongside
+the proof.
+
+```bash
+python3 -c "
+import sqlite3
+con = sqlite3.connect('file:///path/to/prices.sqlite?mode=ro', uri=True)
+# (1) coverage: any coin too thin to screen?
+print(con.execute('select coin, count(*) from candles group by coin order by 2').fetchall())
+# (2) staleness: any coin above 5% zero-volume days?
+print(con.execute('select coin, sum(volume=0)*1.0/count(*) from candles group by coin having sum(volume=0)*1.0/count(*) > 0.05').fetchall())
+# (3) feed gaps: dates where every coin is missing at once?
+print(con.execute(\"select date(ts,'unixepoch'), count(distinct coin) from candles group by 1 having count(distinct coin) < 10 order by 1\").fetchall()[:5])
+con.close()"
+```
+
+Measured today: (1) AAVE has 1 bar (effectively absent), TON starts
+2024-08-08 — screen 12, not 14; (2) empty result — max is ATOM at
+~0.75%, diagnostic armed but silent; (3) a full-panel gap on
+2026-04-30 (feed outage, not staleness). A Tuesday run that reports
+"14 coins" without these three lines overclaims its universe.
+
+### 10.2 The reversal pre-check: gross spread vs Roll spread (1 minute)
+
+F-R12 is now binding (RESEARCH §14.1): before trusting any
+reversal-family promotion, compute the Roll-implied spread per coin and
+require the factor's gross quintile spread to clear it. Reference bars
+measured today (daily, in return units):
+
+```
+BTC 0.0023  ETH 0.0030  SOL 0.0035  DOGE 0.0042  ADA 0.0045
+XRP 0.0049  ATOM 0.0055  INJ 0.0049  HBAR 0.0070  TON 0.0021
+ARB/FIL/RENDER: imaginary (no bounce detectable — treat with suspicion, not as free signal)
+```
+
+Concrete rule: a `rev_5` promotion whose gross spread is, say, 15 bps on
+a coin with a 49 bps Roll spread (XRP) is spread, not alpha. The command
+is the `/tmp/c4p3_roll.py` pattern: log-returns → lag-1 covariance →
+`2*sqrt(-cov)`. If covariance is positive, the estimator is imaginary —
+that coin contributes no bounce evidence either way.
+
+### 10.3 Turnover: read the units before fighting the gate
+
+The most common Tuesday frustration (§8.4: a t=19 planted signal
+rejected on turnover) now has its literature anchor. NMV's verified
+line (NBER w20721 abstract): anomalies with **one-sided monthly**
+turnover above 50% rarely survive costs. The promotion gate's 0.5 is
+mean |Δ rank weight| **per rebalance** — for a daily-rebalanced rank
+factor this is a far stricter bar than NMV's. That is intentional
+(conservative direction), but it means:
+
+- Daily rank factors on 12–14 coins will trip `max_turnover` routinely.
+  Do not raise the bar — change the rhythm: weekly rebalance or
+  smoothed ranks, then re-screen.
+- Any proof that raises `max_turnover` above 0.5 without a net-of-cost
+  paragraph naming its cost model fails the checker (F-R13). The
+  paragraph must quote its cost model (e.g. "20 bps per month per 20%
+  one-sided turnover, after NMV §4"), not just assert "costs are low".
+
+### 10.4 Operational cost (cycle-4 delta)
+
+| Item | Measured |
+|---|---|
+| Panel pre-screen (§10.1, 3 queries, 667k rows) | seconds, one core |
+| Roll spreads, all coins (§10.2) | seconds, one core |
+| Full proof (`prove_on_real_data.py`) | standing 4 min 48 s (§8.5); not re-run (dataset delta <1 day) |
+| Ecosystem re-probe (7 repos + PyPI) | all HTTP 200 today; qlib 49,318 (+1), alphalens-reloaded 670 (+1), rest unchanged; no watch item fired |
+
+Tuesday cost is still five minutes of one core. The two new pre-checks
+add under a minute combined.
+
+### 10.5 The single most likely reason someone would NOT adopt it (cycle-4 edition)
+
+§8.6 and §9.5 stand and are now sharper. Cycle 4 proved the rejections
+are *mechanically correct*: the bounce the reversal factor harvests is
+mostly spread (Roll spreads of 23–70 bps vs typical gross spreads), the
+turnover bar is deliberately stricter than the literature's, and the
+volatility inputs are, if anything, conservative-direction. A team
+running the Tuesday command gets a report that says, in effect: "your
+daily-rebalanced rank factors on 14 crypto coins cannot clear
+microstructure, and here are the receipts."
+
+That is a hard sell for a tool whose headline output is a verdict
+column — but it is exactly the falsification discipline the repo
+promises. The adoption pitch, unchanged since cycle 3 and now
+literature-backed: adopt this for the delta (raw → FDR → gate attrition
+in counts and names), for the controls (noise rejected, lookahead
+caught), for the LOCO check (§9.2), and now for the two pre-checks
+(§10.1–§10.2) — not for the verdict column on this dataset. The team
+that re-runs at weekly aggregation with smoothed ranks and sees a
+verdict flip has the one result that would change this paragraph; that
+experiment is named, not run, and belongs to the implement pass.
+
+### 10.6 Falsification for this section
+
+- Pre-screen: falsified if a same-day recount contradicts any §10.1
+  number (AAVE 1 bar, TON 2024-08-08 start, 2026-04-30 gap, ATOM max
+  staleness) — the queries above are the record.
+- Roll bars: falsified if a same-day re-run moves any §10.2 spread by
+  more than 5 bps — the per-coin table is the record.
+- Turnover reading: falsified if the NMV quote in §10.3 is shown to
+  refer to two-sided turnover — the NBER abstract text (RESEARCH §14.2)
+  is the record.
+- Cost: falsified if a fresh Tuesday run exceeds 15 minutes — standing
+  measurement 4:48, not re-tested.
+
+---
+
 *Failure modes derived from the statistical assumptions documented in docs/RESEARCH.md §2 and §4.*
 *Cycle 2 pass 3 (2026-09-27): integration recipe and both falsification tests executed for real —
 raw output in §7; timings in §4 updated to measured values; threshold calibration run (§5, §7.3);
 reproducible via examples/cycle2_pass3_falsification.py.*
+*Cycle 2 pass 3 (2026-10-12, reopened v0.2 mandate): §8 Tuesday real-data run — commands in §8.1,
+measured output in §8.2 (4:48 wall), three executed failure-mode findings in §8.4, cost table in
+§8.5. Falsification experiments in /tmp (not committed); raw outputs pasted in docs/RESEARCH.md §8.9.*
+*Cycle 3 pass 3 (2026-10-12): §9 — Tuesday recipe confirmed without re-run, F-R10 single-coin-drop
+executed (rev_5 robust, volume_z_20 ATOM-fragile), ecosystem re-probed (no watch item fired);
+open items closed in docs/RESEARCH.md §11.*
+
+## 11. Cycle 5 update — applicability, closed (2026-10-13, pass c5-p03)
+
+This pass closes every open item from passes 1–2 in cycle 5 (dispositions in
+docs/RESEARCH.md §18). No code changed. Experiments ran in-process against the
+read-only panel (667,436 rows, 14 coins, 2021-04-29 → 2026-10-12).
+
+### 11.1 Tuesday recipe status: unchanged; one new pre-screen added
+
+The §10.1–§10.2 pre-screens (panel coverage check, Roll spread check) are the
+standing Tuesday commands for cycle 5. The §8.1 proof commands are unchanged.
+One new optional pre-screen, motivated by F-R24 (§18.3), is now recommended for
+any team considering volatility-managed factor variants:
+
+```python
+# Before promoting a vol-managed factor variant, compute
+# corr(lagged_20d_variance, next_1d_return) per coin.
+# If the panel mean is near zero or positive, vol-management
+# will not improve Sharpe (Moreira-Muir Delta_SR requires negative corr).
+# Reference numbers for this panel (RESEARCH §18.3):
+#   Panel mean corr = -0.0107 (weakly negative — mechanism present but small)
+#   BTC: +0.0068, HBAR: +0.0091, SOL: +0.0031 (contra-indicated for these coins)
+import numpy as np, math, sqlite3, datetime
+from collections import defaultdict
+DB_URI = "file:/path/to/prices.sqlite?mode=ro"
+# ... (standard load, per §10.1) ...
+# corr_check[coin] = pearson(lagged_var_20d, next_day_return)
+```
+
+### 11.2 New failure mode: vol-managed variants should be pre-checked
+
+Motivated by F-R24 (§18.3): the Moreira-Muir mechanism (§16.4) only improves
+Sharpe when corr(factor_return, lagged_variance) is negative. On this panel, the
+correlation is -0.011 — present in the right direction but very small. A team that
+runs `deflated_mom` (which divides by volatility) should not expect a material
+improvement over raw `mom_20` on this dataset. The turnover gate may still reject
+both — the vol-scaling reduces position changes but does not eliminate them.
+
+The one change this introduces to the adoption guide: when a factor with
+large variance scaling is promoted, report the corr(return, lagged_var) figure
+alongside the verdict. If the correlation is near zero, the vol-scaled variant
+and the raw variant are effectively identical.
+
+### 11.3 New failure mode: LOCO robustness is now expected (not optional)
+
+Following C3-F1 (§9.2 RESEARCH §11.4), the LOCO check (drop each coin, re-screen,
+report worst-case p) is now a named step in the proof workflow — not optional on
+a narrow panel. The specific check now has literature grounding (§16.3
+Grundy-Martin: on a 14-coin panel the "winner" portfolio may be ONE coin; a coin-
+level event can dominate the factor signal, exactly as XRP dominated the 2023-07-13
+ruling-day signal). Any Tuesday run that promotes a factor on this panel must pass
+the LOCO diagnostic.
+
+The Tuesday workflow therefore has an additional check after `scripts/check_real_data_proof.py`:
+
+```bash
+# After the standard proof, run the LOCO robustness check
+python3 -c "
+# For each BH-FDR-passing factor, drop each coin and re-screen.
+# Report worst-case p (should not become non-significant after dropping
+# any single coin, for a promotion to stand).
+# Reference: ADOPTION.md §9.2, RESEARCH.md §11.4 (C3-F1)
+"
+```
+
+This step is named but not automated; the implement pass should wire it into
+`scripts/prove_on_real_data.py` as the `--loco` flag.
+
+### 11.4 Competitive positioning update (ml4t-diagnostic narrowed the gap)
+
+The most significant new fact from the cycle-5 ecosystem pass (§17, RESEARCH §17.2):
+**ml4t-diagnostic added explicit documentation of HAC-adjusted IC t-stats and FDR
+control to its README on 2026-10-13**. This is the closest any open-source competitor
+has come to factorproof's measurement layer.
+
+Revised positioning for any researcher choosing between the two tools:
+
+| Dimension | ml4t-diagnostic | factorproof |
+|-----------|-----------------|-------------|
+| HAC IC t-stat | Yes (documented today) | Yes |
+| FDR control | Yes (reported field) | Yes (in gate — exit code) |
+| Purged/embargoed CV | Yes | Yes |
+| Binary exit code (0 = promote, 1 = reject) | No | Yes |
+| Standalone (no Polars, no 7-library ecosystem) | No | Yes |
+| Offline, no subscription | Yes | Yes |
+
+The verdict gap is the remaining differentiator. A researcher using ml4t-diagnostic
+gets the same measurement numbers; they must write their own gate logic to act on
+them. factorproof packages that gate as the public `promote()` API, tested with
+161 passing tests, with a documented exit code. The pitch becomes: "ml4t-diagnostic
+tells you what the IC is; factorproof tells you what to DO about it."
+
+### 11.5 Operational cost (cycle-5 delta)
+
+| Item | Status |
+|------|--------|
+| Full proof (§8.5: 4 min 48 s) | Unchanged; dataset grew <1 day |
+| Panel pre-screen §10.1 (3 SQL queries) | Seconds |
+| Roll spread check §10.2 | Seconds |
+| F-R24 vol-correlation pre-check (§11.1, new) | Seconds |
+| Total Tuesday cost | Under 10 minutes |
+
+No new dependencies added. The F-R24 check is a handful of numpy operations on
+the in-memory panel loaded for the proof.
+
+### 11.6 The single most likely reason someone would NOT adopt it (cycle-5 edition)
+
+§8.6/§9.5/§10.5 stand with one sharpening: **the gate rejects everything, including
+signals proven real in the literature, and a competing open-source tool (ml4t-
+diagnostic) now reports the same statistics without forcing a binary verdict.**
+
+A researcher who runs `factor-lab screen --data prices.csv` on the real 14-coin
+panel sees 0/13 promoted. They check ml4t-diagnostic and see the same IC and FDR
+numbers, but the tool does not say REJECT — it presents the numbers and lets the
+researcher decide. The factorproof binary verdict is its strength (reproducible,
+defensible, CI-integratable) and its weakness (the gate fails to communicate "this
+factor is economically interesting even if it fails the statistical gate at this
+frequency").
+
+The mitigation is unchanged: adopt factorproof for the DELTA (raw → FDR → gate
+attrition), for the controls (noise rejection, lookahead detection, LOCO check),
+and for the CI integration (exit code) — not as a final arbiter of economic value.
+A factor that factorproof rejects may still be worth running at weekly horizons or
+with better execution; factorproof says "not statistically defensible at daily 14-coin
+granularity", not "valueless".
+
+### 11.7 Falsification for this section
+
+- Competitive: falsified if ml4t-diagnostic ships `gate_factor()` with a binary
+  exit code usable without Polars — the §17.2 grep absence is the record.
+- F-R24: falsified if a same-day re-run shows panel mean corr > +0.05 —
+  the §18.3 table is the record.
+- F-R31: falsified if Amihud spread re-runs < 1000x — the §18.10 table is
+  the record.
+- F-R23: falsified if IC-by-year shows positive 2021 + negative 2022 on a
+  re-run — the §18.2 table is the record.
