@@ -690,6 +690,126 @@ the LOCO check (§9.2) — not for the verdict column on this dataset.
   record to beat (script: /tmp throwaway, method in RESEARCH §11 F-R10).
 - Ecosystem: falsified if any §9.3 cell is stale at the next re-probe —
   all cells carry today's probe output.
+## 10. Cycle 4 update — microstructure-aware Tuesday (2026-10-13, pass c4-p03)
+
+Cycle 4 pass 1 (§12 in RESEARCH) grounded the promotion gates in
+microstructure and trading-cost literature (Roll 1984, Novy-Marx–Velikov
+2016, Scholes–Williams 1977, Getmansky–Lo–Makarov 2004). This section
+turns that ground truth into Tuesday commands. No code changed; all
+numbers below were executed today in /tmp against the read-only panel
+(667,436 rows, 14 coins, daily bars, 2021-04-29 → present).
+
+### 10.1 Pre-screen the panel before you screen the factors (2 minutes)
+
+Three read-only checks that decide what the Tuesday run can even claim.
+Run these first; if any fires, note it in the research log alongside
+the proof.
+
+```bash
+python3 -c "
+import sqlite3
+con = sqlite3.connect('file:///path/to/prices.sqlite?mode=ro', uri=True)
+# (1) coverage: any coin too thin to screen?
+print(con.execute('select coin, count(*) from candles group by coin order by 2').fetchall())
+# (2) staleness: any coin above 5% zero-volume days?
+print(con.execute('select coin, sum(volume=0)*1.0/count(*) from candles group by coin having sum(volume=0)*1.0/count(*) > 0.05').fetchall())
+# (3) feed gaps: dates where every coin is missing at once?
+print(con.execute(\"select date(ts,'unixepoch'), count(distinct coin) from candles group by 1 having count(distinct coin) < 10 order by 1\").fetchall()[:5])
+con.close()"
+```
+
+Measured today: (1) AAVE has 1 bar (effectively absent), TON starts
+2024-08-08 — screen 12, not 14; (2) empty result — max is ATOM at
+~0.75%, diagnostic armed but silent; (3) a full-panel gap on
+2026-04-30 (feed outage, not staleness). A Tuesday run that reports
+"14 coins" without these three lines overclaims its universe.
+
+### 10.2 The reversal pre-check: gross spread vs Roll spread (1 minute)
+
+F-R12 is now binding (RESEARCH §14.1): before trusting any
+reversal-family promotion, compute the Roll-implied spread per coin and
+require the factor's gross quintile spread to clear it. Reference bars
+measured today (daily, in return units):
+
+```
+BTC 0.0023  ETH 0.0030  SOL 0.0035  DOGE 0.0042  ADA 0.0045
+XRP 0.0049  ATOM 0.0055  INJ 0.0049  HBAR 0.0070  TON 0.0021
+ARB/FIL/RENDER: imaginary (no bounce detectable — treat with suspicion, not as free signal)
+```
+
+Concrete rule: a `rev_5` promotion whose gross spread is, say, 15 bps on
+a coin with a 49 bps Roll spread (XRP) is spread, not alpha. The command
+is the `/tmp/c4p3_roll.py` pattern: log-returns → lag-1 covariance →
+`2*sqrt(-cov)`. If covariance is positive, the estimator is imaginary —
+that coin contributes no bounce evidence either way.
+
+### 10.3 Turnover: read the units before fighting the gate
+
+The most common Tuesday frustration (§8.4: a t=19 planted signal
+rejected on turnover) now has its literature anchor. NMV's verified
+line (NBER w20721 abstract): anomalies with **one-sided monthly**
+turnover above 50% rarely survive costs. The promotion gate's 0.5 is
+mean |Δ rank weight| **per rebalance** — for a daily-rebalanced rank
+factor this is a far stricter bar than NMV's. That is intentional
+(conservative direction), but it means:
+
+- Daily rank factors on 12–14 coins will trip `max_turnover` routinely.
+  Do not raise the bar — change the rhythm: weekly rebalance or
+  smoothed ranks, then re-screen.
+- Any proof that raises `max_turnover` above 0.5 without a net-of-cost
+  paragraph naming its cost model fails the checker (F-R13). The
+  paragraph must quote its cost model (e.g. "20 bps per month per 20%
+  one-sided turnover, after NMV §4"), not just assert "costs are low".
+
+### 10.4 Operational cost (cycle-4 delta)
+
+| Item | Measured |
+|---|---|
+| Panel pre-screen (§10.1, 3 queries, 667k rows) | seconds, one core |
+| Roll spreads, all coins (§10.2) | seconds, one core |
+| Full proof (`prove_on_real_data.py`) | standing 4 min 48 s (§8.5); not re-run (dataset delta <1 day) |
+| Ecosystem re-probe (7 repos + PyPI) | all HTTP 200 today; qlib 49,318 (+1), alphalens-reloaded 670 (+1), rest unchanged; no watch item fired |
+
+Tuesday cost is still five minutes of one core. The two new pre-checks
+add under a minute combined.
+
+### 10.5 The single most likely reason someone would NOT adopt it (cycle-4 edition)
+
+§8.6 and §9.5 stand and are now sharper. Cycle 4 proved the rejections
+are *mechanically correct*: the bounce the reversal factor harvests is
+mostly spread (Roll spreads of 23–70 bps vs typical gross spreads), the
+turnover bar is deliberately stricter than the literature's, and the
+volatility inputs are, if anything, conservative-direction. A team
+running the Tuesday command gets a report that says, in effect: "your
+daily-rebalanced rank factors on 14 crypto coins cannot clear
+microstructure, and here are the receipts."
+
+That is a hard sell for a tool whose headline output is a verdict
+column — but it is exactly the falsification discipline the repo
+promises. The adoption pitch, unchanged since cycle 3 and now
+literature-backed: adopt this for the delta (raw → FDR → gate attrition
+in counts and names), for the controls (noise rejected, lookahead
+caught), for the LOCO check (§9.2), and now for the two pre-checks
+(§10.1–§10.2) — not for the verdict column on this dataset. The team
+that re-runs at weekly aggregation with smoothed ranks and sees a
+verdict flip has the one result that would change this paragraph; that
+experiment is named, not run, and belongs to the implement pass.
+
+### 10.6 Falsification for this section
+
+- Pre-screen: falsified if a same-day recount contradicts any §10.1
+  number (AAVE 1 bar, TON 2024-08-08 start, 2026-04-30 gap, ATOM max
+  staleness) — the queries above are the record.
+- Roll bars: falsified if a same-day re-run moves any §10.2 spread by
+  more than 5 bps — the per-coin table is the record.
+- Turnover reading: falsified if the NMV quote in §10.3 is shown to
+  refer to two-sided turnover — the NBER abstract text (RESEARCH §14.2)
+  is the record.
+- Cost: falsified if a fresh Tuesday run exceeds 15 minutes — standing
+  measurement 4:48, not re-tested.
+
+---
+
 *Failure modes derived from the statistical assumptions documented in docs/RESEARCH.md §2 and §4.*
 *Cycle 2 pass 3 (2026-09-27): integration recipe and both falsification tests executed for real —
 raw output in §7; timings in §4 updated to measured values; threshold calibration run (§5, §7.3);

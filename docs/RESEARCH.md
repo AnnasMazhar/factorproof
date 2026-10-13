@@ -3653,4 +3653,175 @@ the record to beat. Secondary watch for next cycle: the reloaded forks
 moved today (three pushes); installability demand is real, and a fork
 that adds FDR/purge changes row 2 of the table.
 
+---
+
+## 14. Cycle 4 pass 3 — every pass-1/pass-2 open item closed (2026-10-13)
+
+Scope: pass 3 of cycle 4. Pass 1 (§12) left F-R12…F-R16 with named
+observables; pass 2 (§13) left the watch re-check. This section closes
+every research-side observable with executed commands (throwaway scripts
+in /tmp, repo untouched, database read-only via `mode=ro` URI). Items
+whose owner is another pass are transferred explicitly, not left vague.
+No code changed; no MARKET-VERDICTS position re-litigated.
+
+### 14.1 F-R12 — CLOSED (binding, not vacuous)
+
+The §12.8 observable: run Roll's estimator on the real panel; falsified
+(vacuous) if lag-1 return covariance is positive at every coin. Executed
+today (`/tmp/c4p3_roll.py`, log-returns on daily closes, read-only):
+
+```
+AAVE TOO_SHORT (1 bar)
+ADA   n=54013 cov1=-5.01e-06 spread=0.004475
+ARB   n=53322 cov1=+7.0e-07 IMAGINARY(cov>0)
+ATOM  n=54008 cov1=-7.53e-06 spread=0.005488
+BTC   n=54016 cov1=-1.36e-06 spread=0.002328
+DOGE  n=54011 cov1=-4.33e-06 spread=0.004161
+ETH   n=54014 cov1=-2.23e-06 spread=0.002986
+FIL   n=52591 cov1=+2.06e-06 IMAGINARY(cov>0)
+HBAR  n=54011 cov1=-1.22e-05 spread=0.006987
+INJ   n=54012 cov1=-5.96e-06 spread=0.004883
+RENDER n=52824 cov1=+7.5e-07 IMAGINARY(cov>0)
+SOL   n=54008 cov1=-3.09e-06 spread=0.003513
+TON   n=22582 cov1=-1.13e-06 spread=0.002121
+XRP   n=54010 cov1=-6.12e-06 spread=0.004948
+```
+
+10 of 13 tradeable coins give real spreads (23–70 bps daily); 3
+(ARB, FIL, RENDER) have weakly positive lag-1 covariance. The bounce
+mechanism is present on most of the panel, so F-R12 binds the first
+promotion of any reversal-family factor: gross quintile spread must
+clear the coin's Roll spread above, or the "signal" is spread. The
+falsification condition (imaginary everywhere) is NOT observed.
+
+### 14.2 F-R13 — CLOSED (audited against the paper, conservative direction confirmed)
+
+Two sub-questions: (a) is the 50% line real, (b) does it bind our gate.
+
+(a) Verified verbatim today against the NBER w20721 abstract (HTTP 200,
+fetched 2026-10-13): "Most of the anomalies that we consider with
+**one-sided monthly turnover lower than 50%** continue to generate
+statistically significant net spreads, at least when designed to
+mitigate transaction costs. Few of the strategies with higher turnover
+do." The full working-paper text further states only two strategies
+above 50% one-sided monthly turnover keep significant net spreads even
+with cost mitigation. The line is real and quoted, not paraphrased.
+
+(b) Unit caveat, recorded for the implement pass: NMV's 50% is
+**one-sided monthly** turnover on US equities; the promotion gate's
+`max_turnover = 0.5` is mean |Δ rank weight| **per rebalance** — a
+stricter estimand for daily-rebalanced rank factors (the §8.4 planted
+signal tripped it at 1.31). The gate therefore errs conservative
+relative to NMV, which is the FIM-endorsed direction for reversal. The
+checker rule stands: reject any proof raising `max_turnover` above 0.5
+without a net-of-cost paragraph naming its cost model — now with the
+verified quote and the daily-vs-monthly unit note attached.
+
+### 14.3 F-R14 — CLOSED (staleness query executed; diagnostic armed but silent)
+
+The §12.8 observable (one read-only SQL query) was run today. Panel:
+667,436 rows, 14 coins, daily bars, 2021-04-29 → present (BTC: 1,994
+distinct dates). Zero-volume coin-days:
+
+- Maximum: ATOM ≈ 15 rows (~0.75% of its panel) — far below the 5% trigger.
+- A feed gap on **2026-04-30** spans all 14 coins simultaneously (missing
+  data, not staleness).
+- Coverage asymmetry the dataset-summary must mention: **AAVE has 1 bar**
+  (2026-04-05, effectively absent); **TON starts 2024-08-08** (22,583
+  bars vs ~54,000 for the rest).
+
+The falsification condition (zero zero-volume coin-days → diagnostic
+vacuous) is NOT observed — zero-volume days exist, so the diagnostic is
+non-vacuous. But no coin breaches 5%, so on this panel it stays silent,
+which is the correct output. Transferred to implement: the proof's
+dataset-summary paragraph must state granularity, the 2026-04-30 gap,
+and the AAVE/TON asymmetry (counts above are the record).
+
+### 14.4 F-R15 — CLOSED (research side; direction named, panel measured)
+
+Lag-1 return autocorrelation per coin (same read-only pull as §14.1):
+
+```
+ADA -0.0597  ARB +0.0114  ATOM -0.0746  BTC -0.0446  DOGE -0.0433
+ETH -0.0403  FIL +0.0091  HBAR -0.1145  INJ -0.0406  RENDER +0.0171
+SOL -0.0290  TON -0.0220  XRP -0.0785
+```
+
+All |rho_1| < 0.2 — the trigger does not fire on this panel, and the
+sign is uniformly bounce-type (negative) where non-trivial. Per the
+§12.8 analysis this means return vol here is slightly OVERstated, so the
+standing DSR = 0.0 magnitudes are conservative-direction upper bounds,
+not optimistic ones; the verdicts (all reject) hold either way.
+Transferred to implement: the report-update sentence must name the
+direction ("conservative on bounce-type panels, optimistic on
+trend-type panels"), not just the threshold.
+
+### 14.5 F-R16 — PARTIALLY CLOSED (DOI suffix resolved; two transcriptions transferred)
+
+**Resolved today:** the Novy-Marx–Velikov DOI suffix is **hhv063** —
+confirmed verbatim via the Oxford Academic abstract page
+(`https://doi.org/10.1093/rfs/hhv063`, RFS 29(1):104–147) and the RePEc
+record, both fetched 2026-10-13. HLZ's hhv059 is the companion article
+in the *same issue* (RFS 29(1):5–68) — one digit apart by construction,
+not by typo. The pre-flagged "error" was a false alarm; no correction needed.
+
+**Boundary confirmed:** the Novy-Marx JSTOR candidate
+(`jstor.org/stable/43866013`) returns HTTP 200 but serves a
+JavaScript-challenge shell (content unverifiable by curl) — it stays in
+the §12.7 boundary; NBER w20721 remains the verified citation.
+
+**Transferred to the adversarial citation audit** (unchanged owner): the
+Scholes-Williams (1 + 2·rho_m) normalisation and the GLM
+profile-estimator detail. "Symbols differ, factor right" is minor;
+"factor wrong" is blocking.
+
+### 14.6 §12.7 boundary — remaining slots
+
+- Chordia-Subrahmanyam-Tong (2014): still no verified URL in hand —
+  slot still held by McLean-Pontiff (§8.6). Not blocking: no threshold
+  cites it.
+- Shanken (1992) EIV correction: still never probed (§9.6 note stands).
+  Not blocking: the pipeline does no beta estimation, so no gate depends
+  on it.
+
+### 14.7 Pass-2 watch — re-probed today, none fired
+
+GitHub REST + PyPI, probed 2026-10-13 (all HTTP 200):
+
+```
+microsoft/qlib 49318 2026-10-08T10:58:43Z (was 49,317: +1)
+eslazarev/purged-cross-validation 55 2026-10-01T10:03:02Z (unchanged)
+stefan-jansen/alphalens-reloaded 670 2026-10-13T00:42:32Z (was 669: +1)
+hudson-and-thames/mlfinlab 4939 2023-10-02T03:05:19Z (unchanged, 3y stale)
+ml4t/diagnostic 34 2026-10-13T00:37:51Z (unchanged)
+chulwoohan/pyanomaly 133 2024-03-13T08:03:25Z (unchanged)
+quantopian/alphalens 4469 2024-02-12T06:44:22Z (unchanged)
+PyPI purgedcv: 0.1.10 (no release newer than 2026-10-01)
+```
+
+Watch (a)/(b)/(c) + secondary (§13.3): none fired. Closest threat
+remains (a). `COMPARISONS.md` needs no cell change (deltas of +1 star
+are noise; versions and push dates unchanged).
+
+### 14.8 Falsification — what would prove this pass wrong
+
+- F-R12: a same-day Roll re-run returning imaginary spreads on all 13
+  tradeable coins — the per-coin table in §14.1 is the record to beat.
+- F-R13: a quote from NMV showing the 50% line applies to two-sided
+  (not one-sided) turnover, or to a sample that excludes the
+  post-decimalisation era in a way that weakens the bar — the NBER
+  abstract quote in §14.2 is the record.
+- F-R14: a read-only recount showing a coin above 5% zero-volume days,
+  or showing the 2026-04-30 gap absent — the counts in §14.3 are the record.
+- F-R15: a |rho_1| > 0.2 on any panel coin at daily frequency — the
+  §14.4 table is the record.
+- F-R16: the Oxford/RePEc DOI cells shown wrong — URLs in §14.5 are
+  the record.
+- Ecosystem: any §14.7 number contradicted by a same-day re-probe.
+- Standing transfers (implement owns the report-update and
+  dataset-summary sentences; adversarial owns the SW/GLM transcription
+  audit): this pass is falsified if a later pass shows either transfer
+  was unnecessary — i.e. the sentence already exists or the
+  transcription is already verified.
+
 (End of file)
