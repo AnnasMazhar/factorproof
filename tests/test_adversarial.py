@@ -31,6 +31,11 @@ Faults detected per test:
         a factor that contains .shift(-2) and .shift(-5).
     test_legitimate_factor_passes_runtime_check:
         Fault: check_lookahead_runtime() false positive on clean factors.
+    test_runtime_check_direction_sensitive_pure_future_factor (F-T5 FIX):
+        Fault: check_lookahead_runtime() correlating against PAST returns
+        (shift(-h) inverted to shift(h)) — the arrow-of-time inversion the
+        smoothed-closure test cannot see because smoothing correlates 0.79
+        with past returns too.
     test_html_report_escapes_injected_markup:
         Fault: _md_table_to_html() interpolating raw markup into the HTML
         report (stored-XSS vector via hostile factor/asset names).
@@ -755,6 +760,77 @@ def test_legitimate_factor_passes_runtime_check():
         f"Legitimate factor mom_20 flagged as lookahead! Reason: {reason}. "
         "Runtime check threshold may be too sensitive."
     )
+
+
+def test_runtime_check_direction_sensitive_pure_future_factor():
+    """F-T5 FIX: the runtime check must pin the arrow of time, not just the verdict.
+
+    Fault detected: inverting the check's direction (`close.shift(-h)` mutated
+    to `close.shift(h)`, correlating factor values against PAST returns) leaves
+    test_closure_lookahead_rejected_by_runtime_check green, because that test's
+    smoothed-lookahead factor correlates with past returns at |corr| up to 0.79
+    (c2-p10 §3: past h=5 corr=-0.7878) — above the 0.30 threshold either way.
+
+    This test uses a PURE (unsmoothed) future-return factor hidden behind the
+    same closure-variable indirection. On synthetic data (seed 7) it correlates
+    1.0000 with future returns at h=5 but at most 0.0724 in magnitude with past
+    returns at any horizon — so it is flagged if and only if the check reads
+    the future. Under the direction-inverted mutant the check computes the
+    past correlations (~0), finds nothing above threshold, and this test fails.
+
+    A naive verdict-only test without the past-correlation precondition below
+    would go vacuous if the data ever changed; the precondition makes that
+    failure loud instead of silent.
+    """
+    from factorlab.cv import check_lookahead_runtime
+    from factorlab.data import synthetic_ohlcv
+    from factorlab.factors.base import Factor
+
+    shift_amount = -5
+
+    class PureFutureFactor(Factor):
+        name = "pure_future"
+        category = "attack"
+        description = "Unsmoothed future return hidden via closure variable"
+        params = {}
+        uses_future_data = False
+
+        def compute(self, df):
+            close = df.pivot(index="date", columns="asset", values="close")
+            future_ret = close.shift(shift_amount) / close - 1
+            factor_vals = future_ret.stack()
+            factor_vals.index.names = ["date", "asset"]
+            return factor_vals
+
+    df = synthetic_ohlcv(n_days=1500, n_assets=12, seed=7, plant_signal=True)
+    factor = PureFutureFactor()
+
+    # Precondition: this factor distinguishes the arrow of time. Past-return
+    # correlations must stay well below the 0.30 detection threshold at every
+    # probed horizon; otherwise the direction claim below is vacuous.
+    close = df.pivot(index="date", columns="asset", values="close")
+    factor_vals = factor.compute(df)
+    max_past_corr = 0.0
+    for h in (1, 5, 10, 20):
+        past_ret = (close.shift(h) / close - 1).stack()
+        common = factor_vals.index.intersection(past_ret.index)
+        fv = factor_vals.loc[common].values
+        pr = past_ret.loc[common].values
+        mask = ~(np.isnan(fv) | np.isnan(pr))
+        corr = float(np.corrcoef(fv[mask], pr[mask])[0, 1])
+        max_past_corr = max(max_past_corr, abs(corr))
+    assert max_past_corr < 0.15, (
+        f"precondition broken: pure-future factor correlates {max_past_corr:.4f} "
+        "with past returns — it no longer distinguishes check direction; "
+        "re-derive the attack shape instead of weakening this bound."
+    )
+
+    is_lookahead, reason = check_lookahead_runtime(factor, df, threshold=0.30)
+    assert is_lookahead, (
+        f"Pure-future factor NOT detected by runtime check! Reason: {reason}. "
+        "The check must flag a factor perfectly correlated (1.0) with future returns."
+    )
+    assert "future returns" in reason, f"unexpected reason: {reason}"
 
 
 # ---------------------------------------------------------------------------

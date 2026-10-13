@@ -785,3 +785,125 @@ in this pass's edited regions.)
 - Branch note: this worktree is detached at 8efa46a (feat/v0.1 is checked
   out in a sibling reconcile worktree). Commit below is on detached HEAD;
   orchestrator to cherry-pick or merge onto feat/v0.1.
+
+## Improve pass 1 (cycle 4) — 2026-10-13 — F-T5 direction-sensitivity test
+
+### Finding addressed
+
+F-T5 (minor, open since c2-p10): `test_closure_lookahead_rejected_by_runtime_check`
+pins the verdict, not the mechanism. Inverting the runtime check's arrow of time
+(`close.shift(-h)` → `close.shift(h)` inside `check_lookahead_runtime`, so the
+check correlates against PAST returns) leaves that test green, because the
+smoothed-lookahead factor correlates with past returns at |corr| up to 0.79 —
+above the 0.30 threshold either way. The reviewer classified it as a
+test-precision issue, not a live false-positive.
+
+Reproduced exactly this pass (raw output):
+
+```
+$ sed -i 's/close.shift(-h)/close.shift(h)/' src/factorlab/cv.py
+$ .venv/bin/python -m pytest tests/test_adversarial.py -q -k "test_closure_lookahead_rejected_by_runtime_check"
+.                                                                        [100%]
+1 passed
+```
+
+i.e. the named test alone stays green under the direction inversion.
+
+Scope note from the same probe: the FULL suite does catch the mutant, via the
+counterpart test — under the inversion, mom_20 (built from past returns)
+correlates ~1.0 with "past returns" and gets flagged:
+
+```
+$ .venv/bin/python -m pytest tests/test_adversarial.py -q -k "runtime_check or legitimate_factor"
+FAILED tests/test_adversarial.py::test_legitimate_factor_passes_runtime_check
+```
+
+So the gate was never unguarded end-to-end; what was missing was a test that
+pins the check's DIRECTION on the attack shape itself. That is what this pass adds.
+
+### Fix
+
+New test `test_runtime_check_direction_sensitive_pure_future_factor` in
+`tests/test_adversarial.py` (+76 lines, no source change — the implementation
+is correct, the pin was missing). It builds a PURE (unsmoothed) future-return
+factor behind the same closure-variable indirection (`shift_amount = -5`
+outside `compute()`), and asserts two things:
+
+1. Direction-specificity precondition: max |corr| against PAST returns over
+   h in (1, 5, 10, 20) must be < 0.15 (measured: 0.0724). If the data ever
+   changes so this no longer holds, the test errors loudly instead of going
+   vacuous.
+2. `check_lookahead_runtime` flags it at threshold 0.30 (measured corr 1.0000
+   with future returns at h=5).
+
+Measured attack-shape correlations (seed 7, synthetic_ohlcv 1500x12), the
+numbers the test rests on:
+
+```
+h=1  dir=fut  corr=+0.4677
+h=5  dir=fut  corr=+1.0000
+h=10 dir=fut  corr=+0.7131
+h=20 dir=fut  corr=+0.5082
+h=1  dir=past corr=-0.0724
+h=5  dir=past corr=-0.0127
+h=10 dir=past corr=-0.0066
+h=20 dir=past corr=+0.0002
+```
+
+Fault-injection proof (the test kills the F-T5 mutant):
+
+```
+$ sed -i 's/close.shift(-h)/close.shift(h)/' src/factorlab/cv.py
+$ .venv/bin/python -m pytest tests/test_adversarial.py -q \
+    -k "test_closure_lookahead_rejected_by_runtime_check or direction_sensitive"
+FAILED tests/test_adversarial.py::test_runtime_check_direction_sensitive_pure_future_factor
+```
+
+(Old smoothed test still green under the mutant — the finding's mechanism,
+unchanged; the new test is the pin. Source restored afterwards, `git diff`
+shows only the test file.)
+
+Top-of-file fault docstring updated with the new test's fault entry, per the
+QUALITY-CONTRACT vacuity rule.
+
+Deliberately NOT changed: the flag logic itself (`abs(corr) > threshold`).
+Requiring future-corr to exceed past-corr (asymmetry) would UN-flag the
+smoothed closure attack the gate was built for (past-corr 0.79 > future-corr
+~0.30+), trading a test-precision gap for a live false-negative. The
+implementation is correct; only the pin was missing.
+
+### Metrics delta
+
+| Metric | Before (c4-p7 eval) | After | Delta |
+|--------|---------------------|-------|-------|
+| Test count | 158 passed | 158 passed + 1 new (159 total) | +1 |
+| F-T5 status | open | fixed (mechanism-pinning test + injection proof) | ✓ |
+| Direction mutant (`shift(-h)`→`shift(h)`) | kills only via counterpart test | killed by the attack-shape test itself | ✓ |
+| `ruff check .` | clean | clean (`All checks passed!`) | no change |
+| `ruff format --check .` | 9 files drift (pre-existing) | same 9 files; new test lines format-clean (no hunk inside them) | no change |
+| check_no_internal_refs / check_real_data_proof | not re-run this pass | not re-run (untouched paths; suite green) | — |
+
+### Regression named (pre-existing, out of scope)
+
+`tests/test_microstructure.py::test_roll_spread_scales_linearly` FAILS on this
+worktree with and without this pass's change (verified via `git stash`: fails
+identically on the clean tree). Hypothesis falsifying example:
+
+```
+returns=[0.0, 0.0, 0.5, 0.0, -0.49999999999999994], c=3.0
+assert math.isclose(s2, c * s1, rel_tol=1e-9)  # False:
+  s2=1.7206378853011898e-08 vs 3*s1=9.125060374972143e-09
+```
+
+Zero-heavy return windows break exact linear scaling of the Roll estimator
+(autocovariance floor interaction). Full-suite line this pass:
+`1 failed, 158 passed`. Left failing per the quality contract (do not weaken
+tests, do not fix outside scope); flagged for the next improve pass, which
+owns microstructure.
+
+### Branch note
+
+`feat/v0.1` is checked out in the sibling reconcile worktree
+(`/home/openclaw/portfolio-wt/factorproof-reconcile`, with uncommitted
+changes). Commit below is on `tmp-c3p10`; orchestrator to cherry-pick onto
+`feat/v0.1`.
