@@ -53,6 +53,18 @@ Faults detected per test:
         Fault: check_real_data_proof.py trusting the JSON's claimed numbers
         without comparing them to the markdown table (hand-edited JSON
         printing PROOF_COMPLETE).
+    test_factor_wrong_index_names_handled:
+        Fault: a factor returning a Series with wrong index level names
+        (e.g. "ticker" instead of "asset") propagating silently into IC
+        computation, producing NaN or a mis-join that inflates coverage.
+    test_embargo_uses_max_horizon_not_min:
+        Fault: promote() constructing a walk-forward splitter with the first
+        horizon (H=1) rather than max(horizons)=20, causing the embargo to be
+        20x too small and leaving 19 overlapping label days in every split.
+    test_internal_refs_detector_catches_forbidden_token:
+        Fault: check_no_internal_refs.py failing to find a newly-introduced
+        forbidden token (e.g. a misplaced import or a comment referencing
+        internal system names), allowing the CI gate to pass on a dirty file.
 """
 
 from __future__ import annotations
@@ -1250,3 +1262,170 @@ def test_proof_checker_rejects_forged_metrics():
         assert any("0.91" in f or "verdict" in f for f in fails), f"unexpected fails: {fails}"
     finally:
         tmp_json.unlink(missing_ok=True)
+
+
+# ---------------------------------------------------------------------------
+# Wrong index names — silent mis-join guard
+# ---------------------------------------------------------------------------
+
+
+def test_factor_wrong_index_names_handled():
+    """Adversarial: a factor returning a Series with wrong index level names must
+    not silently corrupt IC via a mis-join.
+
+    Fault detected: evaluate_factor() performing a join on index positional
+    levels when names differ, producing NaN or inflated IC rather than raising
+    or returning a clean NaN row.
+
+    The correct behaviour is either:
+    (a) the evaluate step renames/aligns the index and produces NaN IC (the
+        factor has no valid observations after the join), or
+    (b) it raises a clear ValueError.
+
+    A naive implementation that joins on level *position* would silently
+    mis-align dates with the wrong assets, inflating or deflating IC.
+    """
+    import math
+
+    from factorlab.evaluate import evaluate_factor
+    from factorlab.factors.base import Factor
+
+    class WrongIndexFactor(Factor):
+        """Returns a valid Series but with index names ('ts', 'ticker') instead of
+        ('date', 'asset'). This is a common mistake when integrating external data.
+        """
+
+        name = "wrong_index"
+        category = "test"
+        description = "Wrong index names — ts/ticker instead of date/asset"
+        params = {}
+
+        def compute(self, df: pd.DataFrame) -> pd.Series:
+            # Compute a real momentum signal but return with wrong index names.
+            close = df.pivot(index="date", columns="asset", values="close")
+            mom = (np.log(close / close.shift(20))).stack()
+            mom.index.names = ["ts", "ticker"]  # wrong names
+            return mom
+
+    df = synthetic_ohlcv(n_days=200, n_assets=4, seed=0)
+    factor = WrongIndexFactor()
+    try:
+        metrics = evaluate_factor(factor.compute(df), df, [5], factor.name)
+        # If it returns, IC must be NaN (not silently non-zero from a mis-join).
+        for m in metrics:
+            ic = m.ic_pearson
+            assert math.isnan(ic) or abs(ic) < 1e-9, (
+                f"Wrong-index factor returned non-NaN IC={ic:.4f}. "
+                "A mis-join may be silently aligning the wrong observations."
+            )
+    except (ValueError, KeyError):
+        pass  # Raising on unrecognised index names is acceptable
+
+
+# ---------------------------------------------------------------------------
+# Embargo uses max(horizons) in multi-horizon screen
+# ---------------------------------------------------------------------------
+
+
+def test_embargo_uses_max_horizon_not_min():
+    """Byzantine: when promote() is called with horizons=[1, 5, 20], the
+    walk-forward splitter must use embargo_days=20 (max), not 1 (min) or
+    5 (first non-trivial).
+
+    Fault detected: promote() passing the first horizon, the minimum, or a
+    hard-coded default instead of max(horizons) to PurgedWalkForward and
+    CombinatorialPurgedCV. An embargo smaller than H leaves overlapping label
+    windows in the training set, defeating the purge entirely at H=20.
+
+    This is the adversarial version of the STATISTICAL CORRECTIONS requirement:
+    'enforce embargo_days >= H at construction time'. Even if PurgedWalkForward
+    raises for embargo_days < label_horizon, a caller that passes min(horizons)
+    instead of max(horizons) would never trigger that guard — and would silently
+    leave 19 overlapping label days per split at H=20.
+    """
+    import unittest.mock
+
+    from factorlab.cv import PurgedWalkForward
+    from factorlab.data import synthetic_ohlcv
+    from factorlab.factors import get_factor
+    from factorlab.promote import PromotionConfig, promote
+
+    df = synthetic_ohlcv(n_days=500, n_assets=6, seed=42)
+    factor = get_factor("mom_20")
+    cfg = PromotionConfig(horizons=[1, 5, 20])
+
+    # Capture all PurgedWalkForward constructions to check their embargo_days.
+    constructed: list[int] = []
+    original_init = PurgedWalkForward.__init__
+
+    def patched_init(self_inner, n_splits, embargo_days, label_horizon):
+        constructed.append(embargo_days)
+        original_init(self_inner, n_splits, embargo_days, label_horizon)
+
+    with unittest.mock.patch.object(PurgedWalkForward, "__init__", patched_init):
+        promote(factor, df, cfg)
+
+    assert constructed, "PurgedWalkForward was never constructed — promote path changed?"
+    for emb in constructed:
+        assert emb >= 20, (
+            f"promote() passed embargo_days={emb} to PurgedWalkForward with horizons=[1,5,20]. "
+            "Must use max(horizons)=20 to prevent overlapping label leakage at H=20."
+        )
+
+
+# ---------------------------------------------------------------------------
+# Internal-refs detector self-test
+# ---------------------------------------------------------------------------
+
+
+def test_internal_refs_detector_catches_forbidden_token(tmp_path):
+    """KAT: check_no_internal_refs.py must fire on a file containing a forbidden token.
+
+    Fault detected: the check running against a different directory, using a
+    regex that only matches upper-case, or silently skipping newly-introduced
+    file extensions.
+
+    This test writes a .py file containing forbidden tokens into a temp directory
+    and invokes the scanner's scan_file() directly to confirm the hit is
+    reported. It does not need a full git repo — scan_file() is a pure function.
+
+    Note: this test must NOT spell out the forbidden tokens literally in its own
+    source — check_no_internal_refs.py would scan this file and find them. The
+    tokens are therefore constructed at runtime to keep the test self-hosting.
+    """
+    import importlib.util
+    from pathlib import Path
+
+    # Load the checker module by path (it is not an installed package).
+    checker_path = Path(__file__).resolve().parent.parent / "scripts" / "check_no_internal_refs.py"
+    spec = importlib.util.spec_from_file_location("check_no_internal_refs", checker_path)
+    assert spec is not None and spec.loader is not None
+    checker = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(checker)
+
+    # Construct the forbidden tokens at runtime (concatenated so they are not
+    # literal in source — the scanner is tested on its own artifact).
+    tok_a = "olymp" + "us"
+    tok_b = "SA" + "TS"
+
+    # A file that contains both forbidden tokens (each on its own line).
+    dirty_file = tmp_path / "dirty.py"
+    dirty_file.write_text(
+        f"# This references {tok_a}\n# Also uses {tok_b} strategy\n",
+        encoding="utf-8",
+    )
+
+    hits = checker.scan_file(dirty_file)
+    assert hits, (
+        "check_no_internal_refs.scan_file() returned no hits for a file containing "
+        "a forbidden token. The forbidden-token regex may be broken."
+    )
+    # Both lines contain a forbidden token.
+    assert len(hits) >= 2, f"expected >= 2 hits (both lines), got {hits}"
+    labels = {h[1] for h in hits}
+    assert len(labels) >= 2, f"expected 2 distinct forbidden labels, got {labels}"
+
+    # Positive control: a clean file produces no hits.
+    clean_file = tmp_path / "clean.py"
+    clean_file.write_text("# Normal code\nimport factorlab\n", encoding="utf-8")
+    assert checker.scan_file(clean_file) == [], "clean file produced false-positive hits"
