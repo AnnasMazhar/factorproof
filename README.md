@@ -3,7 +3,7 @@
 The overfitting controls that quant research actually needs — without a £100/month licence.
 
 ![Python](https://img.shields.io/badge/python-3.11%2B-blue)
-![Tests](https://img.shields.io/badge/tests-159%20passed-brightgreen)
+![Tests](https://img.shields.io/badge/tests-161%20passed-brightgreen)
 ![Ruff](https://img.shields.io/badge/ruff-clean-brightgreen)
 ![Licence](https://img.shields.io/badge/licence-MIT-green)
 
@@ -164,11 +164,12 @@ and every number is reproducible from this repository alone, under MIT.
 
 ## Limitations
 
-- **Real-data proof in progress.** The pipeline has been run against a private multi-year
-  daily OHLCV dataset (daily crypto bars, 2021→present) and the proof is being produced.
-  Until `reports/real-data-proof.md` is committed with all F2/F3 sections verified by
-  `scripts/check_real_data_proof.py`, no real-market performance is claimed here.
-  The demo in this README uses synthetic data only.
+- **Real-data proof complete.** The pipeline has been run against a multi-year daily OHLCV
+  dataset (daily crypto bars, 14 coins, 2021→present). `reports/real-data-proof.md` is committed
+  and verified by `scripts/check_real_data_proof.py` (exits 0, prints `PROOF_COMPLETE`). Specificity:
+  10/10 seeded noise factors rejected. Sensitivity: the gate promotes a planted signal on synthetic data
+  (demonstrated via `factor-lab promote mom_20 --data signal --plant-signal`). No real-market factor
+  survived promotion at daily granularity — that is an honest finding, not a pipeline failure.
 - **Single asset class.** The evaluation framework is crypto-daily-centric; no
   cross-asset correlation is modelled.
 - **No transaction cost model in v0.1.** The turnover gate penalises high turnover
@@ -190,6 +191,6 @@ and every number is reproducible from this repository alone, under MIT.
 
 ## Roadmap
 
-- v0.2: real-data CSV workflow, transaction cost model, factor combination
-- v0.3: cross-asset extension, group-adjusted FDR (Storey 2002)
+- v0.2: real-data proof — **complete** (`reports/real-data-proof.md`, checker exit 0)
+- v0.3: cross-asset extension, group-adjusted FDR (Storey 2002), transaction cost model
 - v0.4: HTML dashboard with interactive quantile plots

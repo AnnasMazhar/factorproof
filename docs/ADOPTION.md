@@ -820,3 +820,139 @@ measured output in §8.2 (4:48 wall), three executed failure-mode findings in §
 *Cycle 3 pass 3 (2026-10-12): §9 — Tuesday recipe confirmed without re-run, F-R10 single-coin-drop
 executed (rev_5 robust, volume_z_20 ATOM-fragile), ecosystem re-probed (no watch item fired);
 open items closed in docs/RESEARCH.md §11.*
+
+## 11. Cycle 5 update — applicability, closed (2026-10-13, pass c5-p03)
+
+This pass closes every open item from passes 1–2 in cycle 5 (dispositions in
+docs/RESEARCH.md §18). No code changed. Experiments ran in-process against the
+read-only panel (667,436 rows, 14 coins, 2021-04-29 → 2026-10-12).
+
+### 11.1 Tuesday recipe status: unchanged; one new pre-screen added
+
+The §10.1–§10.2 pre-screens (panel coverage check, Roll spread check) are the
+standing Tuesday commands for cycle 5. The §8.1 proof commands are unchanged.
+One new optional pre-screen, motivated by F-R24 (§18.3), is now recommended for
+any team considering volatility-managed factor variants:
+
+```python
+# Before promoting a vol-managed factor variant, compute
+# corr(lagged_20d_variance, next_1d_return) per coin.
+# If the panel mean is near zero or positive, vol-management
+# will not improve Sharpe (Moreira-Muir Delta_SR requires negative corr).
+# Reference numbers for this panel (RESEARCH §18.3):
+#   Panel mean corr = -0.0107 (weakly negative — mechanism present but small)
+#   BTC: +0.0068, HBAR: +0.0091, SOL: +0.0031 (contra-indicated for these coins)
+import numpy as np, math, sqlite3, datetime
+from collections import defaultdict
+DB_URI = "file:/path/to/prices.sqlite?mode=ro"
+# ... (standard load, per §10.1) ...
+# corr_check[coin] = pearson(lagged_var_20d, next_day_return)
+```
+
+### 11.2 New failure mode: vol-managed variants should be pre-checked
+
+Motivated by F-R24 (§18.3): the Moreira-Muir mechanism (§16.4) only improves
+Sharpe when corr(factor_return, lagged_variance) is negative. On this panel, the
+correlation is -0.011 — present in the right direction but very small. A team that
+runs `deflated_mom` (which divides by volatility) should not expect a material
+improvement over raw `mom_20` on this dataset. The turnover gate may still reject
+both — the vol-scaling reduces position changes but does not eliminate them.
+
+The one change this introduces to the adoption guide: when a factor with
+large variance scaling is promoted, report the corr(return, lagged_var) figure
+alongside the verdict. If the correlation is near zero, the vol-scaled variant
+and the raw variant are effectively identical.
+
+### 11.3 New failure mode: LOCO robustness is now expected (not optional)
+
+Following C3-F1 (§9.2 RESEARCH §11.4), the LOCO check (drop each coin, re-screen,
+report worst-case p) is now a named step in the proof workflow — not optional on
+a narrow panel. The specific check now has literature grounding (§16.3
+Grundy-Martin: on a 14-coin panel the "winner" portfolio may be ONE coin; a coin-
+level event can dominate the factor signal, exactly as XRP dominated the 2023-07-13
+ruling-day signal). Any Tuesday run that promotes a factor on this panel must pass
+the LOCO diagnostic.
+
+The Tuesday workflow therefore has an additional check after `scripts/check_real_data_proof.py`:
+
+```bash
+# After the standard proof, run the LOCO robustness check
+python3 -c "
+# For each BH-FDR-passing factor, drop each coin and re-screen.
+# Report worst-case p (should not become non-significant after dropping
+# any single coin, for a promotion to stand).
+# Reference: ADOPTION.md §9.2, RESEARCH.md §11.4 (C3-F1)
+"
+```
+
+This step is named but not automated; the implement pass should wire it into
+`scripts/prove_on_real_data.py` as the `--loco` flag.
+
+### 11.4 Competitive positioning update (ml4t-diagnostic narrowed the gap)
+
+The most significant new fact from the cycle-5 ecosystem pass (§17, RESEARCH §17.2):
+**ml4t-diagnostic added explicit documentation of HAC-adjusted IC t-stats and FDR
+control to its README on 2026-10-13**. This is the closest any open-source competitor
+has come to factorproof's measurement layer.
+
+Revised positioning for any researcher choosing between the two tools:
+
+| Dimension | ml4t-diagnostic | factorproof |
+|-----------|-----------------|-------------|
+| HAC IC t-stat | Yes (documented today) | Yes |
+| FDR control | Yes (reported field) | Yes (in gate — exit code) |
+| Purged/embargoed CV | Yes | Yes |
+| Binary exit code (0 = promote, 1 = reject) | No | Yes |
+| Standalone (no Polars, no 7-library ecosystem) | No | Yes |
+| Offline, no subscription | Yes | Yes |
+
+The verdict gap is the remaining differentiator. A researcher using ml4t-diagnostic
+gets the same measurement numbers; they must write their own gate logic to act on
+them. factorproof packages that gate as the public `promote()` API, tested with
+161 passing tests, with a documented exit code. The pitch becomes: "ml4t-diagnostic
+tells you what the IC is; factorproof tells you what to DO about it."
+
+### 11.5 Operational cost (cycle-5 delta)
+
+| Item | Status |
+|------|--------|
+| Full proof (§8.5: 4 min 48 s) | Unchanged; dataset grew <1 day |
+| Panel pre-screen §10.1 (3 SQL queries) | Seconds |
+| Roll spread check §10.2 | Seconds |
+| F-R24 vol-correlation pre-check (§11.1, new) | Seconds |
+| Total Tuesday cost | Under 10 minutes |
+
+No new dependencies added. The F-R24 check is a handful of numpy operations on
+the in-memory panel loaded for the proof.
+
+### 11.6 The single most likely reason someone would NOT adopt it (cycle-5 edition)
+
+§8.6/§9.5/§10.5 stand with one sharpening: **the gate rejects everything, including
+signals proven real in the literature, and a competing open-source tool (ml4t-
+diagnostic) now reports the same statistics without forcing a binary verdict.**
+
+A researcher who runs `factor-lab screen --data prices.csv` on the real 14-coin
+panel sees 0/13 promoted. They check ml4t-diagnostic and see the same IC and FDR
+numbers, but the tool does not say REJECT — it presents the numbers and lets the
+researcher decide. The factorproof binary verdict is its strength (reproducible,
+defensible, CI-integratable) and its weakness (the gate fails to communicate "this
+factor is economically interesting even if it fails the statistical gate at this
+frequency").
+
+The mitigation is unchanged: adopt factorproof for the DELTA (raw → FDR → gate
+attrition), for the controls (noise rejection, lookahead detection, LOCO check),
+and for the CI integration (exit code) — not as a final arbiter of economic value.
+A factor that factorproof rejects may still be worth running at weekly horizons or
+with better execution; factorproof says "not statistically defensible at daily 14-coin
+granularity", not "valueless".
+
+### 11.7 Falsification for this section
+
+- Competitive: falsified if ml4t-diagnostic ships `gate_factor()` with a binary
+  exit code usable without Polars — the §17.2 grep absence is the record.
+- F-R24: falsified if a same-day re-run shows panel mean corr > +0.05 —
+  the §18.3 table is the record.
+- F-R31: falsified if Amihud spread re-runs < 1000x — the §18.10 table is
+  the record.
+- F-R23: falsified if IC-by-year shows positive 2021 + negative 2022 on a
+  re-run — the §18.2 table is the record.

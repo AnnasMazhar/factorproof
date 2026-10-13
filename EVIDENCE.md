@@ -1032,3 +1032,31 @@ complete, release.yml (trusted publishing, PYPI_PUBLISH-gated, tag=version
 guard) present; local wheel build not possible offline (no setuptools/wheel in
 venv, `uv build --offline` needs registry) — CI builds on tag push. Not
 claimed as verified locally.
+
+## c5-p04-implement-1 (2026-10-13) — README proof-complete, badge 161, commit cycle reports
+
+```
+$ .venv/bin/pytest 2>&1 | tail -2
+161 passed, 2 warnings in 86.48s (0:01:26)
+
+$ .venv/bin/ruff check . && .venv/bin/ruff format --check .
+All checks passed!
+27 files already formatted
+
+$ python3 scripts/check_no_internal_refs.py
+check_no_internal_refs: CLEAN — no forbidden tokens found.
+
+$ python3 scripts/check_real_data_proof.py
+check_real_data_proof: all checks passed.
+PROOF_COMPLETE
+```
+
+Changes: README badge 159→161 (matches actual test count). README Limitations
+"Real-data proof in progress" replaced with "Real-data proof complete" — proof
+was already committed and checker was already passing. Roadmap v0.2 marked
+complete. Committed: docs/ADOPTION.md + docs/RESEARCH.md (c5 research pass
+updates), reports/eval-c2-p6.json, reports/eval-c2-p7.json,
+reports/eval-c3-p6.json, reports/eval-c3-p7.json, reports/eval-c4-p6.json,
+reports/eval-c4-p7.json, reports/mutants-survived-c2.txt,
+reports/mutants-survived-c3.txt, reports/mutants-survived-c4.txt,
+reports/mutation-c2.json, reports/mutation-c3.json, reports/mutation-c4.json.
