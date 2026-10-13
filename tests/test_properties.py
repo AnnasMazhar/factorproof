@@ -15,6 +15,9 @@ Faults detected per test:
         Fault: corr(x, y) != corr(y, x) due to asymmetric implementation.
     test_pearson_corr_self_correlation:
         Fault: corr(x, x) != 1.0 (or NaN for constant x).
+    test_pearson_corr_self_correlation_exact_ties:
+        Fault: constant input returning non-NaN (fail-open: a constant
+            factor would get IC=+-1.0 instead of NaN and could pass gates).
     test_rankdata_sum:
         Fault: _rankdata returning wrong sum (1+2+...+n = n*(n+1)/2).
     test_bootstrap_ci_seed_invariance:
@@ -169,18 +172,49 @@ def test_pearson_corr_self_correlation(data):
     Fault detected: self-correlation returning a value other than 1.0 for
     genuinely non-constant data.
 
-    'Effectively constant' covers both exact ties and numerically near-zero
-    variance (std < 1e-100) where the denominator underflows to zero.
+    'Effectively constant' covers exact ties and numerically near-zero
+    variance (std < 1e-80, subnormal regime) where the denominator
+    underflows to zero. Exact ties are detected with `np.all(x == x[0])`,
+    NOT via np.std: np.std of exact ties can report rounding residue up to
+    ~eps*|x| (e.g. 1.42e-14 at |x| ~= 85.8), so a std-based excuse misses
+    large-magnitude ties while the implementation correctly returns NaN
+    for constant input (see test_pearson_corr_constant).
     """
     from factorlab.evaluate import _pearson_corr
 
     x = np.array(data)
     r = _pearson_corr(x, x.copy())
+    if np.all(x == x[0]):
+        # Exactly constant input: NaN is the required answer.
+        assert math.isnan(r), f"corr(x,x)={r} should be NaN for constant x"
+        return
     std_x = float(np.std(x))
     if std_x < 1e-80:
         # Numerically degenerate: NaN is acceptable
         return
     assert abs(r - 1.0) < 1e-9, f"corr(x,x)={r:.6f} should be 1.0 for std={std_x:.2e}"
+
+
+def test_pearson_corr_self_correlation_exact_ties():
+    """Regression: exact ties at large magnitude return NaN, not 1.0.
+
+    Fault detected: constant input returning a non-NaN correlation
+    (fail-open). A constant factor given IC=+-1.0 instead of NaN could
+    pass gates it must fail; NaN propagates to rejection.
+
+    Hypothesis-found case (c3-p08): x = [85.80595667847635]*3. np.std
+    reports 1.42e-14 rounding residue for this exactly-constant input,
+    so a std-based degeneracy excuse does not fire. Pin the contract
+    deterministically: exact ties -> NaN (consistent with
+    test_pearson_corr_constant for y=[5,5,5]).
+    """
+    from factorlab.evaluate import _pearson_corr
+
+    x = np.array([85.80595667847635, 85.80595667847635, 85.80595667847635])
+    assert np.all(x == x[0]), "fixture must be exact ties"
+    assert float(np.std(x)) > 1e-80, "fixture must defeat the std-based excuse"
+    r = _pearson_corr(x, x.copy())
+    assert math.isnan(r), f"corr(x,x)={r} should be NaN for constant x"
 
 
 def test_pearson_corr_self_correlation_tiny_magnitude():

@@ -435,3 +435,173 @@ Note: `ruff format --check .` flags 9 files, identically before and after this p
 | Purge-zeroed fault detection | suite green (fault masked) | new test FAILS, rest green | ✓ |
 | mom_20 / noise_control / lookahead_control verdicts | PROMOTE / REJECT / REJECT | unchanged | no regression |
 | Ruff check | clean | clean | no change |
+
+## Improve pass 1 (cycle 3) — 2026-10-13 — c3-p08-improve-1
+
+Baseline quoted exactly as mandated: cycle 2 mutation gate produced no score
+(authoritative: reports/mutation-c2.json — `rc: 2`, `total: 0`,
+`Error: No such option '--max-children'`; survivors file
+reports/mutants-survived-c2.txt is empty). Gate: 70%. The c1 score
+878/1977 = 44.4% (reports/mutation-c1.json) remains the last valid measurement.
+
+### Finding addressed (top severity: red suite beats open minors)
+
+The committed eval artifacts reports/eval-c3-p6.json / reports/eval-c3-p7.json
+both claim `137 passed, 0 failures`. The tree at this pass's base does NOT
+reproduce that: the full suite fails on a hypothesis-found case, reliably
+(twice in a row, plus a 5000-example probe that found 7 more of the same
+class). The eval green was a hypothesis seed draw, not proof of green. A red
+suite outranks every open minor (F-A4, F-T5, F-S1 — all minor, all left for
+c3-p09), because no commit is verifiable until the repo is green.
+
+Before (baseline, verbatim):
+
+```
+$ .venv/bin/python -m pytest -p no:warnings 2>&1 | tail -2
+FAILED tests/test_properties.py::test_pearson_corr_self_correlation - Asserti...
+1 failed, 136 passed in 57.62s
+```
+
+```
+$ .venv/bin/python -m pytest -p no:warnings tests/test_properties.py::test_pearson_corr_self_correlation 2>&1 | tail -8
+>       assert abs(r - 1.0) < 1e-9, f"corr(x,x)={r:.6f} should be 1.0 for std={std_x:.2e}"
+E       AssertionError: corr(x,x)=nan should be 1.0 for std=1.42e-14
+E       assert nan < 1e-09
+E        +  where nan = abs((nan - 1.0))
+E       Falsifying example: test_pearson_corr_self_correlation(
+E           data=[85.80595667847635, 85.80595667847635, 85.80595667847635],
+E       )
+```
+
+### Root cause (implementation correct, test excuse miscalibrated)
+
+Probed directly (verbatim):
+
+```
+$ .venv/bin/python3 -c "
+import numpy as np
+from factorlab.evaluate import _pearson_corr
+x = np.array([85.80595667847635]*3)
+print('all ties:', bool(np.all(x == x[0])))
+print('np.std :', float(np.std(x)))
+print('corr   :', _pearson_corr(x, x.copy()))
+"
+all ties: True
+np.std : 1.4210854715202004e-14
+corr   : nan
+```
+
+The input is EXACTLY constant (three identical bit patterns). NaN is the
+contract-correct answer for constant input — pinned by
+tests/test_evaluate.py::test_pearson_corr_constant (constant y -> NaN).
+But np.std of exact ties reports rounding residue up to ~eps*|x|
+(1.42e-14 at |x| ~= 85.8; exactly 0.0 at |x| = 5.0), so the test's
+degeneracy excuse (`std < 1e-80`) does not fire at large magnitude while
+the implementation rightly returns NaN. The test docstring even misstated
+its own bar ("std < 1e-100" vs code `1e-80`). This is a test-calibration
+bug, not an implementation bug: "fixing" the implementation to return 1.0
+here would sanctify rounding noise as perfect correlation (fail-open: a
+constant factor would get IC=+-1.0 instead of NaN).
+
+### Fix implemented (tests/test_properties.py only, no src change)
+
+- `test_pearson_corr_self_correlation`: exact ties are now detected with
+  `np.all(x == x[0])` and asserted NaN (the required answer); the `std <
+  1e-80` excuse is kept for the subnormal regime. Docstring rewritten to
+  state the residue mechanism. Strength on non-constant data unchanged.
+- New `test_pearson_corr_self_correlation_exact_ties`: deterministic
+  regression test pinning the hypothesis-found triple
+  ([85.80595667847635]*3, std residue 1.42e-14 > 1e-80 so it defeats the
+  old excuse), asserting NaN.
+- Top-of-file fault list updated for the new test (quality-contract rule).
+
+### Fault-injection proof (faults were injected into a scratch copy of
+src/factorlab/evaluate.py, suite run, then reverted with
+`git checkout --`; `git status --short src/` clean after each)
+
+Fail-open fault (`return float("nan")` -> `return 1.0`):
+
+```
+FAILED tests/test_properties.py::test_pearson_corr_self_correlation_exact_ties
+FAILED tests/test_evaluate.py::test_pearson_corr_constant - AssertionError: E...
+```
+
+Attenuation fault (`... / denom` -> `... / denom * 0.5`, i.e. the property
+test's named fault — proves the retouched property test is not weakened):
+
+```
+FAILED tests/test_properties.py::test_pearson_corr_self_correlation - Asserti...
+FAILED tests/test_evaluate.py::test_pearson_corr_known_values - AssertionErro...
+```
+
+### Drive-by: F1 checker red on evaluator artifacts (same class as F-G1)
+
+`scripts/check_no_internal_refs.py` FAILED on 6 hits — absolute host-path
+prefixes in the untracked evaluator artifacts reports/eval-c3-p6.json /
+reports/eval-c3-p7.json (pytest warning tracebacks), the same shape c2-p09
+fixed for the c2 files. Mechanically scrubbed the repo prefix to `repo/`
+(3 replacements per file, both re-validated as JSON); checker now CLEAN.
+Same redaction convention as the c2-p09 precedent.
+
+### After (raw output)
+
+```
+$ .venv/bin/python -m pytest -p no:warnings 2>&1 | tail -1
+138 passed in 51.14s
+```
+
+(seed 999 re-run: 138 dots, exit 0. Property-test multi-seed check:
+`--hypothesis-seed=0` and `--hypothesis-seed=12345` green.)
+
+```
+$ ruff check .
+All checks passed!
+```
+
+(`ruff format --check .` flags 9 files, identically at HEAD before this
+pass — verified the HEAD copy of tests/test_properties.py is already
+flagged, and the reformat diff hunks are all pre-existing lines, none in
+this pass's edited regions. Pre-existing formatter-version drift, out of
+scope per the c2-p08/c2-p09 rulings.)
+
+```
+$ .venv/bin/python scripts/check_no_internal_refs.py 2>&1 | tail -1
+check_no_internal_refs: CLEAN — no forbidden tokens found.
+```
+
+```
+$ .venv/bin/python scripts/check_real_data_proof.py 2>&1 | tail -3
+check_real_data_proof: all checks passed.
+... (checker prints its own completion line; v0.2 mandate surface intact)
+```
+
+### Metrics delta
+
+| Metric | Before | After | Delta |
+|--------|--------|-------|-------|
+| Test count | 137 (1 failing: self_correlation) | 138 | +1, suite green |
+| test_pearson_corr_self_correlation | FAIL (exact-tie residue) | PASS (exact-tie excuse) | fixed |
+| New regression test (exact ties -> NaN) | absent | present, kills fail-open fault | ✓ |
+| Named-fault detection (attenuation) | detected | still detected (no weakening) | ✓ |
+| mom_20 / noise_control / lookahead_control verdicts | PROMOTE / REJECT / REJECT | unchanged | no regression |
+| check_no_internal_refs | FAIL (6 hits, eval-c3 JSONs) | CLEAN | ✓ drive-by |
+| check_real_data_proof | pass | pass | no regression |
+| Ruff check | clean | clean | no change |
+| Open minors F-A4 / F-T5 / F-S1 | open | open (sequenced for c3-p09) | not this pass |
+
+### Notes for the next pass (c3-p09-improve-2)
+
+- F-A4 (`wilson_lower`: `math domain error` on k<0/k>n, silent 0.0 on
+  negative n) is the recommended next target: explicit ValueError guards
+  plus fault-named tests; no production caller passes invalid k/n
+  (evaluate.hit_rate_metrics inlines its own formula and guards n==0),
+  and tests/test_significance.py::test_wilson_lower_zero_obs pins n=0 ->
+  0.0, so the n==0 boundary must be preserved.
+- Observed while here, deliberately out of scope: `_pearson_corr` with a
+  single shared rescale returns NaN for valid wildly-different-magnitude
+  inputs (e.g. x~1e200 vs y~1e-200, true corr 1.0). No test covers it, no
+  evaluation found it; changing rescale geometry risks the pinned
+  1e-79 behaviour. Left for a dedicated pass with its own KAT.
+- Branch note: this worktree is detached at 1c79970 (feat/v0.1 is checked
+  out in a sibling reconcile worktree and is ahead). Commit below is on
+  detached HEAD; orchestrator to cherry-pick or merge onto feat/v0.1.
