@@ -3824,4 +3824,667 @@ are noise; versions and push dates unchanged).
   was unnecessary — i.e. the sentence already exists or the
   transcription is already verified.
 
+## 15. Cycle 5 pass 1 — luck-vs-skill ground truth (added 2026-10-13, pass c5-p01)
+
+Scope of this pass: ground truth for the v0.2 MANDATE only — the
+real-data proof the spec names (F2/F3/F4), i.e. which numbers
+`scripts/check_real_data_proof.py` must reject and why. Three of the
+five design-driving sources below CLOSE slots left open in §8.7
+(Hansen SPA, Sullivan-Timmermann-White, Linnainmaa-Roberts); the other
+two (PSR/MinTRL, Goyal-Welch OOS) ground the proof's two most-quoted
+numbers (DSR = 0.0 everywhere; OOS-consistency gate). 11 new sources,
+every link probed today (2026-10-13) with `curl -L`, statuses recorded
+verbatim in §15.9. Five drive the design (§15.1–§15.5, full
+method/equations/assumptions/failure modes); six are context (§15.6).
+The tools-that-validate-factors survey is pass 2's job; the Tuesday-run
+recipe is pass 3's. No code changed. No MARKET-VERDICTS position
+re-litigated. No completion-claim line is printed or asserted
+anywhere in this pass.
+
+Standing observation this research must explain (from
+`reports/real-data-proof.md`, re-read today): on 14 coins x ~21,200
+daily bars, **0/13 factors promoted**; raw `p<0.05` flags 3; BH-FDR
+passes the same 3 at q=0.15; lookahead rejected by the leakage gate,
+rev_5/volume_z_20 by other gates; specificity 10/10 noise rejected;
+sensitivity rests on the synthetic planted signal only; DSR = 0.0
+everywhere.
+
+### 15.1 Hansen's SPA — the named successor to White's Reality Check (DRIVES DESIGN)
+
+**Hansen, P.R. (2005)**
+"A Test for Superior Predictive Ability"
+*Journal of Business & Economic Statistics* 23(4):365–380.
+DOI: https://doi.org/10.1198/073500105000000063
+[Verified URL: UNC Carolina Digital Repository working-paper record
+(Brown Univ. Dept. of Economics Working Paper No. 01-06, public PDF) —
+https://cdr.lib.unc.edu/concern/articles/hd76s214m — HTTP 200 confirmed
+2026-10-13. The T&F DOI page returns HTTP 403 from automated requests
+(publisher bot-detection, same class as §8.7); the UNC record carries the
+same title, author, abstract and DOI, so the citation is verified via the
+repository copy.]
+
+**Why this closes a boundary slot:** §8.7 listed Hansen (2005) SPA as
+NOT verified (T&F 403) with the note "no threshold or gate may cite an
+unverified source until then". The UNC repository copy resolves that:
+SPA is now citable. §9.1 (White's Reality Check) can now name its
+successor precisely instead of gesturing at it.
+
+**Method extracted:** SPA tests whether ANY of m candidate
+models/strategies beats a benchmark, correcting for data snooping. The
+two modifications over White's Reality Check are: (a) a studentised test
+statistic that down-weights erratic alternatives, and (b) a
+sample-dependent null distribution that drops demonstrably-poor models
+from the null instead of letting them inflate critical values.
+
+Notation (Hansen §2–§3; symbols preserved, defined here):
+
+    d_{k,t} = L_{0,t} - L_{k,t},   k = 1..m, t = 1..n
+
+    d_{k,t} = performance of model k minus benchmark at t
+              (loss differential; positive = model wins).
+    dbar_k  = (1/n) * sum_t d_{k,t}      (sample mean differential)
+    shat_k  = consistent estimator of std(sqrt(n) * dbar_k)
+
+Null hypothesis (the composite "no model wins" null):
+
+    H_0: mu <= 0,   i.e. max_k mu_k <= 0,  mu_k = E[d_{k,t}]
+
+SPA test statistic (studentised maximum):
+
+    T_n^SPA = max( max_k  sqrt(n) * dbar_k / shat_k ,  0 )
+
+The inner max over k is the best studentised model; the outer max with 0
+is the benchmark itself (the test is one-sided: it rejects only when
+something beats the benchmark).
+
+Bootstrap p-values — three of them, from three null recentrings:
+
+    p_l : liberal     (null mu^l = 0 vector: every model exactly tied)
+    p_c : consistent  (data-dependent mu^c: models with
+          sqrt(n)*dbar_k/shat_k <= -sqrt(2*log*log(n)) are set to 0,
+          the rest keep dbar_k — poor models are neutralised, not rewarded)
+    p_u : conservative (null mu^u = elementwise max(dbar, 0))
+
+Decision rule: reject H_0 at level alpha iff p_c < alpha. The paper's
+Monte Carlo (Table 6, Figure 4 in the working paper) shows the two
+modifications each add substantial power: studentisation alone lifts
+power from ~15% to ~53% in the reported design; the data-dependent null
+removes the RC's sensitivity to irrelevant poor alternatives.
+
+**Assumptions:**
+1. Stationarity/weak dependence of d_{k,t} (bootstrap is the stationary
+   bootstrap of Politis-Romano 1994, §12.5 — same dependency as White).
+2. shat_k consistent for each k (needs n >> m in practice; the paper's
+   simulations use n = 500–2000 against m = 100).
+3. The benchmark is fixed and named in advance (SPA tests "beats THIS
+   benchmark", not "beats the best of everything tried").
+
+**Known failure modes per the literature:**
+1. p_l over-rejects when poor models abound (it is a lower bound, not a
+   decision p-value) — Hansen §4 warns against reporting p_l alone.
+2. In small n with large m, shat_k is noisy and studentisation can
+   overweight lucky low-variance models (the same pathology BH-FDR has
+   with noisy p-values; cf. F-R10/C3-F1 one-coin artefact, §11.4).
+3. SPA assumes the model universe is declared up front. A researcher who
+   adds models after seeing p_c reintroduces exactly the snooping SPA
+   was built to remove (Hansen §1: "the universe must be fixed").
+
+**Design consequence (checker numbers):** the proof's §3 "delta" (raw
+p<0.05 count vs BH-FDR count vs promoted count, in counts AND names) is
+the BH-FDR analogue of STW/SPA's nominal-vs-adjusted p-value gap
+(§15.2). The checker already requires the delta in counts and names;
+this pass endorses that requirement with a second citation family and
+adds the rule filed as F-R17: any future proof section that reports a
+nominal (unadjusted) significance count WITHOUT its adjusted
+counterpart beside it fails review — nominal-only reporting is the exact
+practice STW §15.2 diagnoses. No code change (report-shape rule).
+
+**Transcription flag (F-R16-class):** the mu^c threshold
+-sqrt(2*log*log(n)) and the mu^u=max(dbar,0) recentring above are
+transcribed from the working-paper text; symbol-level audit is
+transferred to the adversarial citation audit (same owner as the
+Scholes-Williams/GLM items, §14.5). "Threshold constant wrong" is
+blocking for any future SPA implementation; "symbols differ, test
+right" is minor. No SPA implementation exists in the repo, so nothing
+is blocked today.
+
+### 15.2 Data-snooping quantified on 100 years of trading rules (DRIVES DESIGN)
+
+**Sullivan, R., Timmermann, A. & White, H. (1999)**
+"Data-Snooping, Technical Trading Rule Performance, and the Bootstrap"
+*Journal of Finance* 54(5):1647–1691.
+DOI: https://doi.org/10.1111/0022-1082.00163
+[Verified URLs: JSTOR stable record —
+https://www.jstor.org/stable/222500 — HTTP 200 confirmed 2026-10-13;
+LSE Financial Markets Group Discussion Paper 303 (same paper, full
+text) — https://researchonline.lse.ac.uk/id/eprint/119144/ — HTTP 200
+confirmed 2026-10-13; RePEc record —
+https://ideas.repec.org/a/bla/jfinan/v54y1999i5p1647-1691.html — HTTP
+200 confirmed 2026-10-13. Closes the second §8.7 boundary slot.]
+
+**Method extracted:** White's Reality Check applied to 7,846 technical
+trading rules (expanding Brock-Lakonishok-LeBaron 1992's 26) on 100
+years of daily DJIA (1897–1996), with the stationary bootstrap
+(Politis-Romano 1994) over the FULL rule universe. For each rule k:
+
+    f_{k,t} = log(1 + r_t * I_{k,t}) - log(1 + r_t * I_{0,t})
+
+    f_{k,t} = log-return differential of rule k vs benchmark at t
+              (I = position indicator: 1 long, 0 neutral, -1 short).
+    fbar_k  = (1/n) * sum_t f_{k,t}
+    V       = max_k  sqrt(n) * fbar_k        (best rule's scaled edge)
+
+The RC p-value compares V against B = 500 stationary-bootstrap draws
+V*_i of the same max-statistic computed on resampled f_{k,t}. The paper
+reports BOTH the nominal p-value (bootstrap on the best rule alone,
+snooping ignored) and the RC p-value (bootstrap over the universe).
+The gap between them IS the measured data-snooping bias.
+
+**Headline numbers (Tables III–V, full sample 1897–1996):** best BLL rule
+(50-day variable MA + 1% band) annualised +9.4% vs buy-and-hold; best
+full-universe rule Sharpe 0.82 vs buy-and-hold 0.034 — yet the RC
+p-values (< 0.002 in subperiods for the full universe) are the evidence,
+not the Sharpe magnitudes. The paper's standing lesson: even with RC
+adjustment the best rules survive on 100 years of DJIA — data-snooping
+correction attenuates, it does not automatically annihilate.
+
+**Assumptions:**
+1. The rule universe is enumerable and fixed before testing (7,846
+   parameterisations declared up front).
+2. Stationary bootstrap with mean block length tuned to the dependence
+   (Appendix C: expected block length q matched to return
+   autocorrelation; wrong q misstates the null width).
+3. Benchmark (buy-and-hold / zero) is the economically relevant
+   alternative — beating it gross of costs is the tested claim.
+
+**Known failure modes per the literature:**
+1. Hansen (2005, §15.1) shows RC loses power when the universe contains
+   many poor rules — STW's 7,846-rule universe is exactly the case SPA
+   was built to improve on. RC non-rejection on a wide universe is weak
+   evidence of "no edge".
+2. Costs are applied coarsely (one-way cost assumption); STW §5 shows
+   the surviving rules' net edge is thin — the turnover gate (F-R13)
+   answers the same question more strictly.
+3. 100-year DJIA is survivorship-selected (the index that survived);
+   the proof's limitation "coin-list survivorship" (§F2.6 analogue) is
+   the same caveat at smaller scale.
+
+**Design consequence (checker numbers):** STW is the empirical charter
+for the proof's delta section: nominal p-values flagged 3/13 raw, and
+the report must keep the nominal count VISIBLE next to the adjusted
+count so a reader can see the snooping gap, exactly as STW Tables III/V
+print nominal beside RC. Filed as F-R18: any proof whose §3 shows only
+adjusted numbers (hiding how many raw flags the gate killed) fails
+review — the gap is the product story (§6.3 item: "report these 2
+passed AFTER multiple-testing correction" requires the before-count).
+Endorses current proof shape; no code change.
+
+### 15.3 PSR and MinTRL — why the proof's DSR column reads 0.0 (DRIVES DESIGN)
+
+**Bailey, D.H. & Lopez de Prado, M. (2012)**
+"The Sharpe Ratio Efficient Frontier"
+*Journal of Risk* 15(2):3–44.
+[Verified URLs: author publication record with abstract and venue —
+https://quantresearch.org/Publications.htm — HTTP 200 confirmed
+2026-10-13 (lists the paper, venue, and the PSR/MinTRL contribution);
+equations below are transcribed from the standard formulation as
+RESTATED in the author-hosted DSR manuscript (Bailey & Lopez de Prado
+2014, first version April 2014 — https://davidhbailey.com/dhbpapers/deflated-sharpe.pdf —
+HTTP 200 confirmed 2026-10-13), which re-derives PSR as the DSR's
+parent statistic. The SSRN record (abstract_id=1821643) returns HTTP 403
+from automated requests (same class as §8.7); it is NOT cited as
+verified. Symbol-level audit of the transcription is F-R16-class,
+transferred to the adversarial citation audit.]
+
+**Method extracted:** the Probabilistic Sharpe Ratio answers "with what
+probability does the true Sharpe exceed a threshold SR*, given T
+observations with skew gamma_3 and kurtosis gamma_4?" and MinTRL answers
+"how long a track record is needed to assert SR > SR* at confidence
+alpha?".
+
+Notation (Bailey-Lopez de Prado 2012, Eq. 4 and Eq. 6; gamma_3 =
+skewness, gamma_4 = kurtosis, NOT excess; T = track length in the
+sampling units of the Sharpe):
+
+    PSR(SR*) = Phi( (SHAT - SR*) * sqrt(T - 1)
+                    / sqrt(1 - g3*SHAT + (g4 - 1)/4 * SHAT^2) )
+
+    SHAT  = estimated (annualised) Sharpe ratio
+    SR*   = threshold Sharpe to beat (0 for "any skill")
+    Phi   = standard normal CDF (Abramowitz-Stegun, §2.9)
+    g3, g4 = sample skewness and kurtosis of returns
+
+    MinTRL(SR*, alpha) = 1 + (1 - g3*SR* + (g4 - 1)/4 * SR*^2)
+                            * (Phi_inv(alpha) / SR*)^2
+
+    MinTRL = minimum track length (same units as T) such that
+             PSR(SR*) >= alpha. Phi_inv = inverse normal CDF.
+
+Worked example (units: years, annualised Sharpe; the "decade to prove
+0.5" arithmetic the checker leans on):
+
+    SR* = 0.5, alpha = 0.95 (Phi_inv = 1.645),
+    g3 = -0.5, g4 = 4.0 (negative skew, fat tails — crypto-typical):
+    bracket = 1 - (-0.5)(0.5) + (4-1)/4 * 0.25
+            = 1 + 0.25 + 0.1875 = 1.4375
+    MinTRL = 1 + 1.4375 * (1.645/0.5)^2
+           = 1 + 1.4375 * 10.8241 = 1 + 15.56 ≈ 16.6 years
+
+Under normality (g3=0, g4=3): MinTRL = 1 + 1.0625*10.8241 ≈ 12.5 years.
+Non-normality ADDS ~4 years to the burden of proof at these settings.
+
+**Assumptions:**
+1. Returns IID within the track record (no regime shifts — same
+   assumption as DSR §2.4; F-R15's |rho_1| < 0.2 panel check is the
+   repo's standing guard on it).
+2. Sample moments g3, g4 are well-estimated (needs long T; on T=100 the
+   kurtosis estimate alone has standard error ~ sqrt(24/T) ≈ 0.49 under
+   normality — the correction is noise).
+3. The SR* threshold is chosen BEFORE seeing SHAT (post-hoc SR* is
+   selection bias by another name — DSR's E[max(SR)] term, §2.4).
+
+**Known failure modes per the literature:**
+1. IID violation is the load-bearing one: on autocorrelated series the
+   effective T is smaller and PSR overstates confidence (same mechanism
+   as the naive-t-stat inflation, §2.10). Lo (2002, §9.2) annualisation
+   under autocorrelation is the same warning from the other side.
+2. MinTRL explodes for small SR*: asserting SR > 0.25 at 95% needs
+   ~4x the track of SR > 0.5 — the proof's 5.5-year daily panel
+   (T ≈ 1,994 bars ≈ 5.5 years) CANNOT assert modest Sharpes no matter
+   what the IC gate says. That is exactly why DSR = 0.0 everywhere in
+   the standing proof table: IC-IR ≈ 0.09 against a 13-trial bar
+   SR* ≈ 1.70 is MinTRL-territory of decades, not years.
+3. PSR with SR* = 0 on a short panel is nearly vacuous (almost any
+   positive SHAT "passes") — the repo correctly never gates on PSR(0).
+
+**Design consequence (checker numbers):** DSR = 0.0 across the proof is
+EXPLAINED, not merely reported: a 5.5-year panel asserting Sharpe
+significance under 13 trials needs SR ≈ 1.7+, and no factor is near it.
+Filed as F-R19: any proof whose DSR column is all-zero MUST carry the
+MinTRL sentence ("a 5.5-year panel cannot assert SR < ~1.7 under 13
+trials at 95%; the zeros are the test working, not the test broken") —
+an all-zero column without that sentence reads as a broken
+implementation and fails review. Transfer: implement pass owns the
+sentence; this pass owns the arithmetic above (reviewer: recompute
+16.6/12.5 from the formula before trusting it).
+
+### 15.4 Goyal-Welch OOS — in-sample significance is not the gate (DRIVES DESIGN)
+
+**Goyal, A. & Welch, I. (2008)**
+"A Comprehensive Look at the Empirical Performance of Equity Premium
+Prediction"
+*Review of Financial Studies* 21(4):1455–1508.
+NBER Working Paper w10483.
+[Verified URLs: NBER record —
+https://www.nber.org/papers/w10483 — HTTP 200 confirmed 2026-10-13;
+author-hosted working-paper PDF (Yale ICF) —
+https://repec.som.yale.edu/icfpub/publications/2412.pdf — HTTP 200
+confirmed 2026-10-13; second hosted PDF (Tulane) —
+https://breesefine7110.tulane.edu/wp-content/uploads/sites/16/2015/10/Goyal-and-Welch-2008.pdf —
+HTTP 200 confirmed 2026-10-13.]
+
+**Method extracted:** every published equity-premium predictor (dividend
+yield, earnings-price, book-to-market, cay, ... ) re-estimated under ONE
+protocol, IS and OOS, 1927–2005. The OOS statistic is the out-of-sample
+R-squared against the prevailing-mean benchmark:
+
+    R2_OOS = 1 - MSPE_model / MSPE_bench
+
+    MSPE_model = (1/P) * sum_{t=R}^{T} (r_{t+1} - rhat_{t+1|t})^2
+    MSPE_bench = (1/P) * sum_{t=R}^{T} (r_{t+1} - rbar_{t})^2
+
+    rhat_{t+1|t} = forecast using data only up to t (rolling/recursive)
+    rbar_t       = prevailing historical mean up to t (the benchmark)
+    R            = first OOS date; P = number of OOS predictions
+
+    Significance via the MSE-F statistic (McCracken 2004):
+    MSE-F = P * (MSPE_bench - MSPE_model) / MSPE_model
+
+Headline result: NOT ONE predictor beats the prevailing mean OOS over
+the full sample; most would have HURT a market-timer. Several are IS
+significant — and fail OOS anyway. The failure mode is instability
+(good early, bad late — the reverse of a low-power artefact), diagnosed
+by cumulative-SSE plots, not by a single number.
+
+**Assumptions:**
+1. Prevailing mean is the right benchmark (it is the "no-predictability"
+   null — the analogue of the repo's noise_control).
+2. Recursive estimation windows (expanding, not rolling) — parameter
+   estimates use all history to t.
+3. The OOS period must be long enough to be representative (their
+   §2: ≥20 years initial estimation + long evaluation).
+
+**Known failure modes per the literature:**
+1. Campbell-Thompson (2008, RFS — response paper) show sign/exclusion
+   restrictions rescue SOME OOS R² — Goyal-Welch's unrestricted OLS is
+   the pessimistic bound, not the last word. (Not verified this pass;
+   named so a later pass can close it — boundary item, same class as
+   §12.7.)
+2. R2_OOS < 0 is the NORMAL outcome for a useless predictor (not a bug):
+   estimation error alone puts MSPE_model above MSPE_bench. A gate that
+   "fails on negative OOS-R²" without a benchmark comparison misreads
+   the statistic.
+3. The prevailing mean itself is estimated with error; with short P the
+   MSE-F test has low power (their §2 discussion).
+
+**Design consequence (checker numbers):** Goyal-Welch is the published
+charter for the repo's OOS-consistency gate and its walk-forward
+machinery: IS significance (IC t-stat, BH-FDR pass) is NECESSARY but a
+factor must ALSO survive unseen splits, because the entire equity
+premium literature is a museum of IS-significant OOS-failures. Filed as
+F-R20: any proof promoting a factor on IS statistics (IC, t-HAC, BH-FDR)
+with OOS-consistency BELOW the 0.60 gate, or with the OOS column
+missing, fails review — Goyal-Welch is the citation for why the OOS
+column is load-bearing rather than decorative. Magnifies (not replaces)
+FINDING C2-3a (§5 Test C2-3): the magnitude-blind sign gate is exactly
+the kind of IS-flattering statistic Goyal-Welch's cumulative-SSE plots
+were built to expose. Endorses current gate; the improve pass owns the
+magnitude fix.
+
+### 15.5 Linnainmaa-Roberts — half the alpha is spurious (DRIVES DESIGN)
+
+**Linnainmaa, J.T. & Roberts, M.R. (2018)**
+"The History of the Cross-Section of Stock Returns"
+*Review of Financial Studies* 31(7):2606–2649.
+NBER Working Paper w22894.
+[Verified URLs: NBER record —
+https://www.nber.org/papers/w22894 — HTTP 200 confirmed 2026-10-13;
+author-hosted full PDF (Wharton) —
+https://jacobslevycenter.wharton.upenn.edu/wp-content/uploads/2017/08/The-History-of-the-Cross-Section-of-Stock-Returns.pdf —
+HTTP 200 confirmed 2026-10-13. Closes the third §8.7 boundary slot.]
+
+**Method extracted:** 36 accounting-based anomalies re-tested on
+hand-collected pre-1963 Moody's-manual data (PRE-discovery OOS, up to 37
+years — often LONGER than the original IS sample) plus post-discovery
+data. Three eras per anomaly: pre-sample / in-sample / post-sample, each
+with average return, CAPM alpha, FF3 alpha, and information ratio
+(alpha / residual vol).
+
+Headline numbers (Tables 5–7, quoted from the paper text):
+- Profitability factor pre-1963: average return −1 bp/month (t = −0.06);
+  investment factor: +6 bp/month (t = 0.64). IS they earn +27/+40
+  bp/month, significant. The premiums are absent before discovery.
+- 28 of 36 anomalies earn IS-significant average returns; pre-discovery
+  only 8 of 36 are positive-significant at 5%.
+- Information ratios (FF3) fall by MORE THAN THREE-FIFTHS moving OOS in
+  either direction; OOS alphas are 40–60% of IS alphas.
+- Decision rule the authors propose: test models OOS, or require a
+  model to explain HALF of the in-sample alpha (the spurious remainder
+  cannot be explained even by the true model — "even the true asset
+  pricing model is expected to be rejected when tested using in-sample
+  data").
+
+**Assumptions:**
+1. Pre-1963 Moody's data is free of the backfill/selection biases that
+   plague Compustat before 1963 (the paper's §2 data appendix argues
+   this at length; Compustat pre-1963 backfill bias is the reason the
+   pre-sample had to be hand-collected).
+2. Anomaly definitions ported verbatim to the old data (same
+   characteristic, same sort) — any definition drift biases toward
+   finding "decay".
+3. Post-discovery windows are short (noisier); the paper aggregates
+   across anomalies for power rather than leaning on single-anomaly
+   post-sample t-stats.
+
+**Known failure modes per the literature (and the paper's own §6):**
+1. Risk-vs-mispricing is NOT settled by decay alone: declining frictions
+   (Jones 2002; French 2008; Hasbrouck 2009 cost series) predict exactly
+   this attenuation under the mispricing story. Decay proves snooping
+   contributed, not that risk explains nothing.
+2. The "half-alpha" rule is a rule of thumb calibrated on THEIR 36
+   anomalies (accounting-based, monthly, US equities) — porting the 50%
+   haircut to daily crypto ICs is an analogy, not a derivation (flagged
+   for the audit if any threshold ever cites it numerically).
+3. Small perturbations to IS start dates cut average returns 50–75%
+   (their §5): anomaly significance is knife-edge in sample choice — the
+   repo's embargo/purge machinery (§2.6) answers a different edge
+   (leakage), not this one (sample specificity).
+
+**Design consequence (checker numbers):** LR is the strongest published
+prior for the proof's 0/13 standing result: on a SHORT (5.5-year),
+NARROW (14-coin), POST-discovery panel, promoting nothing is the
+BASE-RATE outcome, not a gate malfunction — 28/36 IS-significant
+anomalies mostly fail true OOS. Filed as F-R21: any reading of the
+proof that treats "0 promoted" as evidence the GATE is broken (rather
+than evidence the panel is hard) must first clear the LR base rate —
+show the promoted-count expectation under 40–60% OOS alpha haircuts
+before proposing to loosen a threshold. Paired with §8.1 (LTW weekly
+momentum exists on BROAD panels): the checker keeps its current shape
+(promoted factor OR honest note, F3b) — demanding a daily-H promotion
+on 14 coins would contradict both papers at once. No code change.
+
+### 15.6 Context sources (6, verified today)
+
+**Ioannidis, J.P.A. (2005)** "Why Most Published Research Findings Are
+False", *PLOS Medicine* 2(8):e124.
+https://journals.plos.org/plosmedicine/article?id=10.1371/journal.pmed.0020124
+[HTTP 200 confirmed 2026-10-13.]
+The repo thesis ("most published factors are noise") in equation form.
+Positive predictive value of a claimed finding:
+
+    PPV = ((1 - beta) * R) / ((1 - beta) * R + alpha)
+
+    R     = pre-study odds of a true relationship (true:false tested)
+    alpha = type-I error of the test; beta = type-II error (1-power)
+
+Corollaries the proof leans on: PPV collapses when R is small (factor
+fishing expeditions), when effect sizes are small (daily IC ≈ 0.02),
+and when many teams test many relationships (the 316-factor zoo, §2.7).
+BH-FDR (§2.3) is the repo's mechanical answer to Ioannidis's
+R-denominator: the gate prices in that most tested factors are null.
+Failure mode Ioannidis names and the repo inherits: PPV arithmetic
+assumes unbiased testing — with flexibility in definitions and
+stopping rules ("researcher degrees of freedom"), realised false-find
+rates exceed the formula. The proof's fixed-gate-no---force design
+(spec §6: --force FORBIDDEN) is the structural answer to that caveat.
+
+**Frazzini, A., Israel, R. & Moskowitz, T.J. (2012)**
+"Trading Costs of Asset Pricing Anomalies", AQR working paper (Fama-Miller
+working paper; first draft Oct 2012, this draft Dec 2012).
+[Verified URLs: author-hosted full PDF (NYU Stern) — AQR-insights page —
+https://www.aqr.com/Insights/Research/Working-Paper/Trading-Costs-of-Asset-Pricing-Anomalies?aqrPDF=1 —
+HTTP 200 confirmed 2026-10-13.]
+Live-trade costs (~$1T, 19 markets, 1998–2011) applied to size, value,
+momentum, short-term reversal. Headlines (quoted from the paper):
+break-even fund sizes (US) SMB $103B / HML $83B / UMD $52B / short-term
+reversal $9.5B; value+momentum netting raises joint capacity ($98B);
+real arbitrageur costs ≈ ONE-TENTH of the prior literature's estimates;
+SHORT-TERM REVERSALS are the most cost-constrained style and "do not
+survive trading costs at reasonable size". Design consequence: extends
+F-R13 (the 50%-turnover bar) with a style-specific bite — the proof's
+rev_5 (a 5-day reversal, the highest-turnover family in the repo) faces
+BOTH the NMV turnover bar AND the FIM reversal-capacity result, so its
+rejection on turnover is over-determined in the literature, not a
+calibration accident. Also grounds the proof's Limitations "no
+transaction costs" line with magnitudes: gross-edge claims without
+costs overstate implementability by up to 10x versus live-trade reality
+for reversal styles. No threshold cites FIM numerically (equity-market
+costs do not port to crypto spreads) — direction-only use, stated here
+so the audit cannot misread it.
+
+**Barras, L., Scaillet, O. & Wermers, R. (2010)**
+"False Discoveries in Mutual Fund Performance: Measuring Luck in
+Estimated Alphas", *Journal of Finance* 65(1):179–216.
+DOI: https://doi.org/10.1111/j.1540-6261.2009.01527.x
+[Verified URLs: author-hosted working-paper PDF —
+https://scaillet.ch/pdfs/FDR.pdf — HTTP 200 confirmed 2026-10-13;
+published-version PDF (Univ. of Maryland) —
+https://terpconnect.umd.edu/~wermers/FDR_published.pdf — HTTP 200
+confirmed 2026-10-13; Geneva archive record —
+https://archive-ouverte.unige.ch/unige:79989 — HTTP 200 confirmed
+2026-10-13. The JSTOR stable PDF returns a JS-challenge shell
+(same class as §14.5 Novy-Marx note); the three URLs above are the
+verified citation.]
+FDR moved from theory (§2.3 BH; Storey §2.3) into production on 2,076
+funds: estimate pi_0 (fraction of zero-alpha funds) by Storey (2002),
+then decompose significant positives at level gamma into lucky
+Fhat+ = pihat_0 * gamma/2 and truly-skilled That+ = Shat+ - Fhat+.
+Result: pihat_0 = 75.4% zero-alpha; skilled proportion statistically
+ZERO net of costs (pre-1996 subsample excepted). Design consequence:
+the first large-scale demonstration that an unadjusted "count the
+significant" screen is dominated by luck — the proof's delta §3 (raw 3
+flags → BH → 0 promoted) is the 13-factor miniature of BSW Table II.
+No threshold cites BSW (fund-count asymptotics do not port to m=13);
+precedent-only use.
+
+**Kosowski, R., Timmermann, A., Wermers, R. & White, H. (2006)**
+"Can Mutual Fund 'Stars' Really Pick Stocks? New Evidence from a
+Bootstrap Analysis", *Journal of Finance* 61(6):2551–2595.
+DOI: https://doi.org/10.1111/j.1540-6261.2006.01015.x
+[Verified URL: RePEc record —
+https://ideas.repec.org/a/bla/jfinan/v61y2006i6p2551-2595.html — HTTP
+200 confirmed 2026-10-13 (records the JoF venue, the CFR working-paper
+antecedent 05-14, and the abstract). The Wiley DOI page is publisher
+bot-walled (same class as §8.7); the working-paper PDF was not
+re-hosted at a probed URL, so method detail below is abstract-level and
+the source is CONTEXT ONLY — no gate cites it.]
+Cross-sectional bootstrap of fund t(alpha) under the alpha=0 null
+(necessitated by non-normal, heterogeneous fund-alpha distributions);
+finds a sizable skilled minority with persistent alphas. Design
+consequence, one line: bootstrap-under-the-null on the FULL
+cross-section (not fund-by-fund t-tests) is the established precedent
+for the repo's family-wise discipline — same idea as the
+permutation-null calibration (§7.4). Paired honestly with Fama-French
+(2010, next): two bootstrap-null studies, opposite tails emphasised —
+KTWW find persistent skill exists somewhere; FF find net returns still
+do not cover costs. The repo's gate sides with NEITHER on returns; it
+screens characteristics, and both papers agree screening without
+null-discipline over-claims.
+
+**Fama, E.F. & French, K.R. (2010)**
+"Luck versus Skill in the Cross-Section of Mutual Fund Returns",
+*Journal of Finance* 65(5):1915–1947.
+DOI: https://doi.org/10.1111/j.1540-6261.2010.01598.x
+[Verified URL: hosted published PDF (Dartmouth/Tuck course archive) —
+https://mba.tuck.dartmouth.edu/bespeneckbo/default/AFA611-Eckbo%20web%20site/AFA611-S8C-FamaFrench-LuckvSkill-JF10.pdf —
+HTTP 200 confirmed 2026-10-13 (full text: abstract, §1 bootstrap design,
+Table II aggregates, sigma calibration).]
+10,000 bootstrap simulation runs of the cross-section of t(alpha) with
+true alpha = 0; actual cross-section compared percentile-by-percentile
+against the zero-skill distribution. Headlines (quoted): net-return
+intercepts −0.81% to −1.00%/yr (t −2.05 to −3.02); cross-section of true
+alpha ~ N(0, sigma) with sigma ≈ 1.25%/yr (so <16% of funds exceed
++1.25%/yr gross, ~2.3% exceed +2.50%/yr); "true alpha in net returns is
+negative for most if not all active funds". Design consequence: the
+cleanest statement anywhere of the EXTREMES-BY-CHANCE mechanism the
+specificity leg (F3a, >=90% noise rejected) exists to defeat — with
+3,156 funds, the tails of the simulated zero-skill cross-section reach
+t(alpha) values a naive reader calls skill. The proof's 10 seeded noise
+factors are the 13-factor analogue; the >=90% bar is endorsed (FF show
+the null alone fills the tails). No threshold cites sigma=1.25%
+(fund-alpha units do not port to IC units) — mechanism-only use.
+
+**Bailey, D.H. & Lopez de Prado, M. (2014) — author-hosted full text.**
+"The Deflated Sharpe Ratio", *Journal of Portfolio Management*
+40(5):94–107; first version April 2014.
+https://davidhbailey.com/dhbpapers/deflated-sharpe.pdf
+[HTTP 200 confirmed 2026-10-13.]
+Second verified host for the §2.4 paper (previously arXiv 1405.4598
+only). The author PDF carries the full PSR restatement (§15.3's equation
+source), the E[max(SR)] trial correction, and the Python appendix the
+2012 paper advertises. Recorded here so the adversarial citation audit
+has TWO resolving full texts for every DSR/PSR equation in this file.
+No new method claimed; provenance-only entry (does not count toward
+any future "new source" quota — stated explicitly to keep counts
+honest: this pass adds 10 new sources, D1–D5 + C1–C5 above).
+
+### 15.7 Alternatives considered (this pass)
+
+BH-FDR vs SPA/RC as the family gate (§15.1–§15.2): SPA/RC test
+"beats a named benchmark" over a declared strategy universe with
+B=500+ bootstraps per evaluation; the repo gates 13 IC series with an
+analytic BH pass at q=0.15 costing microseconds. SPA is the stronger
+inference (handles arbitrary dependence, no PRDS assumption needed) and
+the honest v0.3 candidate for the "second gate" behind BH — rejected
+for v0.1/v0.2 because (a) IC series are not strategy returns (no
+benchmark loss differential exists until portfolio construction, same
+layering argument as §3.5 DSR-vs-IC), and (b) 500 bootstraps x 13
+factors x 3 horizons breaks the 7-minute screen budget (§7.6 timing:
+7:19.9 at 5000x50). Revisit when portfolio simulation lands.
+
+OOS-R2 (Goyal-Welch) vs sign-agreement (current gate): R2_OOS against a
+prevailing-mean benchmark is strictly more informative than sign counts
+(it weights magnitudes — the C2-3a fix direction). Rejected as the
+primary gate because the repo screens CHARACTERISTICS (IC series), not
+return forecasts: there is no "prevailing-mean IC" benchmark with an
+economic meaning, and MSE-F critical values (McCracken 2004) assume
+nested-model forecast errors, not cross-sectional correlations. The
+C2-3a magnitude fix (per-split |IC| floor) is the correct import of
+the Goyal-Welch lesson into IC units — recorded for the improve pass.
+
+Half-alpha haircut (LR) vs BH-FDR haircut: LR's "explain half the IS
+alpha" is calibrated on monthly US-equity anomalies; applying a 50%
+haircut to daily crypto ICs would be numerology (flagged §15.5). The
+repo prices snooping with BH (family-scoped, assumption-checked PRDS
+§2.3) instead. LR stays a READING rule for proof consumers ("expect
+half of any promoted edge to be spurious — size accordingly"), never a
+gate constant.
+
+### 15.8 Falsification — what would prove this pass wrong (F-R17…F-R21 new; all prior stand)
+
+- F-R1…F-R16: dispositions in §8.9/§9.8/§11/§14 stand; nothing re-run
+  (proof JSON unchanged since c4-p01; no new data pulled — database
+  untouched this pass, zero queries issued).
+- F-R17 (nominal-without-adjusted): a proof §3 that prints raw p<0.05
+  counts with no BH-adjusted column beside them — the STW Tables III/V
+  shape is the record (§15.2). Falsified if STW's nominal/RC gap is
+  shown to be a bootstrap artefact (i.e. a same-universe SPA re-run
+  collapsing the gap — Hansen §15.1 says the opposite, but the
+  experiment would settle it).
+- F-R18 (hidden attrition): a proof delta showing only adjusted numbers
+  (raw-flag count suppressed). Record: raw 3 → BH 3 → promoted 0.
+  Falsified by exhibiting a reader who reconstructs the raw count from
+  the adjusted table alone (impossible by construction — hence the rule).
+- F-R19 (unexplained zero DSR column): a proof with all-zero DSR and no
+  MinTRL sentence. Arithmetic record: MinTRL(0.5, 95%) ≈ 16.6y
+  non-normal / ≈ 12.5y normal (§15.3) — recompute before trusting.
+  Falsified if a 5.5-year panel is shown asserting SR > 0.5 at 95% under
+  13 trials (would break the MinTRL inequality, not just this pass).
+- F-R20 (IS-only promotion): any promoted verdict with OOS-consistency
+  < 0.60 or a missing OOS column. Record: Goyal-Welch zero-for-N
+  headline (§15.4). Falsified by a promoted factor whose OOS column was
+  later shown tradeable net of costs (would upgrade C2-3a from major to
+  critical and rewrite this section).
+- F-R21 (0-promoted-means-broken-gate): a loosening proposal that does
+  not first clear the LR base rate (§15.5: >3/5 IR decay OOS, 8/36
+  pre-discovery survivors). Record: 0/13 on 14 coins x 5.5y.
+  Falsified by a power calculation showing the current gates SHOULD
+  promote a realistically-decayed crypto edge on THIS panel (needs
+  assumed true IC + full gate simulation — a proper improve-pass task,
+  named here so it is not hand-waved later).
+- Ecosystem: none — pass 2 owns the comparison table; this pass makes
+  no tool claim.
+
+### 15.9 Link-verification table (all probed 2026-10-13, curl -L, UA Mozilla/5.0)
+
+| # | Source | URL | HTTP |
+|---|---|---|---|
+| D1a | Hansen SPA, UNC repository record + working paper | https://cdr.lib.unc.edu/concern/articles/hd76s214m | 200 |
+| D1b | Hansen SPA, T&F journal page (bot-walled, NOT cited as verified) | https://www.tandfonline.com/doi/abs/10.1198/073500105000000063 | 403 |
+| D2a | STW 1999, JSTOR stable record | https://www.jstor.org/stable/222500 | 200 |
+| D2b | STW 1999, LSE discussion paper full text | https://researchonline.lse.ac.uk/id/eprint/119144/ | 200 |
+| D2c | STW 1999, RePEc record | https://ideas.repec.org/a/bla/jfinan/v54y1999i5p1647-1691.html | 200 |
+| D3a | Bailey-Lopez de Prado 2012, publication record | https://quantresearch.org/Publications.htm | 200 |
+| D3b | PSR/DSR equations, author-hosted DSR manuscript | https://davidhbailey.com/dhbpapers/deflated-sharpe.pdf | 200 |
+| D3c | PSR SSRN record (bot-walled, NOT cited as verified) | https://papers.ssrn.com/sol3/papers.cfm?abstract_id=1821643 | 403 |
+| D4a | Goyal-Welch, NBER w10483 record | https://www.nber.org/papers/w10483 | 200 |
+| D4b | Goyal-Welch, Yale-hosted working-paper PDF | https://repec.som.yale.edu/icfpub/publications/2412.pdf | 200 |
+| D4c | Goyal-Welch, Tulane-hosted PDF | https://breesefine7110.tulane.edu/wp-content/uploads/sites/16/2015/10/Goyal-and-Welch-2008.pdf | 200 |
+| D5a | Linnainmaa-Roberts, NBER w22894 record | https://www.nber.org/papers/w22894 | 200 |
+| D5b | Linnainmaa-Roberts, Wharton-hosted full PDF | https://jacobslevycenter.wharton.upenn.edu/wp-content/uploads/2017/08/The-History-of-the-Cross-Section-of-Stock-Returns.pdf | 200 |
+| C1 | Ioannidis 2005, PLOS Medicine full text | https://journals.plos.org/plosmedicine/article?id=10.1371/journal.pmed.0020124 | 200 |
+| C2 | FIM 2012, AQR working-paper page | https://www.aqr.com/Insights/Research/Working-Paper/Trading-Costs-of-Asset-Pricing-Anomalies?aqrPDF=1 | 200 |
+| C3a | BSW 2010, author-hosted working-paper PDF | https://scaillet.ch/pdfs/FDR.pdf | 200 |
+| C3b | BSW 2010, Maryland-hosted published PDF | https://terpconnect.umd.edu/~wermers/FDR_published.pdf | 200 |
+| C3c | BSW 2010, Geneva archive record | https://archive-ouverte.unige.ch/unige:79989 | 200 |
+| C4 | KTWW 2006, RePEc record | https://ideas.repec.org/a/bla/jfinan/v61y2006i6p2551-2595.html | 200 |
+| C5 | Fama-French 2010, hosted published PDF | https://mba.tuck.dartmouth.edu/bespeneckbo/default/AFA611-Eckbo%20web%20site/AFA611-S8C-FamaFrench-LuckvSkill-JF10.pdf | 200 |
+
+Notes on 403 responses: T&F and SSRN return HTTP 403 to automated
+requests (publisher bot-detection, same class as §8.7/§12.9). Neither
+is cited as a verified source; each paper has a verified repository or
+author-hosted copy listed beside it. JSTOR stable PDFs that render a
+JS-challenge shell (BSW) are likewise not cited; the Geneva archive
+record + two hosted PDFs carry that citation.
+
 (End of file)
