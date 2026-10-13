@@ -8,6 +8,7 @@ All charts use the Agg backend (no display required).
 from __future__ import annotations
 
 import base64
+import html
 from pathlib import Path
 
 from .evaluate import FactorMetrics
@@ -242,6 +243,9 @@ def _md_table_to_html(md: str) -> str:
             continue
         cells = [c.strip() for c in line.strip("|").split("|")]
         tag = "th" if i == 0 else "td"
-        row_html = "".join(f"<{tag}>{c}</{tag}>" for c in cells)
+        # Escape: cell text may carry factor/asset names from untrusted
+        # inputs (custom Factor subclasses, CSV labels). Without this a
+        # name like "<script>alert(1)</script>" lands raw in the report.
+        row_html = "".join(f"<{tag}>{html.escape(c)}</{tag}>" for c in cells)
         rows.append(f"<tr>{row_html}</tr>")
     return "<table>\n" + "\n".join(rows) + "\n</table>"

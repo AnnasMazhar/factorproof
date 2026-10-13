@@ -325,7 +325,7 @@ and CLI binary are named `factor-lab`. These conflict. Resolution:
 
 ---
 
-## 10. Real-Data Proof Pass (2026-09-27)
+## 10. Cycle 2 Implementation Pass 1 — v0.2 MANDATE (2026-09-27)
 
 ### 10a. check_no_internal_refs.py
 
@@ -360,7 +360,7 @@ Total daily bars: 21,128 across 14 coins
 F3 results:
 - Specificity (noise rejection): 10/10 = 100% — PASS (target ≥90%)
 - Sensitivity: 0 real factors promoted on this dataset (honest). Synthetic planted-signal
-  demo still demonstrates sensitivity (factor-lab promote mom_20 --data signal
+  demo still demonstrates sensitivity (factor-lab promote mom_20 --data signal --plant-signal
   exits 0). This is an honest finding about the current factor library on daily crypto bars.
 - Stability: 0 verdict flips — PASS (target 0)
 
@@ -393,8 +393,8 @@ $ .venv/bin/ruff format --check .
 
 ```
 $ git log --oneline -3
-2fa74e9 feat: v0.2 — real-data proof scripts and CI gate
-6e58f0a docs(research): verify adoption claims with executed evidence
+2fa74e9 feat(mandate): v0.2 F1-F4 — real-data proof scripts and CI gate
+6e58f0a docs(research): cycle 2 pass 3 — close C2-1..C2-4, verify adoption claims with executed evidence
 fbcbfe0 docs(readme): drop the internal-system reference; state the real-data proof as pending
 ```
 
@@ -409,7 +409,7 @@ fbcbfe0 docs(readme): drop the internal-system reference; state the real-data pr
 - `scripts/check_real_data_proof.py` — validates F2/F3 thresholds; prints PROOF_COMPLETE.
 - `reports/real-data-proof.md` and `reports/real-data-proof.json` — generated artifacts.
 - CI updated: `check_no_internal_refs.py` step added to both Python matrix jobs.
-- README Limitations updated with real-data proof status.
+- README Limitations updated to v0.2 MANDATE wording.
 
 ### Why 0/13 factors were promoted (honest finding)
 
@@ -420,323 +420,22 @@ behaviour. The gate is working: it is more conservative with the multiple-testin
 correction than a naive p<0.05 threshold would be. The synthetic planted-signal demo
 (rho=0.15 AR(1)) demonstrates the pipeline CAN promote a real signal when one is present.
 
-
-
 ---
 
-## 11. Eval-Findings Fix Pass (2026-09-27) — independent reviewer findings fixed
+## 11. Cycle 2 Implementation Pass 1 — OOS IC fix, CPCV wiring, evaluate_cpcv (2026-10-03)
 
-### 11a. Finding 1: BH multiplicity was m=1 (selection bias)
+### 11a. What was fixed / added
 
-**Claim:** When searching 3 horizons, BH must correct for 3 tests.
-Previously `all_pvals = [p_self]` (m=1); now `all_pvals = horizon_pvals` (m=N horizons).
+**Bug: OOS IC = nan in real-data proof**
 
-**Command:**
-```
-$ factor-lab promote mom_20 --data signal
-```
+Root cause: `prove_on_real_data.py` line 219 passed a materialised `splits` list
+(type: `list[WalkForwardSplit]`) as the `splitter` argument to `evaluate_walk_forward`,
+which internally calls `splitter.split(df)`. A list has no `.split()`, causing an
+`AttributeError` silently caught by `except Exception: oos_ic = float("nan")`.
+Additionally, line 221 accessed `.ic_pearson` on `WalkForwardResult` objects —
+which only `FactorMetrics` has; `WalkForwardResult` has `.oos_mean_ic`.
 
-**Output (after fix):**
-```
-survives_fdr    0.0000    0.1000  PASS
-  note: BH FDR q=0.1, m=3 tests (3 horizons + 0 extra)
-```
-
-**Status: PASS** — m=3 confirmed in note; previously showed m=1.
-
-### 11b. Finding 2: fdr_q was raised from 0.10 to 0.15 to make a weak signal pass
-
-**Claim:** Reverting fdr_q to 0.10 with a stronger signal (n_days=2000, n_assets=20)
-produces a PROMOTE verdict with margin, not knife-edge.
-
-**Gate margins after fix (n_days=2000, n_assets=20, rho=0.15, q=0.10, m=3):**
-
-| Gate | Observed | Threshold | Margin |
-|------|----------|-----------|--------|
-| min_abs_ic | 0.0347 | 0.0200 | +0.0147 |
-| min_ic_ir | 0.1268 | 0.0500 | +0.0768 |
-| hit_rate_wilson_lb | 0.5124 | 0.5000 | +0.0124 |
-| oos_consistency | 1.0000 | 0.6000 | +0.4000 |
-| survives_fdr (p) | 0.0000 | q=0.1000 | clear pass |
-
-**Status: PASS** — all gates clear with visible margin at q=0.10, m=3.
-
-### 11c. Finding 3: --plant-signal was a no-op with --data signal
-
-**Claim:** `--plant-signal --data signal` is redundant; user must be told.
-
-**Command:**
-```
-$ factor-lab promote mom_20 --data signal --plant-signal
-```
-
-**Output (stderr):**
-```
-Note: --plant-signal has no effect when --data=signal (signal mode always plants
-the momentum signal). Use --data synthetic --plant-signal to plant the signal in
-the base panel.
-```
-
-**Status: PASS** — note emitted; flag is not silently swallowed.
-
-### 11d. Finding 4: OOS IC = nan in reports/real-data-proof.md
-
-**Root cause:** `prove_on_real_data.py` called
-`evaluate_walk_forward(factor, df, splits, ...)` where `splits` is a `list[WalkForwardSplit]`
-but the function signature expects a `PurgedWalkForward` splitter.
-The bare `except Exception: oos_ic = float("nan")` swallowed the `AttributeError`.
-
-**Fix:** Pass `cv` (the `PurgedWalkForward` object) instead of `list(cv.split(df))`.
-
-**Status: PASS** — OOS IC will now compute correctly on next `prove_on_real_data.py` run.
-
-### 11e. Finding 5: README Limitations contradicted the repo
-
-**Claim:** README said "real-data report in progress / not committed"; `reports/real-data-proof.md` was committed.
-
-**Fix:** Updated Limitations bullet to say "Real-data report committed."
-
-**Status: PASS** — README now matches repo state.
-
-### 11f. pytest after eval-fixes pass
-
-```
-$ pytest -q
-(all tests pass — 107 original + 2 multiplicity tests + 11 CLI tests = 120 total)
-```
-
-**Status: PASS** (see section 12 for final verification output)
-
----
-
-## 12. Polish Pass — factorproof recruiter review (2026-09-27)
-
-Branch: `polish/recruiter`. All commands run in the worktree.
-
-### 12a. Real screen output (README regeneration)
-
-**Claim:** README "Real results" table must match current code output.
-
-**Command:**
-```
-$ .venv/bin/factor-lab screen --data signal --horizons 1,5,20
-```
-
-**Output:**
-```
-| Factor | H | IC | IC-IR | t-stat | Q-Spread | HR-WLB | Turnover | Coverage | FDR | Verdict |
-|--------|---|-----|-------|--------|----------|--------|----------|----------|-----|---------|
-| lookahead_control | 5 | 0.4545 | 1.9920 | 99.40 | 0.0382 | 0.6592 | 1.1982 | 1.00 | ? | REJECT |
-| rev_5 | 1 | -0.0738 | -0.2623 | -11.72 | -0.0025 | 0.4572 | 0.5227 | 1.00 | Y | REJECT |
-| rsi_14 | 1 | 0.0361 | 0.1506 | 6.71 | 0.0012 | 0.4856 | 0.3263 | 0.99 | Y | REJECT |
-| mom_20 | 1 | 0.0347 | 0.1268 | 5.64 | 0.0010 | 0.5124 | 0.2702 | 0.99 | Y | PROMOTE |
-| atr_norm_14 | 20 | -0.0360 | -0.1165 | -1.49 | -0.0069 | 0.4805 | 0.2190 | 0.99 | Y | REJECT |
-| mom_60 | 20 | 0.0316 | 0.1139 | 1.39 | 0.0070 | 0.5171 | 0.1600 | 0.97 | Y | PROMOTE |
-| vol_20 | 20 | -0.0307 | -0.0984 | -1.21 | -0.0046 | 0.4819 | 0.1446 | 0.99 | N | REJECT |
-| deflated_mom | 1 | 0.0199 | 0.0829 | 3.65 | 0.0007 | 0.5105 | 0.1679 | 0.97 | Y | REJECT |
-| skew_60 | 20 | 0.0171 | 0.0701 | 0.92 | 0.0025 | 0.5076 | 0.1625 | 0.97 | N | REJECT |
-| volume_z_20 | 1 | 0.0077 | 0.0332 | 1.48 | 0.0003 | 0.4983 | 1.3095 | 0.99 | N | REJECT |
-| noise_control | 1 | 0.0075 | 0.0331 | 1.48 | 0.0001 | 0.4937 | 1.3287 | 1.00 | N | REJECT |
-| autocorr_5 | 5 | -0.0063 | -0.0258 | -0.87 | -0.0009 | 0.4937 | 0.9851 | 1.00 | N | REJECT |
-| amihud_illiq_20 | 20 | 0.0046 | 0.0153 | 0.19 | -0.0033 | 0.4819 | 0.0874 | 0.99 | N | REJECT |
-
-Promoted (2): mom_20, mom_60
-Rejected (11): rev_5, vol_20, atr_norm_14, rsi_14, volume_z_20, amihud_illiq_20,
-               skew_60, autocorr_5, deflated_mom, noise_control, lookahead_control
-```
-
-README updated to match this output exactly. **PASS**
-
----
-
-### 12b. --plant-signal flag is not a no-op silently
-
-**Claim:** `--plant-signal` with `--data signal` prints a note; it is not silently ignored.
-
-**Command:**
-```
-$ .venv/bin/factor-lab promote mom_20 --data signal --plant-signal
-```
-
-**Output:**
-```
-Note: --plant-signal has no effect when --data=signal (signal mode always plants the
-momentum signal). Use --data synthetic --plant-signal to plant the signal in the base panel.
-Factor:  mom_20
-Verdict: PROMOTE
-...
-```
-
-`--plant-signal` removed from quickstart examples. Documented as no-op for `--data signal` only. **PASS**
-
----
-
-### 12c. Static tests badge removed, live CI badge added
-
-**Claim:** README had static `tests-107 passed` badge. Replaced with live CI badge.
-
-Old badge (removed):
-```
-![Tests](https://img.shields.io/badge/tests-107%20passed-brightgreen)
-```
-
-New badge (added):
-```
-![CI](https://github.com/AnnasMazhar/factorproof/actions/workflows/ci.yml/badge.svg)
-```
-
-**PASS**
-
----
-
-### 12d. reports/real-data-proof.md §3 q value corrected
-
-**Claim:** §3 stated "BH-FDR q=0.15"; code default is `fdr_q=0.10`.
-
-**Fix:** Changed to "BH-FDR q=0.10". Added note explaining Defl Sharpe column is 0.0000
-for all rows (diagnostic only, not in promotion gate).
-
-**PASS**
-
----
-
-### 12e. GitHub Release job added to release.yml
-
-**Claim:** release.yml had no GitHub Release creation step.
-
-**Fix:** Added `github-release` job using `softprops/action-gh-release@v2` with
-`generate_release_notes: true` and `files: dist/*`. Job runs after `build`, requires
-`contents: write` permission.
-
-**PASS**
-
----
-
-### 12f. Agent signal artifacts removed
-
-**Claim:** `reports/eval-c*.json`, `reports/mutation-c*.json`, `reports/improvements.md`
-are agent loop artifacts that should not be in the public repo.
-
-**Fix:** Updated `docs/ADVERSARIAL-REVIEW.md` to remove references to `reports/improvements.md`,
-then `git rm` all four files.
-
-**Command:**
-```
-$ git rm reports/eval-c1-p6.json reports/eval-c1-p7.json reports/mutation-c1.json reports/improvements.md
-```
-
-**Output:**
-```
-rm 'reports/eval-c1-p6.json'
-rm 'reports/eval-c1-p7.json'
-rm 'reports/improvements.md'
-rm 'reports/mutation-c1.json'
-```
-
-**PASS**
-
----
-
-### 12g. MANDATE references removed from tracked text
-
-**Claim:** EVIDENCE.md had section headings containing "MANDATE" and a git log line with "C2-1..C2-4".
-
-**Fix:** Renamed section 10 heading from "Cycle 2 Implementation Pass 1 — v0.2 MANDATE"
-to "Real-Data Proof Pass". Removed "MANDATE wording" reference. Cleaned git log line.
-
-**Verification:**
-```
-$ grep -rn "MANDATE" . --include="*.md" --include="*.py" --include="*.yml" --include="*.json"
-(no output)
-```
-
-**PASS**
-
----
-
-### 12h. Package/CLI clarification line added to README
-
-**Claim:** README did not clearly distinguish repo name from package/CLI name.
-
-**Fix:** Added below the title: "The package is `factor-lab`; the CLI is `factor-lab` (repo name `factorproof`)."
-
-**PASS**
-
----
-
-### 12i. Repo-local git author set
-
-**Claim:** git author not set at repo level.
-
-**Command:**
-```
-$ git config user.name "Syed Annas Bin Mazhar"
-$ git config user.email "28944679+AnnasMazhar@users.noreply.github.com"
-```
-
-**Verification:**
-```
-$ git config user.name
-Syed Annas Bin Mazhar
-$ git config user.email
-28944679+AnnasMazhar@users.noreply.github.com
-```
-
-**PASS**
-
----
-
-### 12j. pytest -q — final verification
-
-**Command:**
-```
-$ .venv/bin/python -m pytest --no-header -rN
-```
-
-**Output (last line):**
-```
-120 passed, 522 warnings in 290.59s (0:04:50)
-```
-
-**PASS** — 120 tests, 0 failures.
-
----
-
-### 12k. ruff check . — final verification
-
-**Command:**
-```
-$ .venv/bin/ruff check .
-```
-
-**Output:**
-```
-All checks passed!
-```
-
-**PASS**
-
----
-
-### 12l. check_no_internal_refs.py — final verification
-
-**Command:**
-```
-$ .venv/bin/python scripts/check_no_internal_refs.py
-```
-
-**Output:**
-```
-check_no_internal_refs: CLEAN — no forbidden tokens found.
-```
-
-**PASS**
-
----
-
-## 13. CPCV Wiring Pass — evaluate_cpcv, cv_method config (2026-10-03)
-
-### 13a. What was added
+Fix: pass `cv` (the `PurgedWalkForward` instance) directly, and read `wf[0].oos_mean_ic`.
 
 **New: `evaluate_cpcv` function**
 
@@ -756,35 +455,580 @@ The `oos_consistency` gate note now includes the method name for traceability.
 - `test_evaluate_walk_forward_oos_ic_not_nan` — KAT: catches the .ic_pearson attribute bug
 - `test_promote_cpcv_method_produces_decision` — KAT: cv_method='cpcv' wired into promote()
 
-### 13b. pytest after CPCV additions
+### 11b. pytest -q (full suite after changes)
 
 ```
 $ .venv/bin/python -m pytest 2>&1 | tail -1
-(test count includes new CPCV tests)
+110 passed, 2 warnings in 40.21s
 ```
 
-### 13c. Notes
+### 11c. ruff clean
 
-The CPCV path produces more OOS combinations than walk-forward (C(6,2)=15 vs 5),
-giving tighter sign-consistency estimates at the cost of smaller training sets.
-Default remains `cv_method='walk_forward'` for backward compatibility.
+```
+$ .venv/bin/ruff check .
+All checks passed!
 
-## c4-p05-implement-2 appendix (2026-10-13) — launch surfaces verified, code on lane branch
+$ .venv/bin/ruff format --check .
+22 files already formatted
+```
 
-Launch-surface pass ran on lane branch tmp-c3p10 (commit 9e5429d), which holds
-this cycle's implement-2 code delta and is merged back separately:
+### 11d. prove_on_real_data.py — OOS IC column now populated
 
-- `pytest -q`: 158 passed, 0 failed. `ruff check .` + `ruff format --check .` clean.
-- `bash examples/run_demo.sh` exit 0; README ranked table byte-identical to
-  `results/factor_table.md`; badge updated to 158 on the lane branch.
-- New byzantine test `test_promote_hostile_factor_name_clean_error`
-  (path-traversal / shell-metachar / empty factor names -> exit 1, one-line
-  Error, no traceback); hostile CLI probes also verified live (exit 1).
-- `scripts/check_real_data_proof.py` satisfied; `check_no_internal_refs.py` CLEAN.
-- `COMPARISONS.md` (re-verified 2026-10-13), `CONTRIBUTING.md`, `docs/demo.sh`
-  verified current, not rewritten.
-- `launch/topics.txt`: + `good-first-issue` (this commit; 19 tags, within 8-20).
-- Packaging: pyproject metadata complete; `.github/workflows/release.yml`
-  (trusted publishing, PYPI_PUBLISH-gated, tag==version guard) present.
-  Local wheel build not possible offline (no setuptools/wheel in venv);
-  not claimed as verified — CI builds on tag push.
+```
+$ .venv/bin/python scripts/prove_on_real_data.py --db <prices.sqlite>
+Loading data from <prices.sqlite> ...
+Dataset: 14 coins, 21,200 bars, 2021-04-29 to 2026-10-03, 60.39 MB
+Running factor evaluation (this may take a few minutes) ...
+Wrote reports/real-data-proof.md
+Wrote reports/real-data-proof.json
+
+--- Summary ---
+Promoted: 0/13
+Noise rejection rate: 10/10 (100.0%) — target >=90%
+Stability flips: 0 — target 0
+```
+
+OOS IC values (previously nan, now real numbers):
+| Factor | OOS IC |
+|--------|--------|
+| mom_20 | 0.0467 |
+| rev_5 | 0.0278 |
+| amihud_illiq_20 | -0.0512 |
+| noise_control | -0.0115 |
+| lookahead_control | 0.4171 |
+
+### 11e. check_real_data_proof.py
+
+```
+$ .venv/bin/python scripts/check_real_data_proof.py
+check_real_data_proof: all checks passed.
+PROOF_COMPLETE
+```
+
+### 11f. check_no_internal_refs.py
+
+```
+$ .venv/bin/python scripts/check_no_internal_refs.py
+check_no_internal_refs: CLEAN — no forbidden tokens found.
+```
+
+### Notes on deflated Sharpe = 0.0 (not a bug)
+
+All factors show DSR=0.0 in the real-data proof. This is mathematically correct:
+IC-IR values (~0.09) are far below SR* (~1.70, expected max from 13 trials).
+`deflated_sharpe_ratio(0.09, 13, 1938)` = ~0.00000000 — the factor scores are
+lower than expected by pure selection across 13 strategies. This is the honest
+answer on daily crypto data. The DSR of 0.0 is a real finding, not a display error.
+All factors show DSR=0.0 in the real-data proof. This is mathematically correct:
+IC-IR values (~0.09) are far below SR* (~1.70, expected max from 13 trials).
+`deflated_sharpe_ratio(0.09, 13, 1938)` = ~0.00000000 — the factor scores are
+lower than expected by pure selection across 13 strategies. This is the honest
+answer on daily crypto data. The DSR of 0.0 is a real finding, not a display error.
+The function works correctly (verified: `deflated_sharpe_ratio(0.09, 1, 1938)` = 0.9999).
+
+## 12. Cycle 2 research pass 1 (c2-p01, 2026-10-12) — MEASURED BASELINE + link probes
+
+### 12a. Cycle 1 mutation-gate baseline (authoritative: reports/mutation-c1.json)
+
+Quoted exactly, not re-derived:
+
+```
+$ cat reports/mutation-c1.json  # fields: killed, total, kill_rate, target
+  "killed": 878,
+  "total": 1977,
+  "kill_rate": 0.4441072331815883,
+  "score_raw": "878/1977",
+  "target": 0.7,
+```
+
+878/1977 mutants killed = 44.4%. Gate: 70%. The whole cycle is therefore
+improvement-directed at test strength; research passes in this cycle must not
+weaken tests to chase the number.
+
+### 12b. pytest -q (repo green before commit)
+
+```
+$ .venv/bin/python -m pytest -q > /tmp/opencode/pytest-c2p01.log 2>&1; echo "exit=$?"
+exit=0
+$ grep -c "" /tmp/opencode/pytest-c2p01.log  # 12 lines; progress rows:
+........................................................................ [ 65%]
+......................................                                   [100%]
+```
+
+72 + 38 = 110 dots, no F/E, exit 0. (Only warning: numpy RuntimeWarning in
+test_constant_factor_rejected — pre-existing, divide-by-zero on a constant
+factor, the case under test.)
+
+### 12c. ruff status (pre-existing failure, NOT this pass)
+
+```
+$ .venv/bin/ruff check .
+scripts/check_real_data_proof.py:168:1: W293 Blank line contains whitespace
+... (15 W293 errors, all in scripts/check_real_data_proof.py) ...
+Found 15 errors.
+```
+
+All 15 errors are W293 blank-line whitespace in scripts/check_real_data_proof.py,
+which carries uncommitted +109-line modifications from a parallel lane
+(git diff --stat confirms: 1 file changed, 109 insertions). Left untouched —
+not this pass's file. Everything this pass touched (docs/RESEARCH.md,
+EVIDENCE.md) is not Python and is unaffected.
+
+### 12d. Link probes (raw output, 2026-10-12)
+
+```
+$ for u in ...; do code=$(curl -s -o /dev/null -w "%{http_code}" -L --max-time 25 \
+    -A "Mozilla/5.0 (research link verification)" "$u"); echo "$code $u"; done
+200 https://www.nber.org/papers/w28682
+200 https://www.ams.org/notices/201405/rnoti-p458.pdf
+403 https://doi.org/10.1111/1468-0262.00152
+403 https://doi.org/10.1111/0022-1082.00163
+200 https://www.jstor.org/stable/1830708
+403 https://doi.org/10.1080/01621459.1994.10476870
+200 https://doi.org/10.1214/aos/1013699998
+200 https://doi.org/10.1214/aos/1176347265
+403 https://doi.org/10.1111/jofi.12365
+403 https://doi.org/10.1093/rfs/hhx132
+404 https://doi.org/10.1198/073500104000000063
+403 https://doi.org/10.1111/j.1468-0262.2005.00615.x
+200 https://www.nber.org/papers/w19804
+200 https://www.nber.org/papers/w24877
+200 https://www.nber.org/papers/w5711
+200 https://www.nber.org/papers/w2343
+200 https://arxiv.org/abs/1502.00606
+200 https://arxiv.org/abs/1207.3518
+200 https://www.jstor.org/stable/1802789
+200 https://www.jstor.org/stable/2328565
+```
+
+13 new sources at HTTP 200 (5 driving: §8.1–§8.5; 8 context: §8.6); 7 DOI probes
+at 403/404 recorded as NOT claimed (§8.7). Full per-source table: docs/RESEARCH.md §8.8-table.
+
+### 12e. Brief-correction note
+
+The pass brief states scripts/check_real_data_proof.py "is not in the repo". It
+is: tracked, 303 lines, read in full today, plus uncommitted +109-line
+modifications from a parallel lane. No checker was added by this pass (per the
+brief: the checker comes after the research); no `PROOF_COMPLETE` line is
+printed anywhere in this pass's output or files.
+
+### 12f. c2-p04-implement-1 (2026-10-12) — core hardening + 16 gap tests
+
+Measured baseline (authoritative: reports/mutation-c1.json): 878/1977 mutants
+killed = 44.4%. Gate: 70%. This pass does not re-derive that number; it adds
+tests aimed at the untested code the gate will probe next cycle.
+
+Work: new file tests/test_significance_gaps.py (16 tests, each with a named
+fault in the top-of-file docstring per the QUALITY-CONTRACT vacuity ban):
+correct_multiple_tests counts/empty (previously imported by tests but never
+called), DSR degenerate-variance clamp both signs, DSR(0,1,T)=0.5 KAT,
+_norm_ppf validation/symmetry/round-trip, min_sample_size Cohen KAT (n=25) +
+monotonicity, Wilson lb<=p_hat property + k=0 KAT, BH step-up-vs-step-down
+distinguishing KAT (p=[0.05,0.06,0.065] must reject all three), BH-superset-of-
+Bonferroni property, bootstrap constant/NaN handling. No production code
+changed; no threshold touched (do-not-tune rule).
+
+```
+$ .venv/bin/python -m pytest -q -p no:warnings
+........................................................................ [ 57%]
+......................................................                   [100%]
+126 passed in 41.06s
+```
+
+(110 pre-existing + 16 new. One new test initially asserted exact DSR==0.5 and
+failed at 0.5000000005248086 — the documented 7.5e-8 A&S CDF error; corrected
+to pytest.approx(abs=1e-6) with the reasoning in the test comment.)
+
+```
+$ .venv/bin/ruff check .
+All checks passed!
+$ .venv/bin/ruff format --check .
+23 files already formatted
+```
+
+```
+$ .venv/bin/python -m factorlab.cli promote noise_control --data signal; echo "exit=$?"
+...
+Best horizon: 20d | IC: -0.0094 | IC-IR: -0.0313
+OOS consistency: 60.00% | Observations: 1480
+
+Result: REJECT
+exit=1
+$ .venv/bin/python -m factorlab.cli promote mom_20 --data signal --plant-signal; echo "exit=$?"
+...
+Best horizon: 5d | IC: 0.0252 | IC-IR: 0.0750
+OOS consistency: 60.00% | Observations: 1475
+
+Result: PROMOTE
+exit=0
+```
+
+Honest tension recorded (not tuned): `screen --data signal` over the full
+13-factor family promotes 0/13 —
+
+```
+Promoted (0): none
+Rejected (13): mom_20, mom_60, rev_5, vol_20, atr_norm_14, rsi_14, volume_z_20, amihud_illiq_20, skew_60, autocorr_5, deflated_mom, noise_control, lookahead_control
+```
+
+— because family-wise BH-FDR rejects the weak planted signal (IC=0.0252) in a
+13-factor family, while single-factor `promote mom_20` (m=1) PROMOTEs. The
+thresholds were left untouched per the do-not-tune guard; the demo still shows
+PROMOTE (step 4) and REJECT (step 3) with exit codes enforced by run_demo.sh
+(rc=0 this pass). results/factor_table.md holds 13 data rows.
+
+Fresh-clone install: could not be fully verified from this sandbox — uv runs
+with networking disabled and pytest 8.2.2 / numpy are absent from the uv
+cache, so `uv pip install --offline -e '.[dev]'` and `-e .` both fail at
+dependency resolution (environment limitation, not a repo defect). Packaging
+metadata resolves (uv reaches project build); pyproject + uv.lock are
+committed and CI installs from network. The committed .venv path runs the full
+demo + suite green as shown above.
+
+---
+
+## Cycle 2, pass 5 (implement-2) — 2026-10-12
+
+Mutation baseline (cycle 1 gate, authoritative: reports/mutation-c1.json):
+878/1977 mutants killed = 44.4%. Gate: 70%. Not re-derived here; the delta
+this pass targets is suite strength on the byzantine surface, not the score.
+
+### 1. Lint root-cause fix (isort first-party)
+
+`ruff check` under the system ruff 0.11.12 flagged I001 on 9 files while the
+pinned ruff 0.4.10 (CI toolchain) was clean: the two versions disagreed on the
+third-party/first-party boundary because `factorlab` was never declared. Fix:
+`[tool.ruff.lint.isort] known-first-party = ["factorlab"]` in pyproject.toml.
+After the fix BOTH versions pass, plus a stray `# noqa: PLR0` (invalid rule
+code) removed from examples/cycle2_pass3_falsification.py.
+
+```
+$ .venv/bin/ruff check .
+All checks passed!
+$ ruff check .
+All checks passed!
+$ .venv/bin/ruff check .  # (0.4.10, pinned — CI toolchain)
+All checks passed!
+$ .venv/bin/ruff format --check .
+23 files already formatted
+```
+
+### 2. Byzantine fix: HTML report escaping (real finding + fix + test)
+
+`_md_table_to_html` interpolated cell text raw into report.html — a hostile
+factor/asset name such as `<script>alert(1)</script>` landed executable.
+Fix: `html.escape()` on every cell in src/factorlab/report.py. Non-vacuity
+verified: the pre-fix interpolation was reproduced inline and emits the raw
+`<script>` tag, so the new test fails without the fix.
+
+```
+$ .venv/bin/python -m pytest tests/test_adversarial.py
+24 passed, 2 warnings in 4.77s
+```
+
+New tests (fault each detects in the top-of-file docstring):
+- test_html_report_escapes_injected_markup (fails pre-fix)
+- test_cli_promote_unknown_factor_exits_nonzero_no_traceback (regression guard;
+  cmd_promote already returned 1 with "Unknown factor" on stderr)
+- test_malformed_csv_raises_value_error (regression guard; load_ohlcv_csv
+  already raised ValueError naming the missing columns)
+
+### 3. Full suite + gates
+
+```
+$ .venv/bin/python -m pytest
+129 passed, 2 warnings in 44.64s
+$ python3 scripts/check_no_internal_refs.py
+check_no_internal_refs: CLEAN — no forbidden tokens found.
+$ python3 scripts/check_real_data_proof.py
+check_real_data_proof: all checks passed.
+PROOF_COMPLETE
+```
+
+### 4. Demo + acceptance paths (verbatim tails)
+
+```
+$ bash examples/run_demo.sh
+| Factor | H | IC | IC-IR | t-stat | Q-Spread | HR-WLB | Turnover | Coverage | FDR | Verdict |
+|--------|---|-----|-------|--------|----------|--------|----------|----------|-----|---------|
+| lookahead_control | 5 | 0.4415 | 1.4899 | 65.06 | 0.0369 | 0.6510 | 1.1814 | 1.00 | ? | REJECT |
+| rev_5 | 1 | -0.0661 | -0.1916 | -7.41 | -0.0022 | 0.4653 | 0.5291 | 1.00 | Y | REJECT |
+| rsi_14 | 1 | 0.0462 | 0.1421 | 5.48 | 0.0013 | 0.4844 | 0.3334 | 0.99 | Y | REJECT |
+| skew_60 | 20 | -0.0378 | -0.1209 | -1.36 | -0.0053 | 0.4974 | 0.1672 | 0.96 | N | REJECT |
+| mom_20 | 1 | 0.0381 | 0.1109 | 4.27 | 0.0012 | 0.4986 | 0.2763 | 0.99 | N | REJECT |
+| atr_norm_14 | 20 | 0.0347 | 0.1025 | 1.18 | 0.0042 | 0.4721 | 0.2544 | 0.99 | N | REJECT |
+| mom_60 | 20 | 0.0288 | 0.0882 | 0.99 | 0.0049 | 0.5187 | 0.1560 | 0.96 | N | REJECT |
+| vol_20 | 20 | 0.0267 | 0.0776 | 0.82 | 0.0052 | 0.4741 | 0.1684 | 0.99 | N | REJECT |
+| deflated_mom | 1 | 0.0234 | 0.0721 | 2.73 | 0.0008 | 0.4993 | 0.1636 | 0.96 | N | REJECT |
+| autocorr_5 | 20 | -0.0222 | -0.0713 | -1.81 | -0.0043 | 0.4907 | 0.9868 | 1.00 | Y | REJECT |
+| volume_z_20 | 5 | 0.0108 | 0.0350 | 1.40 | 0.0010 | 0.4982 | 1.3072 | 0.99 | N | REJECT |
+| noise_control | 20 | -0.0094 | -0.0313 | -1.21 | -0.0020 | 0.4911 | 1.3184 | 1.00 | N | REJECT |
+| amihud_illiq_20 | 5 | 0.0041 | 0.0122 | 0.25 | 0.0001 | 0.4790 | 0.1038 | 0.99 | N | REJECT |
+
+=== Demo complete. Results in results/ ===
+```
+
+```
+$ .venv/bin/factor-lab promote noise_control --data signal
+Factor:  noise_control
+Verdict: REJECT
+...
+Best horizon: 20d | IC: -0.0094 | IC-IR: -0.0313
+Result: REJECT
+EXIT=1
+$ .venv/bin/factor-lab promote mom_20 --data signal --plant-signal
+...
+Best horizon: 5d | IC: 0.0252 | IC-IR: 0.0750
+OOS consistency: 60.00% | Observations: 1475
+Result: PROMOTE
+EXIT=0
+```
+
+### 5. IC / IC-IR at horizon 5 (default synthetic, seed 7)
+
+```
+mom_20 H=5 IC_pearson= 0.0107 IC-IR= 0.0317
+rsi_14 H=5 IC_pearson= 0.0173 IC-IR= 0.0545
+```
+
+### 6. Launch-surface verification (no rewrites needed)
+
+- README first screen: leads with the licence grievance ("without a
+  £100/month licence"), one plain sentence, who it is for, copy-paste
+  quickstart. Real-results table matches results/factor_table.md exactly
+  (spot-checked: lookahead_control row identical in both files).
+- COMPARISONS.md: current to 2026-10-12 (star counts + last-push dates,
+  MlFinLab-wins section honest). Verified, not recreated.
+- CONTRIBUTING.md, launch/topics.txt (18 tags), docs/demo.sh (asciinema
+  record instructions), .github/workflows/release.yml (trusted publishing,
+  tag-matches-version gate, PYPI_PUBLISH opt-in): all present and inspected.
+- pyproject.toml: installable metadata complete (scripts entry, dev extra,
+  classifiers, project.urls). `pip install factor-lab` path is the release
+  workflow above; not published yet per the pass brief.
+
+results/ artifacts regenerated by the demo run are byte-identical to the
+committed ones (no diff) — determinism holds.
+
+---
+
+## c3-p05-implement-2 (2026-10-12) — numeric-hardening fix + launch completion
+
+### 1. Baseline: repo was NOT green
+
+```
+$ .venv/bin/python -m pytest tests/test_properties.py::test_pearson_corr_self_correlation -q
+FAILED tests/test_properties.py::test_pearson_corr_self_correlation - Asserti...
+AssertionError: corr(x,x)=1.000000 should be 1.0 for std=5.27e-80
+assert 4.688292976062769e-09 < 1e-09
+Falsifying example: data=[0.0, 0.0, 1.1179560251007517e-79]
+```
+
+### 2. Root cause (verified, not guessed)
+
+```
+$ .venv/bin/python -c " ... _pearson_corr(x, x.copy()) ..."
+r = 0.999999995311707
+sums: 8.332171160393815e-159 8.332171160393815e-159
+ratio: 0.999999995311707
+```
+
+Numerator and denominator sums are bit-identical, yet s/sqrt(s*s) != 1.0:
+s*s = 6.9e-317 is BELOW float64 min-normal (2.2e-308), i.e. subnormal with
+~27 bits of precision. Fix (src/factorlab/evaluate.py `_pearson_corr`):
+rescale both inputs by max(|x|,|y|) before centering — exact under
+scale-invariance corr(aX,bY)==corr(X,Y), keeps the denominator in normal
+range. Added deterministic regression test
+`test_pearson_corr_self_correlation_tiny_magnitude` naming this fault.
+
+### 3. Green after fix
+
+```
+$ .venv/bin/python -m pytest -p no:warnings
+137 passed in 48.68s
+$ .venv/bin/ruff check .
+All checks passed!
+$ .venv/bin/ruff format --check .
+25 files already formatted
+```
+
+### 4. Demo re-run after the numeric fix (direct venv binary; `uv run`
+### wrapper exceeds the 120 s tool budget, same pipeline as run_demo.sh)
+
+```
+$ .venv/bin/factor-lab screen --data signal --horizons 1,5,20 --out results/
+SCREEN_EXIT=0
+$ git diff --stat results/   # empty — published numbers byte-identical
+$ .venv/bin/factor-lab promote noise_control --data signal
+Best horizon: 20d | IC: -0.0094 | IC-IR: -0.0313
+OOS consistency: 60.00% | Observations: 1480
+Result: REJECT
+NOISE_EXIT=1
+$ .venv/bin/factor-lab promote mom_20 --data signal --plant-signal
+Best horizon: 5d | IC: 0.0252 | IC-IR: 0.0750
+OOS consistency: 60.00% | Observations: 1475
+Result: PROMOTE
+MOM_EXIT=0
+```
+
+Screen table matches README §Real results row-for-row (lookahead_control
+H=5 IC=0.4415 IC-IR=1.4899 t=65.06; rev_5 H=1 IC=-0.0661; ...;
+amihud H=5 IC=0.0041). Promoted (0): none. Rejected (13): all listed.
+
+### 5. Launch-surface completion this pass
+
+- launch/topics.txt: still 18 tags (8-20 per LAUNCH-PLAN); swapped the two
+  lowest-discovery tags (`financial-engineering`, `research-software`) for
+  the two required plan tags that were missing (`machine-learning`,
+  `quant`). All 10 plan-required tags now present.
+- README badge: 133 -> 137 passed (matches §3).
+- Verified, not recreated: COMPARISONS.md (current to 2026-10-12),
+  CONTRIBUTING.md, docs/demo.sh, .github/workflows/release.yml
+  (trusted publishing, tag-matches-version gate, PYPI_PUBLISH opt-in),
+  pyproject.toml (name factor-lab 0.1.0, 4 runtime deps).
+
+### 6. Mandate gates
+
+```
+$ .venv/bin/python scripts/check_no_internal_refs.py
+check_no_internal_refs: CLEAN — no forbidden tokens found.
+$ .venv/bin/python scripts/check_real_data_proof.py
+CHECKER_EXIT=0
+```
+
+---
+
+## Cycle 4, implement pass 1 (2026-10-13) — F-R12/F-R14/F-R15 transfers
+
+Scope: the two transfers §14.8 assigns to implement (report-update sentence
+with named bias direction; dataset-summary sentences with gap + asymmetry)
+plus the F-R14 staleness diagnostic armed from the existing volume column.
+No gate thresholds changed. No MARKET-VERDICTS position touched.
+
+### 1. New core module + tests
+
+```
+$ .venv/bin/python -m pytest tests/test_microstructure.py -p no:warnings
+15 passed in 1.00s
+```
+
+`src/factorlab/microstructure.py`: `roll_spread` (Roll 1984, NaN when
+imaginary — never clamped), `lag1_autocorr`/`lag1_autocov`, `zero_volume_share`,
+`staleness_flags` (5%), `find_missing_dates`, `panel_bias_direction`,
+`dsr_bias_caveat`. KAT values hand-computed in the test header
+(cov=-0.00045, spread=0.0424264, rho=-0.8525371) and independently verified.
+
+### 2. Full suite + lint after the change
+
+```
+$ .venv/bin/python -m pytest -p no:warnings
+157 passed in 55.23s
+$ .venv/bin/ruff check .
+All checks passed!
+$ .venv/bin/ruff format --check .
+27 files already formatted
+```
+
+### 3. Real-data proof re-run (read-only; dataset backfilled since c4p3)
+
+```
+$ uv run python scripts/prove_on_real_data.py --db <prices.sqlite> --horizons 1,5,20 --noise-factors 10
+Loading data from <prices.sqlite> ...
+Dataset: 14 coins, 21,320 bars, 2021-04-29 to 2026-10-13, 60.23 MB
+Running factor evaluation (this may take a few minutes) ...
+Wrote reports/real-data-proof.md
+Wrote reports/real-data-proof.json
+
+--- Summary ---
+Promoted: 0/13
+Noise rejection rate: 10/10 (100.0%) — target >=90%
+Stability flips: 0 — target 0
+```
+
+(Path above is the local dataset path with the host prefix redacted per F1;
+the committed report records only `prices.sqlite`, size, and mtime.)
+
+### 4. Honest discrepancies vs the §14 research record (all favour the gate)
+
+(a) 2026-04-30 feed gap (c4p3 §14.3) is ABSENT on re-query — backfilled:
+
+```
+rows on 2026-04-30: 3744
+rows on 2026-04-29: 3744
+rows on 2026-05-01: 3744
+```
+
+The report therefore states "Feed gaps: none". Per §14.8 this falsifies the
+c4p3 record on that point; the counts above are the new record. Verdicts are
+unaffected (a backfilled gap only adds legitimate bars).
+
+(b) Raw zero-volume counts confirm §14.3 exactly (ATOM 15 rows, FIL 7 rows,
+1 row on every other coin) but the "~0.75%" share in §14.3 mixes estimands:
+15/54,018 raw rows = 0.03%. The report states both estimands — raw-level
+worst coin ATOM 15/54,018 (0.03%), aggregated-daily max 0.05% — both two
+orders of magnitude below the 5% trigger. Diagnostic armed and silent, which
+is the correct output; it is non-vacuous (zero-volume rows exist).
+
+(c) Roll spreads in the report are computed on DAILY aggregated log-returns
+(the strategy frequency), not on raw intraday rows like the §14.1 /tmp table,
+so magnitudes differ (e.g. BTC 0.011566 daily vs 0.002328 intraday). The
+report states the frequency explicitly. Sign agreement: ARB/FIL/RENDER are
+imaginary (positive lag-1 cov) at both frequencies; TON is imaginary at daily
+frequency (rho=+0.077 over 692 bars) but real at intraday frequency — a
+short-panel effect, recorded here, not hidden.
+
+(d) Coverage asymmetry is now machine-generated, not hand-typed: AAVE 1 bar,
+FIL 573 bars, RENDER 810 bars, TON 692 bars (all <50% of the panel median).
+FIL sparsity (573 daily bars over a 2021→present range) was not in the §14.3
+record and is now stated in the report.
+
+### 5. Mandate gates after this pass
+
+```
+$ python3 scripts/check_real_data_proof.py
+check_real_data_proof: all checks passed.
+$ python3 scripts/check_no_internal_refs.py
+check_no_internal_refs: CLEAN — no forbidden tokens found.
+```
+
+### 6. Acceptance-criteria spot checks (synthetic demo, unchanged behaviour)
+
+```
+$ .venv/bin/factor-lab promote noise_control --data signal
+Best horizon: 20d | IC: -0.0094 | IC-IR: -0.0313
+OOS consistency: 60.00% | Observations: 1480
+Result: REJECT
+NOISE_EXIT=1
+$ .venv/bin/factor-lab promote mom_20 --data signal --plant-signal
+Best horizon: 5d | IC: 0.0252 | IC-IR: 0.0750
+OOS consistency: 60.00% | Observations: 1475
+Result: PROMOTE
+MOM_EXIT=0
+```
+
+noise_control REJECTS (exit 1); planted-signal mom_20 PROMOTES (exit 0).
+README §Real results untouched — demo numbers byte-identical to the table.
+
+## c4-p05-implement-2 (2026-10-13) — launch-readiness + byzantine CLI hardening
+
+```
+$ .venv/bin/python -m pytest -q -p no:warnings
+72 dots [...45%] + 72 dots [...91%] + 14 dots [100%] — 158 passed, 0 failed
+$ .venv/bin/python -m ruff check . && .venv/bin/python -m ruff format --check .
+All checks passed! / 27 files already formatted
+$ bash examples/run_demo.sh (exit=0); README ranked table diffed byte-identical
+$ .venv/bin/factor-lab promote "../../etc/passwd" -> hostile-factor-exit=1
+$ .venv/bin/factor-lab screen --data signal --horizons abc -> bad-horizons-exit=1
+$ .venv/bin/python scripts/check_no_internal_refs.py
+check_no_internal_refs: CLEAN — no forbidden tokens found.
+$ .venv/bin/python scripts/check_real_data_proof.py (exit=0, checker satisfied)
+```
+
+Changes: tests/test_cli.py + test_promote_hostile_factor_name_clean_error
+(path-traversal / shell-metachar / empty factor names -> exit 1, one-line
+Error, no traceback); README badge 141 -> 158 passed; launch/topics.txt +
+good-first-issue (19 tags, within 8-20). COMPARISONS.md, CONTRIBUTING.md,
+docs/demo.sh verified current — not rewritten. Packaging: pyproject metadata
+complete, release.yml (trusted publishing, PYPI_PUBLISH-gated, tag=version
+guard) present; local wheel build not possible offline (no setuptools/wheel in
+venv, `uv build --offline` needs registry) — CI builds on tag push. Not
+claimed as verified locally.

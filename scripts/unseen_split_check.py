@@ -31,6 +31,7 @@ sys.path.insert(0, str(_REPO_ROOT / "src"))
 sys.path.insert(0, str(_REPO_ROOT / "scripts"))
 
 import prove_on_real_data as pur  # noqa: E402
+
 from factorlab.cv import PurgedWalkForward  # noqa: E402
 from factorlab.evaluate import evaluate_factor  # noqa: E402
 from factorlab.factors import REGISTRY, get_factor  # noqa: E402

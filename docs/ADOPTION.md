@@ -820,7 +820,6 @@ measured output in §8.2 (4:48 wall), three executed failure-mode findings in §
 *Cycle 3 pass 3 (2026-10-12): §9 — Tuesday recipe confirmed without re-run, F-R10 single-coin-drop
 executed (rev_5 robust, volume_z_20 ATOM-fragile), ecosystem re-probed (no watch item fired);
 open items closed in docs/RESEARCH.md §11.*
-
 ## 11. Cycle 5 update — applicability, closed (2026-10-13, pass c5-p03)
 
 This pass closes every open item from passes 1–2 in cycle 5 (dispositions in

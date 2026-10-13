@@ -50,6 +50,16 @@ sys.path.insert(0, str(_REPO_ROOT / "src"))
 
 from factorlab.evaluate import evaluate_factor  # noqa: E402
 from factorlab.factors import REGISTRY, get_factor  # noqa: E402
+from factorlab.microstructure import (  # noqa: E402
+    STALENESS_THRESHOLD,
+    dsr_bias_caveat,
+    find_missing_dates,
+    lag1_autocorr,
+    panel_bias_direction,
+    roll_spread,
+    staleness_flags,
+    zero_volume_share,
+)
 from factorlab.promote import PromotionConfig, promote  # noqa: E402
 from factorlab.significance import (  # noqa: E402
     _norm_cdf,
@@ -137,10 +147,42 @@ def load_real_data(db_path: Path) -> pd.DataFrame:
     return df_daily
 
 
+def raw_zero_volume_summary(db_path: Path) -> dict:
+    """Max raw-level zero-volume share per coin (F-R14 research estimand).
+
+    The daily panel aggregates intraday volume by sum, so a day is zero-volume
+    only when every raw row in it is. The research record (§14.3) counts raw
+    zero-volume rows instead. Both estimands must stay silent on this panel;
+    this function returns the raw-level numbers for the report. Read-only.
+    """
+    uri = f"file:{db_path}?mode=ro"
+    con = sqlite3.connect(uri, uri=True)
+    try:
+        rows = con.execute(
+            "SELECT coin, SUM(volume <= 0), COUNT(*) FROM candles GROUP BY coin"
+        ).fetchall()
+    finally:
+        con.close()
+    worst_coin, worst_n, worst_tot = max(rows, key=lambda r: r[1] / r[2])
+    return {
+        "worst_coin": worst_coin,
+        "worst_zero_rows": int(worst_n),
+        "worst_total_rows": int(worst_tot),
+        "worst_share": float(worst_n) / float(worst_tot),
+    }
+
+
+def _bars_txt(n: int) -> str:
+    """Pluralise a bar count without hand-rolled grammar bugs."""
+    return f"{n:,} bar" if n == 1 else f"{n:,} bars"
+
+
 def dataset_summary(df: pd.DataFrame, db_path: Path) -> dict:
     """Return a dict of aggregate dataset statistics (no raw rows).
 
-    df is the daily-aggregated panel.
+    df is the daily-aggregated panel. Includes the F-R14 microstructure
+    diagnostics (feed gaps, per-coin coverage asymmetry, zero-volume
+    staleness shares) and the F-R15 panel autocorrelation direction.
     """
     coins = sorted(df["asset"].unique().tolist())
     date_min = df["date"].min().strftime("%Y-%m-%d")
@@ -149,6 +191,7 @@ def dataset_summary(df: pd.DataFrame, db_path: Path) -> dict:
     n_coins = len(coins)
     db_size_mb = round(db_path.stat().st_size / 1_048_576, 2)
     db_mtime = time.strftime("%Y-%m-%d %H:%M UTC", time.gmtime(db_path.stat().st_mtime))
+    micro = microstructure_panel(df, db_path)
     return {
         "coins": coins,
         "n_coins": n_coins,
@@ -157,6 +200,58 @@ def dataset_summary(df: pd.DataFrame, db_path: Path) -> dict:
         "granularity": "daily (aggregated from raw intraday where applicable)",
         "db_size_mb": db_size_mb,
         "db_last_modified": db_mtime,
+        "microstructure": micro,
+    }
+
+
+def microstructure_panel(df: pd.DataFrame, db_path: Path) -> dict:
+    """Per-coin microstructure diagnostics on the daily panel (F-R12/F-R14/F-R15).
+
+    Returns feed-gap dates, per-coin bar counts, zero-volume shares with
+    staleness flags, per-coin lag-1 autocorrelations and Roll spreads, the
+    panel bias direction, and the direction-named DSR caveat sentence.
+    All aggregates — no raw rows leave this function.
+    """
+    gaps = [d.strftime("%Y-%m-%d") for d in find_missing_dates(df["date"])]
+
+    per_coin: dict[str, dict] = {}
+    for coin, grp in df.groupby("asset"):
+        g = grp.sort_values("date")
+        closes = g["close"].to_numpy(dtype=float)
+        vols = g["volume"].to_numpy(dtype=float)
+        rets = np.diff(np.log(closes)) if closes.size >= 2 else np.array([])
+        rho = lag1_autocorr(rets) if rets.size >= 2 else float("nan")
+        spr = roll_spread(rets) if rets.size >= 2 else float("nan")
+        per_coin[str(coin)] = {
+            "n_bars": int(len(g)),
+            "first_date": str(g["date"].min())[:10],
+            "zero_volume_share": zero_volume_share(vols),
+            "lag1_autocorr": rho,
+            "roll_spread": spr,
+        }
+
+    shares = {c: v["zero_volume_share"] for c, v in per_coin.items()}
+    flags = staleness_flags(shares, STALENESS_THRESHOLD)
+    rhos = {c: v["lag1_autocorr"] for c, v in per_coin.items()}
+    direction = panel_bias_direction(rhos)
+    finite_rhos = [r for r in rhos.values() if isinstance(r, float) and math.isfinite(r)]
+    max_abs_rho = max((abs(r) for r in finite_rhos), default=float("nan"))
+
+    counts = {c: v["n_bars"] for c, v in per_coin.items()}
+    median_bars = float(np.median(list(counts.values()))) if counts else 0.0
+    thin = sorted([c for c, n in counts.items() if median_bars > 0 and n < 0.5 * median_bars])
+
+    raw_zv = raw_zero_volume_summary(db_path)
+    return {
+        "feed_gaps": gaps,
+        "per_coin": per_coin,
+        "staleness_threshold": STALENESS_THRESHOLD,
+        "staleness_flags": flags,
+        "panel_bias_direction": direction,
+        "max_abs_lag1_autocorr": max_abs_rho,
+        "thin_coins": thin,
+        "raw_zero_volume": raw_zv,
+        "dsr_bias_caveat": dsr_bias_caveat(direction, max_abs_rho),
     }
 
 
@@ -460,6 +555,60 @@ def write_report(
     md_lines.append(f"- **Granularity:** {summary['granularity']}")
     md_lines.append(f"- **Dataset size:** {summary['db_size_mb']} MB")
     md_lines.append(f"- **Last modified:** {summary['db_last_modified']}")
+    micro = summary.get("microstructure", {})
+    gaps = micro.get("feed_gaps", [])
+    if gaps:
+        md_lines.append(
+            f"- **Feed gaps (no coin traded):** {', '.join(gaps)} " "(missing data, not staleness)"
+        )
+    else:
+        md_lines.append("- **Feed gaps (no coin traded):** none")
+    per_coin = micro.get("per_coin", {})
+    thin = micro.get("thin_coins", [])
+    if thin:
+        thin_txt = ", ".join(
+            f"{c} ({_bars_txt(per_coin[c]['n_bars'])} from {per_coin[c]['first_date']})"
+            for c in thin
+        )
+        md_lines.append(f"- **Coverage asymmetry:** {thin_txt}")
+    max_share = max((v.get("zero_volume_share", 0.0) for v in per_coin.values()), default=0.0)
+    flagged = sorted(c for c, f in micro.get("staleness_flags", {}).items() if f)
+    raw_zv = micro.get("raw_zero_volume", {})
+    md_lines.append(
+        f"- **Staleness:** max zero-volume share {max_share:.2%} of aggregated daily bars "
+        f"(trigger: >{micro.get('staleness_threshold', 0.05):.0%} of a coin's bars); "
+        f"raw-level worst coin {raw_zv.get('worst_coin', '?')}: "
+        f"{raw_zv.get('worst_zero_rows', 0)} zero-volume rows of "
+        f"{raw_zv.get('worst_total_rows', 0):,} "
+        f"({raw_zv.get('worst_share', 0.0):.2%}). "
+        f"Flagged coins: {', '.join(flagged) if flagged else 'none — diagnostic silent'}"
+    )
+    md_lines.append("")
+
+    # --- F-R12/F-R15 microstructure subsection (unnumbered: keeps §7/§8 headers stable) ---
+    md_lines.append("### Microstructure diagnostics\n")
+    md_lines.append(
+        "Lag-1 rho and Roll spreads are computed on daily aggregated log-returns "
+        "(the strategy frequency), not on raw intraday rows. "
+        "`n/a` spread = imaginary (positive lag-1 covariance: no bounce detectable)."
+    )
+    md_lines.append("")
+    md_lines.append("| Coin | lag-1 rho | Roll spread | Zero-vol share |")
+    md_lines.append("|------|-----------|-------------|----------------|")
+    for coin in sorted(per_coin):
+        v = per_coin[coin]
+        rho = v.get("lag1_autocorr", float("nan"))
+        spr = v.get("roll_spread", float("nan"))
+        rho_txt = f"{rho:.4f}" if isinstance(rho, float) and math.isfinite(rho) else "n/a"
+        spr_txt = f"{spr:.6f}" if isinstance(spr, float) and math.isfinite(spr) else "n/a"
+        md_lines.append(
+            f"| {coin} | {rho_txt} | {spr_txt} | {v.get('zero_volume_share', 0.0):.2%} |"
+        )
+    md_lines.append("")
+    md_lines.append(
+        f"Panel bias direction: **{micro.get('panel_bias_direction', 'unclassified')}**. "
+        f"{micro.get('dsr_bias_caveat', '')}"
+    )
     md_lines.append("")
 
     # --- F2 section 2: per-factor table ---
@@ -572,6 +721,9 @@ def write_report(
         "The effective number of independent tests is less than 13, making BH conservative "
         "(over-rejects), not anti-conservative."
     )
+    caveat = summary.get("microstructure", {}).get("dsr_bias_caveat", "")
+    if caveat:
+        md_lines.append(f"- **DSR magnitudes are bounds, not point estimates.** {caveat}")
     md_lines.append("")
 
     # Write markdown

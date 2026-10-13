@@ -553,12 +553,23 @@ def _pearson_corr(x: np.ndarray, y: np.ndarray) -> float:
 
     Reference: Pearson (1895) Philosophical Transactions, Series A, 187:253-318.
     corr(X, Y) = cov(X,Y) / (std(X) * std(Y))
-              = sum((x-xbar)*(y-ybar)) / sqrt(sum((x-xbar)^2) * sum((y-ybar)^2))
+               = sum((x-xbar)*(y-ybar)) / sqrt(sum((x-xbar)^2) * sum((y-ybar)^2))
+
+    Scale-invariance note: corr(a*X, b*Y) == corr(X, Y) for a, b > 0, so both
+    inputs are first rescaled by max(|X|, |Y|). Without this, inputs with
+    |x| ~ 1e-79 produce a denominator sum-of-squares ~1e-317, which is
+    subnormal in float64 (min normal 2.2e-308, ~27 bits of precision left),
+    and corr(x, x) comes back as 0.9999999953 instead of 1.0.
     """
     if len(x) < 2:  # noqa: PLR2004
         return float("nan")
-    xd = x - x.mean()
-    yd = y - y.mean()
+    scale = max(float(np.max(np.abs(x))), float(np.max(np.abs(y))))
+    if scale == 0:
+        return float("nan")
+    xs = x / scale
+    ys = y / scale
+    xd = xs - xs.mean()
+    yd = ys - ys.mean()
     denom = math.sqrt((xd**2).sum() * (yd**2).sum())
     if denom == 0:
         return float("nan")

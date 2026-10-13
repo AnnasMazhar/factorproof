@@ -29,8 +29,30 @@ Faults detected per test:
     test_check_lookahead_source_finds_negative_shifts:
         Fault: check_lookahead_source() missing negative-shift regex, returning [] for
         a factor that contains .shift(-2) and .shift(-5).
-    test_clean_factor_no_negative_shifts:
-        Fault: check_lookahead_source() false positive on clean factors.
+    test_legitimate_factor_passes_runtime_check:
+        Fault: check_lookahead_runtime() false positive on clean factors.
+    test_runtime_check_direction_sensitive_pure_future_factor (F-T5 FIX):
+        Fault: check_lookahead_runtime() correlating against PAST returns
+        (shift(-h) inverted to shift(h)) — the arrow-of-time inversion the
+        smoothed-closure test cannot see because smoothing correlates 0.79
+        with past returns too.
+    test_html_report_escapes_injected_markup:
+        Fault: _md_table_to_html() interpolating raw markup into the HTML
+        report (stored-XSS vector via hostile factor/asset names).
+    test_cli_promote_unknown_factor_exits_nonzero_no_traceback:
+        Fault: cmd_promote() letting KeyError propagate as a traceback
+        (or exiting 0) on an unknown factor name.
+    test_malformed_csv_raises_value_error:
+        Fault: load_ohlcv_csv() silently accepting a CSV with missing
+        columns and producing garbage downstream.
+    test_gap_aimed_leak_rejected_by_dense_tiling (F-B3 FIX):
+        Fault: quartile-spaced perturbation leaving ~355-date gaps a leak
+        can aim at — future reads confined to gaps dodge every gate and
+        flip REJECT into PROMOTE.
+    test_proof_checker_rejects_forged_metrics (F-C2 FIX):
+        Fault: check_real_data_proof.py trusting the JSON's claimed numbers
+        without comparing them to the markdown table (hand-edited JSON
+        printing PROOF_COMPLETE).
 """
 
 from __future__ import annotations
@@ -40,6 +62,7 @@ import math
 import numpy as np
 import pandas as pd
 import pytest
+
 from factorlab.data import synthetic_ohlcv
 from factorlab.factors import get_factor
 
@@ -745,3 +768,485 @@ def test_legitimate_factor_passes_runtime_check():
         f"Legitimate factor mom_20 flagged as lookahead! Reason: {reason}. "
         "Runtime check threshold may be too sensitive."
     )
+
+
+def test_runtime_check_direction_sensitive_pure_future_factor():
+    """F-T5 FIX: the runtime check must pin the arrow of time, not just the verdict.
+
+    Fault detected: inverting the check's direction (`close.shift(-h)` mutated
+    to `close.shift(h)`, correlating factor values against PAST returns) leaves
+    test_closure_lookahead_rejected_by_runtime_check green, because that test's
+    smoothed-lookahead factor correlates with past returns at |corr| up to 0.79
+    (c2-p10 §3: past h=5 corr=-0.7878) — above the 0.30 threshold either way.
+
+    This test uses a PURE (unsmoothed) future-return factor hidden behind the
+    same closure-variable indirection. On synthetic data (seed 7) it correlates
+    1.0000 with future returns at h=5 but at most 0.0724 in magnitude with past
+    returns at any horizon — so it is flagged if and only if the check reads
+    the future. Under the direction-inverted mutant the check computes the
+    past correlations (~0), finds nothing above threshold, and this test fails.
+
+    A naive verdict-only test without the past-correlation precondition below
+    would go vacuous if the data ever changed; the precondition makes that
+    failure loud instead of silent.
+    """
+    from factorlab.cv import check_lookahead_runtime
+    from factorlab.data import synthetic_ohlcv
+    from factorlab.factors.base import Factor
+
+    shift_amount = -5
+
+    class PureFutureFactor(Factor):
+        name = "pure_future"
+        category = "attack"
+        description = "Unsmoothed future return hidden via closure variable"
+        params = {}
+        uses_future_data = False
+
+        def compute(self, df):
+            close = df.pivot(index="date", columns="asset", values="close")
+            future_ret = close.shift(shift_amount) / close - 1
+            factor_vals = future_ret.stack()
+            factor_vals.index.names = ["date", "asset"]
+            return factor_vals
+
+    df = synthetic_ohlcv(n_days=1500, n_assets=12, seed=7, plant_signal=True)
+    factor = PureFutureFactor()
+
+    # Precondition: this factor distinguishes the arrow of time. Past-return
+    # correlations must stay well below the 0.30 detection threshold at every
+    # probed horizon; otherwise the direction claim below is vacuous.
+    close = df.pivot(index="date", columns="asset", values="close")
+    factor_vals = factor.compute(df)
+    max_past_corr = 0.0
+    for h in (1, 5, 10, 20):
+        past_ret = (close.shift(h) / close - 1).stack()
+        common = factor_vals.index.intersection(past_ret.index)
+        fv = factor_vals.loc[common].values
+        pr = past_ret.loc[common].values
+        mask = ~(np.isnan(fv) | np.isnan(pr))
+        corr = float(np.corrcoef(fv[mask], pr[mask])[0, 1])
+        max_past_corr = max(max_past_corr, abs(corr))
+    assert max_past_corr < 0.15, (
+        f"precondition broken: pure-future factor correlates {max_past_corr:.4f} "
+        "with past returns — it no longer distinguishes check direction; "
+        "re-derive the attack shape instead of weakening this bound."
+    )
+
+    is_lookahead, reason = check_lookahead_runtime(factor, df, threshold=0.30)
+    assert is_lookahead, (
+        f"Pure-future factor NOT detected by runtime check! Reason: {reason}. "
+        "The check must flag a factor perfectly correlated (1.0) with future returns."
+    )
+    assert "future returns" in reason, f"unexpected reason: {reason}"
+
+
+# ---------------------------------------------------------------------------
+# Hostile-output and hostile-input cases (cycle 2, implement-2)
+# ---------------------------------------------------------------------------
+
+
+def test_html_report_escapes_injected_markup():
+    """Byzantine: a hostile factor name must not break out of the HTML report.
+
+    Fault detected: _md_table_to_html() interpolating cell text raw, so a
+    name like "<script>alert(1)</script>" lands executable in report.html.
+    A naive implementation without escaping fails this test.
+    """
+    from factorlab.report import _md_table_to_html
+
+    md = (
+        "| factor | ic |\n"
+        "|---|---|\n"
+        "| <script>alert(1)</script> | 0.0500 |\n"
+        '| <img src=x onerror="pwn()"> | 0.0100 |\n'
+    )
+    out = _md_table_to_html(md)
+    assert "<script>" not in out, f"raw script tag in HTML output: {out}"
+    assert "<img" not in out, f"raw img tag in HTML output: {out}"
+    assert "&lt;script&gt;" in out, f"expected escaped markup, got: {out}"
+
+
+def test_cli_promote_unknown_factor_exits_nonzero_no_traceback(capsys):
+    """Hostile user: `promote` with a garbage factor name must exit 1 cleanly.
+
+    Fault detected: KeyError from get_factor() propagating as a traceback,
+    or the command exiting 0 on invalid input.
+    """
+    import argparse
+
+    from factorlab.cli import cmd_promote
+
+    args = argparse.Namespace(
+        factor="'; DROP TABLE factors; --",
+        data="noise",
+        seed=7,
+        plant_signal=False,
+    )
+    rc = cmd_promote(args)
+    captured = capsys.readouterr()
+    assert rc == 1, f"expected exit 1 for unknown factor, got {rc}"
+    assert "Traceback" not in captured.err, f"traceback leaked: {captured.err}"
+    assert "Unknown factor" in captured.err, f"expected helpful error: {captured.err}"
+
+
+def test_malformed_csv_raises_value_error(tmp_path):
+    """Malformed input: a CSV missing required OHLCV columns must be rejected.
+
+    Fault detected: load_ohlcv_csv() silently accepting a short-column CSV
+    and producing garbage frames downstream.
+    """
+    from factorlab.data import load_ohlcv_csv
+
+    bad = tmp_path / "bad.csv"
+    bad.write_text("date,asset,close\n2021-01-01,AAA,100.0\n")
+    with pytest.raises(ValueError, match="missing required columns"):
+        load_ohlcv_csv(bad)
+
+
+# ---------------------------------------------------------------------------
+# Perturbation lookahead gate (cycle 2, adversarial-2: F-B1 fix)
+# ---------------------------------------------------------------------------
+
+
+def _diluted_roll_leak(weight: float):
+    """Build a factor blending clean momentum with `weight` of future data.
+
+    The leak uses np.roll (no .shift literal, so Gate 0.5 source inspection
+    sees nothing) inside a module-level helper (closure-style indirection),
+    and the small weight keeps |corr| with future returns under the Gate 0.75
+    threshold of 0.30. This is the F-B1 attack shape.
+    """
+    import numpy as np
+    import pandas as pd
+
+    from factorlab.factors.base import Factor
+
+    shift_amount = -5
+
+    class DilutedLeak(Factor):
+        name = "diluted_leak"
+        category = "attack"
+        description = "momentum blended with a small future-data admixture"
+        params = {}
+        uses_future_data = False
+
+        def compute(self, df, _w=weight):
+            close = df.pivot(index="date", columns="asset", values="close")
+            mom = close.pct_change(20)
+            lead = (
+                pd.DataFrame(
+                    np.roll(close.values, shift_amount, axis=0),
+                    index=close.index,
+                    columns=close.columns,
+                )
+                / close
+                - 1
+            )
+            blend = (1 - _w) * mom.fillna(0) + _w * lead.fillna(0)
+            vals = blend.stack()
+            vals.index.names = ["date", "asset"]
+            return vals
+
+    factor = DilutedLeak()
+    factor.name = f"diluted_leak_{weight}"
+    return factor
+
+
+def test_diluted_leak_rejected_by_perturbation_gate():
+    """F-B1 FIX: a 5% future-data admixture must be rejected by Gate 0.85.
+
+    Fault detected: Gate 0.75 (correlation > 0.30) and Gate 0.5 (source
+    inspection) both pass on this shape, and the admixture flips the verdict
+    (clean blend rejects at IC=0.0065; +5% leak promotes at IC=0.0488 on
+    plain synthetic data, seed 7). A naive gate without the perturbation
+    test promotes future-reading factors. The perturbation check flags it
+    because past outputs change when only future inputs are perturbed.
+    """
+    from factorlab.cv import (
+        check_lookahead_perturbation,
+        check_lookahead_runtime,
+        check_lookahead_source,
+    )
+    from factorlab.data import synthetic_ohlcv
+    from factorlab.promote import promote
+
+    df = synthetic_ohlcv(n_days=1500, n_assets=12, seed=7)
+    factor = _diluted_roll_leak(0.05)
+
+    # Precondition: both older gates are blind to this shape.
+    assert check_lookahead_source(factor) == []
+    flagged, _ = check_lookahead_runtime(factor, df, threshold=0.30)
+    assert not flagged, "precondition broken: runtime check now fires; test needs update"
+
+    is_lookahead, reason = check_lookahead_perturbation(factor, df)
+    assert is_lookahead, f"perturbation check missed the 5% leak: {reason}"
+
+    decision = promote(factor, df)
+    assert (
+        decision.verdict == "reject"
+    ), f"diluted leak promoted: {[ (r.code, r.passed) for r in decision.reasons ]}"
+    codes = [r.code for r in decision.reasons if not r.passed]
+    assert "no_future_dependence" in codes, f"expected no_future_dependence FAIL, got {codes}"
+
+
+def test_perturbation_no_false_positives_on_library():
+    """F-B1 FIX counterpart: no shipped factor may trip the perturbation gate.
+
+    Fault detected: a perturbation threshold with any tolerance margin, or a
+    perturbation that alters past inputs, would flag causal factors. The
+    check perturbs only future rows and demands exact past-output stability,
+    so all 12 library factors plus noise_control must report zero diffs.
+    """
+    from factorlab.cv import check_lookahead_perturbation
+    from factorlab.data import synthetic_ohlcv
+    from factorlab.factors import REGISTRY, get_factor
+
+    df = synthetic_ohlcv(n_days=1500, n_assets=12, seed=7)
+    for name in REGISTRY.keys():
+        if name == "lookahead_control":
+            continue  # deliberate positive control — covered by test_perturbation_flags_registered_lookahead_control
+        flagged, reason = check_lookahead_perturbation(get_factor(name), df)
+        assert not flagged, f"library factor '{name}' flagged as lookahead: {reason}"
+
+
+def test_perturbation_flags_registered_lookahead_control():
+    """F-B1 FIX: check_lookahead_perturbation must flag lookahead_control directly.
+
+    Fault detected: perturbation comparing the wrong date window (e.g. dates
+    inside the perturbed tail) would miss a small-window lookahead. The
+    registered control leaks a few days ahead, so only past-window
+    comparison catches it.
+    """
+    from factorlab.cv import check_lookahead_perturbation
+    from factorlab.data import synthetic_ohlcv
+    from factorlab.factors import get_factor
+
+    df = synthetic_ohlcv(n_days=1500, n_assets=12, seed=7)
+    flagged, reason = check_lookahead_perturbation(get_factor("lookahead_control"), df)
+    assert flagged, f"lookahead_control not flagged by perturbation check: {reason}"
+
+
+def _windowed_early_leak(weight: float = 0.10):
+    """Build a leak confined to dates far from the tail (F-B2 shape).
+
+    Uses future returns only for dates before (T - 60 days), clean momentum
+    after. A tail-only perturbation check never perturbs a row this factor
+    reads from the future, so it stays blind while the admixture flips the
+    verdict (clean twin rejects at IC=0.0074/FDR p=0.42; +10% early leak
+    promotes at IC=0.079 on plain synthetic data, seed 7).
+    """
+    import numpy as np
+    import pandas as pd
+
+    from factorlab.factors.base import Factor
+
+    _w = weight
+
+    class WindowedLeak(Factor):
+        name = "windowed_early_leak"
+        category = "attack"
+        description = "future-data admixture confined to early dates"
+        params = {}
+        uses_future_data = False  # lie: uses close.shift(-5) on early dates
+
+        def compute(self, df: pd.DataFrame) -> pd.Series:
+            close = df.pivot(index="date", columns="asset", values="close")
+            mom = close / close.shift(20) - 1
+            # Future leg via np.roll: no `.shift(-N)` literal anywhere, so
+            # Gate 0.5 source inspection stays blind (the realistic shape —
+            # a literal negative shift would already be caught at Gate 0.5).
+            lead = pd.DataFrame(
+                np.roll(close.values, -5, axis=0),
+                index=close.index,
+                columns=close.columns,
+            )
+            fut = lead / close - 1
+            dates = close.index
+            cutoff = dates[len(dates) - 60]
+            mask = pd.Series(dates < cutoff, index=dates)
+            early = (1 - _w) * mom.fillna(0) + _w * fut.fillna(0)
+            blended = mom.fillna(0).where(~mask, axis=0).fillna(0)
+            blended = blended + early.where(mask, axis=0).fillna(0)
+            vals = blended.stack()
+            vals.index.names = ["date", "asset"]
+            return vals
+
+    return WindowedLeak()
+
+
+def test_windowed_early_leak_rejected_by_staggered_perturbation():
+    """F-B2 FIX: an early-window leak must be rejected by staggered Gate 0.85.
+
+    Fault detected: a tail-only perturbation check is blind to future reads
+    confined to early dates (perturbing the last 20 days changes no row the
+    leak reads), while the admixture still flips REJECT into PROMOTE. The
+    staggered windows (quartile ends) force at least one perturbed window
+    after leaked dates, so past outputs change and the gate fires.
+    """
+    from factorlab.cv import (
+        check_lookahead_perturbation,
+        check_lookahead_runtime,
+        check_lookahead_source,
+    )
+    from factorlab.data import synthetic_ohlcv
+    from factorlab.promote import promote
+
+    df = synthetic_ohlcv(n_days=1500, n_assets=12, seed=7)
+    factor = _windowed_early_leak(0.10)
+
+    # Precondition: all older gates are blind to this shape.
+    assert check_lookahead_source(factor) == []
+    flagged_rt, _ = check_lookahead_runtime(factor, df, threshold=0.30)
+    assert not flagged_rt, "precondition broken: runtime check now fires; test needs update"
+    flagged_tail, _ = check_lookahead_perturbation(factor, df, n_windows=1)
+    assert not flagged_tail, "precondition broken: tail-only check fires; test needs update"
+
+    is_lookahead, reason = check_lookahead_perturbation(factor, df)
+    assert is_lookahead, f"staggered perturbation missed the early-window leak: {reason}"
+
+    decision = promote(factor, df)
+    assert (
+        decision.verdict == "reject"
+    ), f"windowed leak promoted: {[(r.code, r.passed) for r in decision.reasons]}"
+    codes = [r.code for r in decision.reasons if not r.passed]
+    assert "no_future_dependence" in codes, f"expected no_future_dependence FAIL, got {codes}"
+
+
+def _gap_aimed_leak(weight: float = 0.10):
+    """Build a leak that reads future rows only inside tiling gaps (F-B3 shape).
+
+    Quartile-spaced perturbation windows (n_windows=4, tail_days=20 on 1500
+    dates) perturb rows [355,375), [730,750), [1105,1125), [1480,1500) and
+    leave ~355-date gaps untouched. This factor blends future 5-day returns
+    (via np.roll, so no `.shift(-N)` literal exists for Gate 0.5) ONLY where
+    the target row falls in a gap — no perturbed row is ever read, so the
+    quartile check, the tail-only check, and the 0.30 correlation screen
+    all stay blind while the admixture flips REJECT into PROMOTE (clean
+    twin rejects at IC=0.0065/FDR p=0.47; +10% gap leak promotes at
+    IC=0.055, all 11 gates passing, on plain synthetic data, seed 7).
+    """
+    import numpy as np
+    import pandas as pd
+
+    from factorlab.factors.base import Factor
+
+    _w = weight
+    _n_dates, _n_win, _tail = 1500, 4, 20
+    _win_rows: set[int] = set()
+    for _i in range(1, _n_win + 1):
+        _end = (_n_dates * _i) // _n_win
+        _win_rows.update(range(_end - _tail, _end))
+
+    class GapLeak(Factor):
+        name = "gap_aimed_leak"
+        category = "attack"
+        description = "future-data admixture confined to perturbation gaps"
+        params = {}
+        uses_future_data = False  # lie: reads t+5 rows inside gaps
+
+        def compute(self, df: pd.DataFrame) -> pd.Series:
+            close = df.pivot(index="date", columns="asset", values="close")
+            mom = close.pct_change(20)
+            fut = np.roll(close.values, -5, axis=0) / close.values - 1.0
+            fut[-5:, :] = 0.0
+            n = close.shape[0]
+            gap_mask = np.array([(p >= n or p not in _win_rows) for p in (np.arange(n) + 5)])[
+                :, None
+            ]
+            blend = mom.values + _w * np.where(gap_mask, fut, 0.0)
+            vals = pd.DataFrame(blend, index=close.index, columns=close.columns).stack()
+            vals.index.names = ["date", "asset"]
+            return vals
+
+    return GapLeak()
+
+
+def test_gap_aimed_leak_rejected_by_dense_tiling():
+    """F-B3 FIX: a gap-aimed leak must be rejected by contiguous tiling.
+
+    Fault detected: quartile-spaced perturbation windows leave ~355-date
+    gaps; a leak reading future rows only inside those gaps dodges every
+    gate (source inspection sees np.roll, correlation sees IC=0.055 under
+    the 0.30 threshold, quartile/tail perturbation never touches a read
+    row) and flips a clean REJECT into PROMOTE. Contiguous tiling puts
+    every sample row inside some window, so gap-aiming is impossible.
+    """
+    from factorlab.cv import (
+        check_lookahead_perturbation,
+        check_lookahead_runtime,
+        check_lookahead_source,
+    )
+    from factorlab.data import synthetic_ohlcv
+    from factorlab.promote import promote
+
+    df = synthetic_ohlcv(n_days=1500, n_assets=12, seed=7)
+    factor = _gap_aimed_leak(0.10)
+
+    # Preconditions: every pre-tiling gate is blind to this shape.
+    assert check_lookahead_source(factor) == []
+    flagged_rt, _ = check_lookahead_runtime(factor, df, threshold=0.30)
+    assert not flagged_rt, "precondition broken: runtime check now fires; test needs update"
+    flagged_q, _ = check_lookahead_perturbation(factor, df, n_windows=4)
+    assert not flagged_q, "precondition broken: quartile check fires; test needs update"
+    flagged_tail, _ = check_lookahead_perturbation(factor, df, n_windows=1)
+    assert not flagged_tail, "precondition broken: tail-only check fires; test needs update"
+
+    is_lookahead, reason = check_lookahead_perturbation(factor, df)
+    assert is_lookahead, f"dense tiling missed the gap-aimed leak: {reason}"
+
+    decision = promote(factor, df)
+    assert (
+        decision.verdict == "reject"
+    ), f"gap-aimed leak promoted: {[(r.code, r.passed) for r in decision.reasons]}"
+    codes = [r.code for r in decision.reasons if not r.passed]
+    assert "no_future_dependence" in codes, f"expected no_future_dependence FAIL, got {codes}"
+
+
+def _load_proof_checker():
+    """Import scripts/check_real_data_proof.py by path (scripts/ is not a package)."""
+    import importlib.util
+    from pathlib import Path
+
+    path = Path(__file__).resolve().parent.parent / "scripts" / "check_real_data_proof.py"
+    spec = importlib.util.spec_from_file_location("check_real_data_proof", path)
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def test_proof_checker_rejects_forged_metrics():
+    """F-C2 FIX: the F4 checker must reject a hand-edited proof JSON.
+
+    Fault detected: check_real_data_proof.py trusted the JSON's claimed
+    numbers without comparing them to the markdown table, so setting
+    real_factors[0].ic = 0.91 and verdict = 'promote' (keeping real bar
+    counts) printed PROOF_COMPLETE with exit 0 — the loop's finish line
+    crossed by editing two JSON fields. The md/JSON cross-check fails
+    closed on any numeric or verdict divergence.
+    """
+    import json
+    import shutil
+    from pathlib import Path
+
+    checker = _load_proof_checker()
+
+    # Positive control: the committed artifacts are consistent.
+    assert checker.check_md_json_consistency() == []
+
+    # Forgery: inflate one factor row and claim a promotion, keep bars real.
+    forged = Path(checker._PROOF_JSON)
+    tmp_json = Path(str(forged) + ".forgery-test-tmp")
+    try:
+        shutil.copy(forged, tmp_json)
+        data = json.loads(tmp_json.read_text(encoding="utf-8"))
+        data["real_factors"][0]["ic"] = 0.91
+        data["real_factors"][0]["verdict"] = "promote"
+        tmp_json.write_text(json.dumps(data, indent=1), encoding="utf-8")
+        checker._PROOF_JSON = tmp_json
+        fails = checker.check_md_json_consistency()
+        assert fails, "forged JSON passed the md/JSON consistency check"
+        assert any("0.91" in f or "verdict" in f for f in fails), f"unexpected fails: {fails}"
+    finally:
+        tmp_json.unlink(missing_ok=True)

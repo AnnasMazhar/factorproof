@@ -5672,9 +5672,6 @@ re-probe, or if any §17.2 "absent" term is shown present in the fetched text
 | alphalens-reloaded GitHub API | https://api.github.com/repos/stefan-jansen/alphalens-reloaded | 200 |
 | pyfolio-reloaded GitHub API | https://api.github.com/repos/stefan-jansen/pyfolio-reloaded | 200 |
 | empyrical-reloaded GitHub API | https://api.github.com/repos/stefan-jansen/empyrical-reloaded | 200 |
-
----
-
 ## 18. Cycle 5 pass 3 — every pass-1/pass-2 open item closed (2026-10-13, pass c5-p03)
 
 Scope: pass 3 of cycle 5. Pass 1 (§16) opened F-R22…F-R31 with named observables
