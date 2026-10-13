@@ -312,14 +312,16 @@ def promote(
         )
 
     # ------------------------------------------------------------------
-    # Gate 0.85: Lookahead contamination — perturbation test (F-B1 fix)
+    # Gate 0.85: Lookahead contamination — perturbation test (F-B1/F-B2 fix)
     #
     # Correlation screening (Gate 0.75) only fires above |corr| = 0.30, so
     # a diluted leak (a few percent of future data blended into a clean
     # factor) passes it while still flipping a REJECT into a PROMOTE.
     # The perturbation test checks the property directly: past outputs
     # must not change when only future inputs change. It catches leaks
-    # regardless of obfuscation (closures, np.roll, iloc tricks).
+    # regardless of obfuscation (closures, np.roll, iloc tricks), and the
+    # staggered windows (quartile ends, not just the tail) catch leaks
+    # confined to early dates (F-B2).
     # ------------------------------------------------------------------
     is_pert_lookahead, pert_reason = check_lookahead_perturbation(factor, df)
     if is_pert_lookahead:

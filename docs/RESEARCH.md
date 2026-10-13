@@ -1541,7 +1541,7 @@ dates were fetched from the GitHub REST API; PyPI release dates from the PyPI JS
 |---|---|---|---|---|---|---|---|---|
 | **MlFinLab** (Hudson & Thames) | All rights reserved — commercial use requires a paid licence; no redistribution; no published derivatives; ~£100/mo per user | **4,934** | Repo last pushed **2023-10-02** (GitHub API `pushed_at`). Active behind the paywall | **Yes** — purged K-fold + CPCV (AFML ch.7) | **Yes** — BHY, Bonferroni, Holm in Sharpe haircut | **Yes** — plus haircut Sharpe and PBO | **No** — helpers (profit hurdle, min track record) but no public accept/reject API | Yes, local install |
 | **Quantopian stack** (alphalens/pyfolio/empyrical) | Apache-2.0 | alphalens **4,456**; pyfolio (no API count); empyrical (no count) | **Last code commits: 2020-04-27** (alphalens master branch, GitHub commits API). The 2024 `pushed_at` value is a metadata-only update, not a code change. Community forks (alphalens-reloaded **657★** pushed 2025-12-15; pyfolio-reloaded **616★** pushed 2025-12-15; empyrical-reloaded **122★** pushed 2025-12-12) keep them installable on Python 3.12+ but add none of the four overfitting controls | **No** | **No** | **No** | **No** | Yes |
-| **qlib** (Microsoft) | MIT | **48,917** | Last push **2026-09-22** — actively maintained | **No** | **No** | Plain Sharpe ratios only | **No** | Partial — requires `get_data.py` download |
+| **qlib** (Microsoft) | MIT | **49,316** | Last push **2026-10-08** — actively maintained (re-verified 2026-10-13) | **No** | **No** | Plain Sharpe ratios only | **No** | Partial — requires `get_data.py` download |
 | **purgedcv** (eslazarev) | MIT | **35** | Latest release: **v0.1.8 released 2026-09-26** (PyPI API). Was v0.0.2 in cycle 1; advanced from v0.0.2 (2026-05-16) through v0.0.10, v0.0.12, v0.1.0 to v0.1.8 in four months — actively developed. GitHub `pushed_at` 2026-09-27. JOSS paper | **Yes** — `PurgedKFold`, `WalkForwardSplit`, CPCV with full embargo | **No** — no BH across a factor family; DSR/PSR per single strategy only | **Yes** — `deflated_sharpe_ratio`, `probabilistic_sharpe_ratio` | **No** — pure CV/statistics library; no IC, no quantile spread, no verdict | Yes |
 | **ml4t-diagnostic** (ml4t org) | MIT | **32** | Last push **2026-09-24** — actively maintained, part of a 7-library ML4T ecosystem | **Yes** — `WalkForwardCV`, `CombinatorialCV`, CPCV, purge + embargo | **Yes** — FDR control, White's Reality Check, DSR, PBO | **Yes** | **No** — metrics and tearsheets, no standalone verdict | **Partial** — requires Polars; optional Numba/LightGBM/SHAP; 7-library ecosystem |
 | **pyanomaly** (chulwoohan) | MIT | **132** | Last push **2024-03-13** — inactive | **No** | **No** | **No** | **No** | **No** — requires WRDS subscription |
@@ -1566,7 +1566,7 @@ explicit promotion verdict. They are not maintained by a responsible party. Thei
 controls, dead upstream.
 
 **qlib** wins on research platform scope: data ingestion, model zoos, experiment tracking, a large
-contributor base (**48,917 stars**, last push 2026-09-22). It does not implement overfitting
+contributor base (**49,316 stars**, last push 2026-10-08, re-verified 2026-10-13). It does not implement overfitting
 statistics; it delegates statistical quality to the researcher. Its gap: none of the four controls
 in the table above.
 
@@ -1872,7 +1872,7 @@ All links verified by automated HTTP probe. Results as of 2026-09-27:
 | Benjamini & Hochberg 1995 | https://www.jstor.org/stable/2346101 | 200 | 2026-09-26 |
 | Storey 2002 | https://www.jstor.org/stable/3088790 | 200 | 2026-09-26 |
 | Bailey & Lopez de Prado 2014 | https://arxiv.org/abs/1405.4598 | 200 | 2026-09-26 |
-| Efron & Tibshirani 1993 | https://www.taylorfrancis.com/books/mono/10.1201/9780429246593/... | 200 | 2026-09-26 |
+| Efron & Tibshirani 1993 | https://www.taylorfrancis.com/books/mono/10.1201/9780429246593/introduction-bootstrap-bradley-efron-tibshirani | 200 | 2026-09-26 |
 | Lopez de Prado 2018 | https://www.wiley.com/en-us/Advances+in+Financial+Machine+Learning-p-9781119482086 | 200 | 2026-09-26 |
 | Kohavi 1995 | https://www.ijcai.org/Proceedings/95-2/Papers/016.pdf | 200 | 2026-09-26 |
 | Harvey, Liu & Zhu 2016 | https://www.nber.org/papers/w20583 | 200 | 2026-09-26 |
@@ -1928,8 +1928,9 @@ signal only; stability is vacuous (nothing promoted); DSR = 0.0 everywhere
 **Liu, Y., Tsyvinski, A. & Wu, X. (2022)**
 "Common Risk Factors in Cryptocurrency"
 *Journal of Finance* 77(2):1133–1177.
-NBER Working Paper w28682: https://www.nber.org/papers/w28682
-[Verified URL: NBER — HTTP 200 confirmed 2026-10-12]
+NBER Working Paper w25882: https://www.nber.org/papers/w25882
+[Verified URL: NBER — HTTP 200 confirmed 2026-10-13; page citation_title
+"Common Risk Factors in Cryptocurrency" matches the cited paper]
 
 Method extracted: the paper ports the equity-factor toolkit to crypto. For a panel of
 coins, each week sort coins into deciles on a characteristic C (past return for
@@ -2296,7 +2297,7 @@ fields, F3 thresholds, bars-vs-source, section content, internal refs).
 
 | Source | URL | HTTP status |
 |--------|-----|-------------|
-| Liu, Tsyvinski & Wu 2022 (NBER w28682) | https://www.nber.org/papers/w28682 | 200 |
+| Liu, Tsyvinski & Wu 2022 (NBER w25882) | https://www.nber.org/papers/w25882 | 200 |
 | Fama & MacBeth 1973 (JSTOR) | https://www.jstor.org/stable/1830708 | 200 |
 | Benjamini & Yekutieli 2001 (DOI) | https://doi.org/10.1214/aos/1013699998 | 200 |
 | Künsch 1989 (DOI) | https://doi.org/10.1214/aos/1176347265 | 200 |

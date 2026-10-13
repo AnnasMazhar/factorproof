@@ -460,6 +460,7 @@ def check_lookahead_perturbation(
     df: pd.DataFrame,
     tail_days: int = 20,
     max_diffs: int = 0,
+    n_windows: int = 4,
 ) -> tuple[bool, str]:
     """Behavioral detection of lookahead via future perturbation.
 
@@ -470,14 +471,23 @@ def check_lookahead_perturbation(
     percent of future data blended into an otherwise clean factor) passes
     it while still flipping a REJECT into a PROMOTE.
 
-    This function tests the property directly instead of the mechanism:
+    This function tests the property directly instead of the mechanism.
+    For each of `n_windows` staggered windows ending at evenly spaced
+    fractions of the sample (the last one is the tail):
 
-    1. Compute the factor on the panel (baseline).
-    2. Deterministically perturb the LAST `tail_days` of OHLCV data
-       (per-asset tail reversal — no RNG, fully reproducible).
+    1. Compute the factor on the panel (baseline, once).
+    2. Deterministically perturb only the OHLCV rows inside the window
+       (per-asset value reversal — no RNG, fully reproducible).
     3. Recompute. Factor values at dates strictly BEFORE the perturbed
-       region must be bit-identical: a causal factor cannot change its
+       window must be bit-identical: a causal factor cannot change its
        past outputs when only future inputs change.
+
+    Staggering matters (F-B2 fix): a tail-only check is blind to a leak
+    confined to early dates — perturbing the last 20 days changes nothing
+    a windowed leak reads, so it stays invisible while still flipping a
+    REJECT into a PROMOTE. Quartile-spaced windows force a verdict-flipping
+    leak (which must span a substantial share of the sample to move
+    full-sample IC/IR/FDR) to overlap at least one window's future.
 
     Any differing past value proves the factor reads future rows,
     regardless of how the access is obfuscated. The comparison is exact
@@ -487,6 +497,14 @@ def check_lookahead_perturbation(
     (global) statistics, which is itself a form of in-sample leakage.
     All factors in the shipped library satisfy this (verified by
     test_perturbation_no_false_positives_on_library).
+
+    Residual: a leak confined entirely to one inter-window gap (about a
+    quarter of the sample with the defaults) and never reading rows inside
+    a later window still dodges. Such a leak covers too little of the
+    sample to move full-sample IC above the default 0.02 floor on its own
+    (a 10%-admixture leak needs ~95% coverage to reach IC 0.08), but the
+    window positions are deterministic and documented, so a dedicated
+    adversary could aim for a gap. Increase `n_windows` to shrink them.
 
     Parameters
     ----------
@@ -499,6 +517,9 @@ def check_lookahead_perturbation(
         single-lookahead window. Default 20.
     max_diffs:
         Tolerated number of differing past values. Default 0.
+    n_windows:
+        Number of staggered perturbation windows. Default 4 (quartile
+        ends, the last being the tail).
 
     Returns
     -------
@@ -509,39 +530,48 @@ def check_lookahead_perturbation(
     except Exception as e:
         return (False, f"factor.compute() raised: {e}")
 
-    perturbed = df.copy()
-    last_dates = sorted(df["date"].unique())[-tail_days:]
-    for _asset, sub in perturbed.groupby("asset"):
-        for col in ("open", "high", "low", "close", "volume"):
-            if col not in perturbed.columns:
-                continue
-            vals = sub[col].values.copy()
-            mask = sub["date"].isin(last_dates).values
-            vals[mask] = vals[mask][::-1]
-            perturbed.loc[sub.index, col] = vals
+    all_dates = sorted(df["date"].unique())
+    n_dates = len(all_dates)
+    n_windows = max(1, min(int(n_windows), n_dates // max(1, int(tail_days))))
+    for i in range(1, n_windows + 1):
+        end_pos = (n_dates * i) // n_windows
+        start_pos = max(0, end_pos - tail_days)
+        window_dates = all_dates[start_pos:end_pos]
+        if not window_dates:
+            continue
+        perturbed = df.copy()
+        for _asset, sub in perturbed.groupby("asset"):
+            for col in ("open", "high", "low", "close", "volume"):
+                if col not in perturbed.columns:
+                    continue
+                vals = sub[col].values.copy()
+                mask = sub["date"].isin(window_dates).values
+                vals[mask] = vals[mask][::-1]
+                perturbed.loc[sub.index, col] = vals
 
-    try:
-        retested = factor.compute(perturbed)
-    except Exception as e:
-        return (False, f"factor.compute() raised on perturbed panel: {e}")
+        try:
+            retested = factor.compute(perturbed)
+        except Exception as e:
+            return (False, f"factor.compute() raised on perturbed panel: {e}")
 
-    first_perturbed = pd.Timestamp(last_dates[0])
-    past_mask = baseline.index.get_level_values("date") < first_perturbed
-    a = baseline.loc[past_mask]
-    common = a.index.intersection(retested.index)
-    if len(common) == 0:
-        return (False, "no overlapping past dates to compare")
-    a, b = a.loc[common], retested.loc[common]
-    both_nan = a.isna() & b.isna()
-    n_diffs = int((((a != b) & ~both_nan) | (a.isna() ^ b.isna())).sum())
+        first_perturbed = pd.Timestamp(window_dates[0])
+        past_mask = baseline.index.get_level_values("date") < first_perturbed
+        a = baseline.loc[past_mask]
+        common = a.index.intersection(retested.index)
+        if len(common) == 0:
+            continue
+        a, b = a.loc[common], retested.loc[common]
+        both_nan = a.isna() & b.isna()
+        n_diffs = int((((a != b) & ~both_nan) | (a.isna() ^ b.isna())).sum())
 
-    if n_diffs > max_diffs:
-        return (
-            True,
-            f"Factor values at {n_diffs} past dates changed when only future "
-            f"OHLCV data was perturbed (tail_days={tail_days}). "
-            f"A causal factor cannot do this — lookahead contamination.",
-        )
+        if n_diffs > max_diffs:
+            return (
+                True,
+                f"Factor values at {n_diffs} past dates changed when only future "
+                f"OHLCV data was perturbed (window {i}/{n_windows} starting "
+                f"{first_perturbed.date()}, tail_days={tail_days}). "
+                f"A causal factor cannot do this — lookahead contamination.",
+            )
     return (False, "")
 
 

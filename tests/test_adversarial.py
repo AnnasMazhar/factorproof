@@ -941,3 +941,89 @@ def test_perturbation_flags_registered_lookahead_control():
     df = synthetic_ohlcv(n_days=1500, n_assets=12, seed=7)
     flagged, reason = check_lookahead_perturbation(get_factor("lookahead_control"), df)
     assert flagged, f"lookahead_control not flagged by perturbation check: {reason}"
+
+
+def _windowed_early_leak(weight: float = 0.10):
+    """Build a leak confined to dates far from the tail (F-B2 shape).
+
+    Uses future returns only for dates before (T - 60 days), clean momentum
+    after. A tail-only perturbation check never perturbs a row this factor
+    reads from the future, so it stays blind while the admixture flips the
+    verdict (clean twin rejects at IC=0.0074/FDR p=0.42; +10% early leak
+    promotes at IC=0.079 on plain synthetic data, seed 7).
+    """
+    import numpy as np
+    import pandas as pd
+
+    from factorlab.factors.base import Factor
+
+    _w = weight
+
+    class WindowedLeak(Factor):
+        name = "windowed_early_leak"
+        category = "attack"
+        description = "future-data admixture confined to early dates"
+        params = {}
+        uses_future_data = False  # lie: uses close.shift(-5) on early dates
+
+        def compute(self, df: pd.DataFrame) -> pd.Series:
+            close = df.pivot(index="date", columns="asset", values="close")
+            mom = close / close.shift(20) - 1
+            # Future leg via np.roll: no `.shift(-N)` literal anywhere, so
+            # Gate 0.5 source inspection stays blind (the realistic shape —
+            # a literal negative shift would already be caught at Gate 0.5).
+            lead = pd.DataFrame(
+                np.roll(close.values, -5, axis=0),
+                index=close.index,
+                columns=close.columns,
+            )
+            fut = lead / close - 1
+            dates = close.index
+            cutoff = dates[len(dates) - 60]
+            mask = pd.Series(dates < cutoff, index=dates)
+            early = (1 - _w) * mom.fillna(0) + _w * fut.fillna(0)
+            blended = mom.fillna(0).where(~mask, axis=0).fillna(0)
+            blended = blended + early.where(mask, axis=0).fillna(0)
+            vals = blended.stack()
+            vals.index.names = ["date", "asset"]
+            return vals
+
+    return WindowedLeak()
+
+
+def test_windowed_early_leak_rejected_by_staggered_perturbation():
+    """F-B2 FIX: an early-window leak must be rejected by staggered Gate 0.85.
+
+    Fault detected: a tail-only perturbation check is blind to future reads
+    confined to early dates (perturbing the last 20 days changes no row the
+    leak reads), while the admixture still flips REJECT into PROMOTE. The
+    staggered windows (quartile ends) force at least one perturbed window
+    after leaked dates, so past outputs change and the gate fires.
+    """
+    from factorlab.cv import (
+        check_lookahead_perturbation,
+        check_lookahead_runtime,
+        check_lookahead_source,
+    )
+    from factorlab.data import synthetic_ohlcv
+    from factorlab.promote import promote
+
+    df = synthetic_ohlcv(n_days=1500, n_assets=12, seed=7)
+    factor = _windowed_early_leak(0.10)
+
+    # Precondition: all older gates are blind to this shape.
+    assert check_lookahead_source(factor) == []
+    flagged_rt, _ = check_lookahead_runtime(factor, df, threshold=0.30)
+    assert not flagged_rt, "precondition broken: runtime check now fires; test needs update"
+    flagged_tail, _ = check_lookahead_perturbation(factor, df, n_windows=1)
+    assert not flagged_tail, "precondition broken: tail-only check fires; test needs update"
+
+    is_lookahead, reason = check_lookahead_perturbation(factor, df)
+    assert is_lookahead, f"staggered perturbation missed the early-window leak: {reason}"
+
+    decision = promote(factor, df)
+    assert (
+        decision.verdict == "reject"
+    ), f"windowed leak promoted: {[(r.code, r.passed) for r in decision.reasons]}"
+    codes = [r.code for r in decision.reasons if not r.passed]
+    assert "no_future_dependence" in codes, f"expected no_future_dependence FAIL, got {codes}"
