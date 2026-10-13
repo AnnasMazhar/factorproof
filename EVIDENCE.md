@@ -1060,3 +1060,8 @@ reports/eval-c3-p6.json, reports/eval-c3-p7.json, reports/eval-c4-p6.json,
 reports/eval-c4-p7.json, reports/mutants-survived-c2.txt,
 reports/mutants-survived-c3.txt, reports/mutants-survived-c4.txt,
 reports/mutation-c2.json, reports/mutation-c3.json, reports/mutation-c4.json.
+
+Also fixed two divergences from feat/v0.1:
+- tests/test_microstructure.py: noise-floor edge case in test_roll_spread_scales_linearly
+- src/factorlab/promote.py: FDR multiplicity now spans all horizons evaluated (m=3
+  not m=1); fdr_q 0.15→0.10; n_days 1500→2000; n_assets 12→20 for test margins.
