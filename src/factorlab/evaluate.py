@@ -216,6 +216,53 @@ def ic_decay(
     return result
 
 
+def yearly_ic_table(
+    factor_vals: pd.Series,
+    df: pd.DataFrame,
+    horizons: list[int],
+) -> dict[int, list[dict[str, float | int]]]:
+    """Per-calendar-year mean IC and HAC t-stat (regime-robustness table).
+
+    Splits the factor's observation dates by calendar year and runs
+    :func:`information_coefficient` on each year slice at each horizon.
+    Forward returns are computed on the full panel first, so year-edge
+    labels still use the correct t+h closes — only the grouping is yearly.
+
+    This is the machine behind the "by-year IC" report section: a factor
+    whose full-sample t-stat looks significant but whose yearly ICs flip
+    sign is not robust across regimes.
+
+    Parameters
+    ----------
+    factor_vals:
+        Factor output Series with MultiIndex (date, asset).
+    df:
+        Original OHLCV panel (used to compute forward returns).
+    horizons:
+        List of horizons in trading days.
+
+    Returns
+    -------
+    Dict mapping horizon -> list of {"year", "n", "ic", "t_hac"} dicts,
+    years in ascending order. A year with fewer than 2 valid
+    cross-sections keeps its (small) n with NaN statistics.
+    """
+    fwd_dict = forward_returns(df, horizons)
+    dates = pd.DatetimeIndex(pd.to_datetime(factor_vals.index.get_level_values("date")))
+    year_of = dates.year.to_numpy()
+    out: dict[int, list[dict[str, float | int]]] = {}
+    for h in horizons:
+        rows: list[dict[str, float | int]] = []
+        for year in sorted(set(year_of.tolist())):
+            sub = factor_vals[year_of == year]
+            mean_ic, _, t_hac, _, n = information_coefficient(
+                sub, fwd_dict[h], "pearson", horizon=h
+            )
+            rows.append({"year": int(year), "n": int(n), "ic": mean_ic, "t_hac": t_hac})
+        out[h] = rows
+    return out
+
+
 def quantile_analysis(
     factor_vals: pd.Series,
     fwd_ret: pd.DataFrame,
@@ -555,25 +602,44 @@ def _pearson_corr(x: np.ndarray, y: np.ndarray) -> float:
     corr(X, Y) = cov(X,Y) / (std(X) * std(Y))
                = sum((x-xbar)*(y-ybar)) / sqrt(sum((x-xbar)^2) * sum((y-ybar)^2))
 
-    Scale-invariance note: corr(a*X, b*Y) == corr(X, Y) for a, b > 0, so both
-    inputs are first rescaled by max(|X|, |Y|). Without this, inputs with
-    |x| ~ 1e-79 produce a denominator sum-of-squares ~1e-317, which is
-    subnormal in float64 (min normal 2.2e-308, ~27 bits of precision left),
-    and corr(x, x) comes back as 0.9999999953 instead of 1.0.
+    Scale-invariance note: corr(a*X + c, b*Y + d) == corr(X, Y) for a, b > 0,
+    so each input is centred first and the *deviations* are rescaled by
+    their own max abs. Rescaling raw inputs by max(|X|, |Y|) is not enough:
+    when one input's variation sits far below its own level (e.g.
+    Y = -2X - 1 with X ~ 1e-200, so Y ~ -1 with 1e-200 wiggles), the
+    centred deviations square to ~1e-400, which underflows to 0.0, the
+    denominator vanishes, and a true corr of -1.0 comes back NaN. The same
+    happens with a single shared rescale when the two inputs' magnitudes
+    differ wildly (X ~ 1e200, Y ~ 1e-200: Y/scale ~ 1e-400 rounds to 0.0).
+    Centring-then-rescaling-deviations is exact-arithmetic-identical and
+    keeps every squared term near unit magnitude. Without any rescale,
+    inputs with |x| ~ 1e-79 produce a denominator sum-of-squares ~1e-317,
+    which is subnormal in float64 (min normal 2.2e-308, ~27 bits of
+    precision left), and corr(x, x) comes back as 0.9999999953 instead
+    of 1.0.
     """
     if len(x) < 2:  # noqa: PLR2004
         return float("nan")
-    scale = max(float(np.max(np.abs(x))), float(np.max(np.abs(y))))
-    if scale == 0:
+    if bool(np.all(x == x[0])) or bool(np.all(y == y[0])):
+        # Fail closed: an exactly-constant input has undefined correlation,
+        # and a constant factor given +/-1.0 instead of NaN could pass gates
+        # it must fail (NaN propagates to rejection). Checked before
+        # centring because mean() of identical floats can carry rounding
+        # residue (e.g. mean([85.8]*3) != 85.8), which would otherwise
+        # normalise into a spurious corr of 1.0.
         return float("nan")
-    xs = x / scale
-    ys = y / scale
-    xd = xs - xs.mean()
-    yd = ys - ys.mean()
-    denom = math.sqrt((xd**2).sum() * (yd**2).sum())
+    xd = x - x.mean()
+    yd = y - y.mean()
+    sx = float(np.max(np.abs(xd)))
+    sy = float(np.max(np.abs(yd)))
+    if sx == 0 or sy == 0:
+        return float("nan")
+    xs = xd / sx
+    ys = yd / sy
+    denom = math.sqrt((xs**2).sum() * (ys**2).sum())
     if denom == 0:
         return float("nan")
-    return float((xd * yd).sum() / denom)
+    return float((xs * ys).sum() / denom)
 
 
 def _rankdata(x: np.ndarray) -> np.ndarray:

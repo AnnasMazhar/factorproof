@@ -5672,6 +5672,9 @@ re-probe, or if any §17.2 "absent" term is shown present in the fetched text
 | alphalens-reloaded GitHub API | https://api.github.com/repos/stefan-jansen/alphalens-reloaded | 200 |
 | pyfolio-reloaded GitHub API | https://api.github.com/repos/stefan-jansen/pyfolio-reloaded | 200 |
 | empyrical-reloaded GitHub API | https://api.github.com/repos/stefan-jansen/empyrical-reloaded | 200 |
+
+---
+
 ## 18. Cycle 5 pass 3 — every pass-1/pass-2 open item closed (2026-10-13, pass c5-p03)
 
 Scope: pass 3 of cycle 5. Pass 1 (§16) opened F-R22…F-R31 with named observables
@@ -5921,3 +5924,696 @@ plus an exit code?" challenge.
   accept-reject) — the grep context from that pass is the record.
 - All F-R1…F-R21 dispositions (§8.9/§9.8/§11/§14/§15.8) stand; nothing re-run
   this pass.
+
+---
+
+## 19. Cycle 6 pass 1 — OOS forecast comparison + factor-zoo taming ground truth (added 2026-10-14, pass c6-p01)
+
+Scope: the first of the reopened brief's three research passes — the real-data
+proof the spec names, part V. Cycles 2–5 (§8/§9/§12/§15–§18) grounded the
+factor, inference, microstructure, luck-vs-skill, volatility-timing, and
+inference-completeness literatures. Two checker-relevant literatures were never
+given full design-driving entries: (a) formal out-of-sample forecast-comparison
+tests — what the `oos_consistency` gate's magnitude-aware upgrade (FINDING
+C2-3a, still open) must implement instead of sign-counting; and (b) the
+factor-zoo taming literature — what "which factors survive" means when the
+family is large, and why a single-factor IC screen cannot speak of risk
+premia. This pass grounds both. 13 new sources, every link probed today
+(curl -L, UA Mozilla/5.0); 13 verified HTTP 200, 0 boundary items — including
+the closure of two §8.7 boundary items (STW99, RW05). Five drive the design
+(§19.1–§19.5, full method/equations/assumptions/failure modes); eight are
+context (§19.6).
+
+Standing data (re-read today): `reports/real-data-proof.json` (generated
+2026-10-13T05:22:50Z) — 14 coins (AAVE, ADA, ARB, ATOM, BTC, DOGE, ETH, FIL,
+HBAR, INJ, RENDER, SOL, TON, XRP), 21,320 daily bars, 2021-04-29 →
+2026-10-13; delta 3 raw → 3 BH-FDR → 0 promoted; specificity 10/10 noise
+rejected; DSR = 0.0 everywhere. Per-factor row keys today:
+`factor, horizon, ic, ic_ir, t_hac, p_raw, n_obs, oos_ic, bh_fdr_pass,
+deflated_sharpe, verdict` — note there is NO strategy-return or
+loss-differential series in the proof JSON, which grounds the implement note
+in §19.8/F-R32: DM/GW-style tests are not computable from the current proof
+artifact and need a series the prover does not yet emit.
+
+### 19.1 Diebold-Mariano equal-accuracy test — the OOS gate's formal test (DRIVES DESIGN)
+
+**Diebold, F.X. & Mariano, R.S. (1995)**
+"Comparing Predictive Accuracy"
+*Journal of Business & Economic Statistics* 13(3):253–263
+[Verified URL: https://ideas.repec.org/a/bes/jnlbes/v13y1995i3p253-63.html
+— HTTP 200 confirmed 2026-10-14. Second verified record:
+https://www.jstor.org/stable/2291124 — HTTP 200 confirmed 2026-10-14.]
+
+Method extracted: the test of H_0: two forecasts have equal expected loss.
+For realisation y_t and competing forecasts yhat_{1t}, yhat_{2t}, define the
+loss differential:
+
+    d_t = L(y_t, yhat_{1t}) - L(y_t, yhat_{2t}),   dbar = (1/T) * sum_t d_t
+
+DM statistic (standard form, §3 of the paper):
+
+    DM = dbar / sqrt(Vhat / T),
+    Vhat = gamma_0 + 2 * sum_{k=1}^{h-1} gamma_k
+
+    where gamma_k = sample autocovariance of {d_t} at lag k,
+          h = forecast horizon (overlap truncation, same MA(h-1) logic as §2.10).
+
+Under H_0, DM → N(0,1); reject equal accuracy iff |DM| > z_{1-alpha/2}.
+Small-sample correction (Harvey, Leybourne & Newbold 1998 — cited as the
+named refinement, URL not probed this pass, NOT claimed as verified):
+
+    DM* = DM * sqrt((T + 1 - 2h + h(h-1)/T) / T),  compared against t_{T-1}.
+
+    (Transcription flagged F-R38-class: correction factor from memory of the
+    HLN98 form, not from a verified copy. Minor if the factor is right.)
+
+Notation: T = OOS evaluation dates; h = horizon (h=1 → Vhat = gamma_0, the
+plain t-stat); L = loss function (squared error standard; trading OOS uses
+negative portfolio return or negative IC — the loss choice is the researcher's,
+stated ex ante).
+
+Assumptions: (a) {d_t} covariance-stationary with short memory (same
+stationarity demand as §2.10/§8.4/§9.1); (b) the two forecasts are
+NON-NESTED — neither model's information set contains the other's; (c) T
+large relative to h (else HLN correction mandatory, still approximate).
+
+Known failure modes per the literature: (a) NESTED MODELS — DM is
+non-normal with non-standard limits when one model nests the other (Clark &
+McCracken; the repo's Clark-West entry §16.8 is the nested alternative —
+use CW, never DM, for mom_20 vs deflated_mom, since the latter nests a
+momentum construction); (b) small-T over-rejection even with HLN (their
+simulations: at T < 50 the size distortion persists); (c) loss-function
+dependence — DM on squared error and DM on portfolio return can disagree in
+sign; the verdict must name L.
+
+Design consequence: FINDING C2-3a's fix (magnitude-aware OOS gate) now has
+its formula. The gate upgrade is: per walk-forward split, form the
+factor-quintile strategy return series, compute d_t against a buy-and-hold
+benchmark leg, and report DM (h=1) or HAC-DM (h>1) with the HLN correction —
+replacing the sign-count oos_consistency with a statistic. The checker number
+is filed as F-R32: any proof OOS claim on a nested pair without Clark-West
+fails, and any DM without a named loss function fails.
+
+### 19.2 Giacomini-White conditional predictive ability — regime-conditional OOS (DRIVES DESIGN)
+
+**Giacomini, R. & White, H. (2006)**
+"Tests of Conditional Predictive Ability"
+*Econometrica* 74(6):1545–1578
+[Verified URL: https://ideas.repec.org/a/ecm/emetrp/v74y2006i6p1545-1578.html
+— HTTP 200 confirmed 2026-10-14.]
+
+Method extracted: DM tests the UNCONDITIONAL null E[d_t] = 0. GW test the
+CONDITIONAL null E[d_t | F_{t-1}] = 0 a.s. — is the forecast better in states
+the researcher can observe beforehand (drawdown indicator, vol regime)? With a
+FIXED rolling estimation window of length R and P OOS evaluations, parameter
+estimation error does not vanish asymptotically (this is the deliberate
+contrast with West 1996, §19.6, where an expanding window lets it vanish):
+
+    Regress d_t on h_t (q x 1 vector of F_{t-1}-measurable test functions):
+        d_t = delta' h_t + eps_t
+    Wald:  W = n * delta_hat' Vhat^{-1} delta_hat  ~  chi2_q under H_0.
+
+    (Standard-form transcription; chi2 degrees of freedom = dim(h_t).
+    Flagged F-R38-class: verified against the RePEc record's existence and
+    the paper's widely reproduced form, not against the typeset PDF.)
+
+Notation: n = P (OOS length); h_t = instruments (e.g. constant + drawdown
+dummy + lagged variance); Vhat = HAC covariance of the moment conditions.
+
+Assumptions: (a) mixing/stationarity of (d_t, h_t); (b) FIXED rolling window
+— applying GW critical values to an expanding-window exercise is a category
+error (use West96/CW instead); (c) h_t genuinely in F_{t-1} (no lookahead in
+the instruments — the same discipline as §1/assert_no_lookahead).
+
+Known failure modes: (a) weak instruments — h_t uncorrelated with d_t gives
+no power over DM while spending q degrees of freedom; (b) window-scheme
+mismatch (above); (c) breaks inside the window violate mixing exactly as in
+C2-3a.
+
+Design consequence: the formal answer to "is the factor robust across
+regimes" (§18.2 showed mom_20 IC varies by year: negative 2021–2023, weakly
+positive 2024–2025). A proof claiming regime-robustness from one full-sample
+OOS number is GW-untested. Filed as F-R33: "robust across regimes" prose
+without a by-regime table (or GW Wald with a regime instrument) is a checker
+reject. The repo needs no new dependency — the regression + HAC primitives
+exist (§2.10); only the Wald wrapper is future work.
+
+### 19.3 Feng-Giglio-Xiu double-selection — which factors survive the zoo (DRIVES DESIGN)
+
+**Feng, G., Giglio, S. & Xiu, D. (2020)**
+"Taming the Factor Zoo: A Test of New Factors"
+*Journal of Finance* 75(3):1327–1370
+[Verified URL: https://ideas.repec.org/a/bla/jfinan/v75y2020i3p1327-1370.html
+— HTTP 200 confirmed 2026-10-14.]
+
+Method extracted: evaluating a NEW factor g while controlling for a
+high-dimensional zoo H of existing factors (double-selection Lasso,
+Belloni-Chernozhukov-Hansen lineage). Three steps:
+
+    1. Lasso y (test-asset returns) on H  → selected set S1
+       (controls that predict returns).
+    2. Lasso g (new factor) on H         → selected set S2
+       (controls that predict the new factor — the omitted-variable path).
+    3. OLS y on g + H_{S1 ∪ S2}; t-stat on g against a RAISED hurdle
+       (t > 3 per Harvey-Liu-Zhu, §2.7 — the zoo-scale version of the
+       repo's BH-FDR family correction).
+
+Headline result: of recently proposed factors tested against the zoo, most
+fail once the zoo is controlled for — only a handful survive. The single
+Lasso (step 1 only) is insufficient: without step 2, a zoo factor correlated
+with g but weakly predictive of y is dropped, and its omission biases g's
+t-stat upward. That asymmetry is the whole point of doubling the selection.
+
+Assumptions: (a) approximate sparsity — a small subset of the zoo spans the
+priced risks; (b) the zoo H is fixed ex ante (factors added after seeing
+results reintroduce the snooping of §9.1); (c) selection mistakes vanish
+asymptotically (penalty tuned, e.g. theory-driven or CV — the tuning must be
+reported, not buried).
+
+Known failure modes: (a) sparsity violation — if risks are dense (hundreds
+of weak factors, the IPCA view in §19.6), Lasso drops priced risk and g's
+t-stat is still biased; (b) weak-zoo-factor exclusion — same mechanism as
+(a) at the selection margin; (c) the hurdle t > 3 is frequentist-conservative
+for a single pre-registered factor (HLZ allow lower hurdles for
+first-principles factors — cf. HXZ note in §19.6).
+
+Design consequence: FGX is the zoo-scale counterpart of the repo's BH-FDR
+gate (§2.3): both answer "which of many survive", BH at m=13 with p-values
+in hand, DS-Lasso at m≈100 with the zoo as regressors. Two checker numbers
+filed as F-R34: (i) the screened family must be FIXED ex ante — a proof
+whose family size changes between screen and report (factors added/dropped
+after seeing p-values) fails; (ii) any proof over a family with m > 30 must
+name its zoo-control (BH/BY/DS-logic), not just raw p-values — F-R4's
+constant-floor concern in procedure form.
+
+### 19.4 Lewellen-Nagel-Shanken skeptical appraisal — why IC alone misleads (DRIVES DESIGN)
+
+**Lewellen, J., Nagel, S. & Shanken, J. (2010)**
+"A Skeptical Appraisal of Asset Pricing Tests"
+*Journal of Financial Economics* 96(2):175–194
+[Verified URL: https://ideas.repec.org/a/eee/jfinec/v96y2010i2p175-194.html
+— HTTP 200 confirmed 2026-10-14.]
+
+Method extracted: high cross-sectional OLS R² is EASY — with correlated
+factors and a small cross-section, even a model with zero true explanatory
+power routinely prints R² above 0.5 in their simulations. Prescription, two
+parts: (1) report GLS R² alongside OLS R²:
+
+    lambda_GLS = (B' Sigma^{-1} B)^{-1} B' Sigma^{-1} mu_bar
+    R2_GLS = 1 - e' Sigma^{-1} e / (mu_bar' Sigma^{-1} mu_bar)
+
+    where B = N x K loading matrix, Sigma = residual covariance,
+    mu_bar = mean returns, e = pricing errors.
+
+(2) report SAMPLING ERROR for costs of risk — confidence intervals for
+lambda (misspecification-robust SEs), not just point estimates. A factor
+with a significant OLS t-stat but a lambda CI spanning zero economic
+magnitude is not a finding.
+
+Notation: N = assets (here: 14 coins — deep in LNS's danger zone);
+K = factors; lambda = cost-of-risk vector.
+
+Assumptions: (a) Sigma estimable — needs T >> N (satisfied: ~1900 dates vs
+14 coins); (b) loadings B measured without error (EIV, cf. §8.2 — violated
+for thin alts, which strengthens the scepticism, not the factor).
+
+Known failure modes of the critique itself: (a) GLS R² inherits Sigma
+estimation error when T/N is small — not our case; (b) the critique targets
+LEVELS (explaining mean returns), while the repo screens MARGINAL
+predictability (IC ≠ 0) — a promoted factor can clear IC and still explain
+~nothing of mean returns. That gap is the point, not a rebuttal.
+
+Design consequence: IC is OLS-R family — the repo's HAC t-stat (§2.10) +
+BH (§2.3) answer "IC ≠ 0?" but LNS demand the economic question "is the
+premium large?" with a CI. The proof report already prints quintile spread;
+what is missing is its bootstrap CI beside every promotion. Filed as F-R35:
+a promotion whose quintile-spread bootstrap CI covers zero is
+significant-but-tiny — the checker must reject it (or the report must carry
+the CI and the verdict must consume it).
+
+### 19.5 Giglio-Xiu three-pass — single-factor screens cannot speak of premia (DRIVES DESIGN)
+
+**Giglio, S. & Xiu, D. (2021)**
+"Asset Pricing with Omitted Factors"
+*Journal of Political Economy* 129(7). NBER Working Paper w23527
+("Inference on Risk Premia in the Presence of Omitted Factors").
+[Verified URLs: https://www.nber.org/papers/w23527 — HTTP 200 confirmed
+2026-10-14; author-hosted PDF https://dachxiu.chicagobooth.edu/download/RP.pdf
+— HTTP 200 confirmed 2026-10-14.]
+
+Method extracted: standard risk-premium estimators are BIASED when priced
+factors are omitted. Rotation-invariance result: the risk premium of an
+observable factor g is invariant to how the control factors are rotated — any
+linear combinations spanning the true factor space serve as controls. Hence
+PCA can stand in for unknown factors (Bai 2003 consistency: n,T → ∞).
+Three-pass estimator for the premium γ_g of observable g:
+
+    1. PCA step: extract p-hat top eigenvectors of (1/nT) R'R → Vhat
+       (rotated factor space), loadings bhat.
+    2. XS step: OLS mean returns rbar on bhat → premia of the PCs.
+    3. TS step: regress g on Vhat → hhat (g's loadings on the PCs,
+       purging measurement error z in g = delta + hV + z).
+
+    Premium:  gamma_g_hat = hhat * gamma_hat   (steps 2 × 3 product).
+
+    (Standard-form transcription from the NBER abstract + author-PDF
+    excerpts retrieved via search 2026-10-14; the full typeset JPE PDF was
+    not opened. Flagged F-R38-class.)
+
+The procedure also DETECTS spurious/useless factors (g orthogonal to the
+recovered space → premium ≈ 0 with tight SE) — a PCA-flavoured dud detector
+complementary to the repo's noise_control.
+
+Assumptions: (a) STRONG/pervasive factors — PCA recovers the space only if
+factors move many assets (Bai 2003); (b) n,T → ∞ jointly; (c) p-hat
+consistent (over-estimating adds noise, under-estimating omits priced risk —
+the same bias the method cures, through the back door).
+
+Known failure modes — and this panel fails assumption (a)/(b) outright:
+with n = 14 coins, PCA cannot recover a market-wide factor space; weak
+crypto factors (IC ≈ 0.02) are below any Bai-2003 detection threshold at
+this n. So the three-pass estimator is NOT implementable on this panel —
+which is exactly the design consequence: a single-factor IC screen on 14
+coins suffers the omitted-variable bias GX diagnose AND cannot run the cure.
+The honest estimand is "marginal cross-sectional predictability", never
+"risk premium". Filed as F-R36: any proof/report prose claiming an "X
+premium" (risk compensation) from a single-factor IC screen without PC
+controls fails — grep "premium" next to a promoted factor is the check.
+Standing proof is clean (nothing promoted, no premium language in the
+verdict table).
+
+### 19.6 Context sources (8, verified today)
+
+- **Sullivan, R., Timmermann, A. & White, H. (1999)** "Data-Snooping,
+  Technical Trading Rule Performance, and the Bootstrap", *JF*
+  54(5):1647–1691. [RePEc: https://ideas.repec.org/a/bla/jfinan/v54y1999i5p1647-1691.html
+  — 200; JSTOR: https://www.jstor.org/stable/2329113 — 200, both confirmed
+  2026-10-14.] The empirical companion to White (2000, §9.1): ~8,000
+  technical rules on 100 years of DJIA, best-rule significance via the
+  stationary bootstrap (§12.5). Headline: in-sample best rules look
+  significant; bootstrap-corrected, they are not. CLOSES the §8.7 boundary
+  item for this source (was 403-at-DOI; now verified twice). Design note:
+  the repo's noise_control family (10 seeded duds + BH) is the
+  small-scale STW bootstrap — same logic (best-of-family needs a
+  max-over-family correction), cheaper machinery.
+- **Romano, J.P. & Wolf, M. (2005)** "Exact and Approximate Stepdown Methods
+  for Multiple Hypothesis Testing", *Econometrica* 73(4):1237–1282.
+  [RePEc: https://ideas.repec.org/a/ecm/emetrp/v73y2005i4p1237-1282.html —
+  200 confirmed 2026-10-14.] Stepdown FWE control strictly more powerful
+  than White's Reality Check and Holm under dependence; stepwise
+  re-centering reuses the bootstrap distribution. CLOSES the §8.7 boundary
+  item for this source. Design note: §16.9's "Romano-Wolf when m ≤ 5"
+  transfer now has both citations verified (procedure §16.9 + record here);
+  no checker change — the m ≤ 5 trigger condition stands.
+- **West, K.D. (1996)** "Asymptotic Inference about Predictive Ability",
+  *Econometrica* 64(5):1067–1084.
+  [RePEc: https://ideas.repec.org/a/ecm/emetrp/v64y1996i5p1067-84.html —
+  200 confirmed 2026-10-14.] Expanding-window OOS asymptotics: estimation
+  error vanishes, standard normal limits for NON-nested comparisons; nested
+  needs the CW/Clark-McCracken non-standard theory. Design note: the
+  repo's walk-forward CV is expanding-window — West96 (not GW06) is the
+  licence for any future OOS test on the WF path, and the nested/non-nested
+  fork (West vs CW) is now cited on both sides (§16.8 + here).
+- **Andrews, D.W.K. (1991)** "Heteroskedasticity and Autocorrelation
+  Consistent Covariance Matrix Estimation", *Econometrica* 59(3):817–858.
+  [RePEc: https://ideas.repec.org/a/ecm/emetrp/v59y1991i3p817-58.html —
+  200 confirmed 2026-10-14.] QS kernel shown optimal in the MSE class;
+  automatic bandwidth via AR(1)/ARMA plug-in — the theory behind §2.11's
+  Newey-West-1994 bandwidth entry. Design note: the repo uses Bartlett
+  (guaranteed PSD, §2.10 Theorem 1) rather than Andrews-optimal QS; that
+  choice is now documented as PSD-over-efficiency with the citation for the
+  road not taken. No estimator change.
+- **Cochrane, J.H. (2011)** "Presidential Address: Discount Rates",
+  *JF* 66(4):1047–1108.
+  [RePEc: https://ideas.repec.org/a/bla/jfinan/v66y2011i4p1047-1108.html —
+  200 confirmed 2026-10-14.] The zoo needs discipline: discount-rate
+  variation is the fact; the question is which factor structure organises
+  it. Directly motivates the KPS intercept test below ("offers a means to
+  address questions raised in the Cochrane (2011) quote" — KPS §1). Design
+  note: frames the proof's null correctly alongside Fama-1991 (§8.6) — every
+  verdict is joint with the return model.
+- **Fama, E.F. & French, K.R. (2015)** "A Five-Factor Model", *JFE*
+  116(1):1–22.
+  [RePEc: https://ideas.repec.org/a/eee/jfinec/v116y2015i1p1-22.html —
+  200 confirmed 2026-10-14.] RMW/CMA added; HML redundant once RMW/CMA
+  included (their headline). Design note: the redundancy result is the
+  zoo-scale version of §4-Test-6 (correlated factors): adding a 14th factor
+  that HML RMW/CMA span changes no verdict — the family, not the factor,
+  is the unit of correction (F-R34).
+- **Kelly, B., Pruitt, S. & Su, Y. (2019)** "Characteristics Are
+  Covariances", *JFE* 134(3):501–524. NBER w24540.
+  [NBER: https://www.nber.org/papers/w24540 — 200; RePEc:
+  https://ideas.repec.org/p/nbr/nberwo/24540.html — 200, both confirmed
+  2026-10-14.] IPCA: r_{i,t+1} = α_{i,t} + β_{i,t} f_{t+1} + ε_{i,t} with
+  β_{i,t} = z_{i,t}' Γ_β (characteristics instrument latent loadings);
+  intercept test generalises GRS ("does there EXIST latent risk explaining
+  the anomaly?"); 5 IPCA factors beat FF5; 10/36 characteristics significant
+  at 1% carry ~100% of fit. Design note: the characteristics-vs-covariances
+  fork is why the repo screens CHARACTERISTICS (factor scores) and must not
+  claim covariance structure — F-R36's honest-estimand rule in model form.
+- **Hou, K., Xue, C. & Zhang, L. (2015)** "Digesting Anomalies", *RFS*
+  28(3):650–705. NBER w18435.
+  [NBER: https://www.nber.org/papers/w18435 — 200 confirmed 2026-10-14.
+  The RePEc RFS handle probed twice (2026-10-14) returns 404 — NOT claimed;
+  NBER version is the verified citation.] q-factor model (MKT/ME/I-A/ROE);
+  investment t = 4.95, ROE t = 4.81 — clear the HLZ t > 3 hurdle (§2.7);
+  q-alpha m.a.e. 0.20%/mo vs 0.33% Carhart across 35 significant anomalies;
+  HML/UMD small insignificant alphas in the q-model (noisy versions of
+  q-factors). Design note: HXZ is the existence proof that a 4-factor family
+  CAN clear a t > 3 zoo hurdle — so F-R37's |t_HAC| ≥ 3 promotion floor is
+  attainable, not a disguised ban (sensitivity stays falsifiable).
+
+### 19.7 Alternatives considered (this pass)
+
+(i) DM vs Clark-West for the OOS gate — DM retained ONLY for non-nested
+pairs (factor vs benchmark leg); nested pairs (mom_20 vs deflated_mom, any
+composite vs its component) MUST use Clark-West (§16.8). A single "OOS test"
+column that does not branch on nestedness is a checker reject (F-R32).
+(ii) GW conditional vs by-regime tables — full GW Wald is future work; a
+by-regime IC table (drawdown vs normal, cf. §18.2 yearly IC) is the accepted
+interim — F-R33 binds the CLAIM ("regime-robust"), not the machinery.
+(iii) DS-Lasso vs BH at m=13 — BH retained (correct layer for p-values in
+hand, §9.1 RC-vs-BH argument unchanged); DS-Lasso logic binds only the
+family-discipline rules (F-R34), not the estimator. (iv) Three-pass vs
+nothing — three-pass NOT implementable at n=14 (weak-factor non-recovery);
+the implementable part is the language rule (F-R36), not the estimator.
+
+### 19.8 Falsification — what would prove this pass wrong (F-R32…F-R38 new; F-R1…F-R31 stand)
+
+F-R1…F-R31: dispositions in §8.9/§9.8/§11/§14/§15.8/§18 stand; nothing
+re-run (proof JSON one day old, dataset grew by <1 day of bars).
+
+F-R32 (nested OOS without CW): any proof OOS-significance claim on a nested
+factor pair (composite vs component) using DM normal critical values. Binds
+the first OOS-test column the implement pass adds — today the proof JSON
+carries no loss-differential series at all (row keys listed in §19
+preamble), so the rule is currently vacuous-hold; the implement pass must
+emit quintile-leg returns before any DM/CW wiring. This pass is falsified if
+DM is shown valid for nested comparisons — it is not (Clark-McCracken
+non-standard limits); the audit should check the nestedness fork, not the
+DM formula.
+
+F-R33 (unconditional robustness claim): "robust across regimes" prose in any
+proof/report without a by-regime IC table or GW Wald. Standing proof makes
+no robustness claim (0 promoted) — vacuous hold.
+
+F-R34 (family discipline): a proof whose screened family changes between
+screen and report, or with m > 30 and no named zoo-control. Standing proof:
+family fixed at 13 (+10 noise, both named in §1–§3 of the report) — holds.
+
+F-R35 (LNS magnitude): a promotion whose quintile-spread bootstrap CI covers
+zero. Standing proof: nothing promoted — vacuous hold; the report gap (no
+spread-CI column today) is named for implement.
+
+F-R36 (premium language): "X premium" prose attached to a single-factor IC
+screen without PC controls. Standing proof: verdict table carries no premium
+language — holds (verified by reading the report today, not by grep pattern
+alone: the table columns are factor/horizon/IC/IC-IR/t-stat/spread/
+hit-rate/turnover/FDR/verdict).
+
+F-R37 (zoo-hurdle anachronism): any daily-H promotion with |t_HAC| < 3 on
+2021+ data. Standing proof: max real |t_HAC| is rev_5 at +3.61 — above 3 yet
+still rejected by the fuller gate (turnover/consistency), which is the
+healthy shape: the t-hurdle is necessary, not sufficient. HXZ (§19.6) shows
+t > 3 is attainable, so the floor does not ban sensitivity by construction.
+
+F-R38 (this pass's own transcriptions): DM/HLN formula (§19.1), GW Wald
+form (§19.2), FGX double-selection steps (§19.3), LNS GLS-R² form (§19.4),
+GX three-pass product (§19.5) are standard-form transcriptions verified
+against RePEc/NBER records and search-retrieved abstracts — NOT against the
+typeset journal PDFs. Pre-flagged likeliest corrections: the HLN
+degree-of-freedom/form factor, the GW χ² df statement, the GX step-3
+regressand (observed vs fitted g). "Factor right, symbols differ" is minor;
+"factor wrong" (e.g. DM without overlap truncation, GX premium as sum rather
+than product) is blocking. The adversarial citation audit must open every
+§19.9-table link.
+
+### 19.9 Link-verification table (all probed 2026-10-14, curl -L, UA Mozilla/5.0)
+
+| Source | URL | HTTP status |
+|--------|-----|-------------|
+| Diebold-Mariano 1995 (RePEc) | https://ideas.repec.org/a/bes/jnlbes/v13y1995i3p253-63.html | 200 |
+| Diebold-Mariano 1995 (JSTOR) | https://www.jstor.org/stable/2291124 | 200 |
+| Giacomini-White 2006 (RePEc) | https://ideas.repec.org/a/ecm/emetrp/v74y2006i6p1545-1578.html | 200 |
+| West 1996 (RePEc, short-page handle) | https://ideas.repec.org/a/ecm/emetrp/v64y1996i5p1067-84.html | 200 |
+| Andrews 1991 (RePEc, short-page handle) | https://ideas.repec.org/a/ecm/emetrp/v59y1991i3p817-58.html | 200 |
+| STW 1999 (RePEc) | https://ideas.repec.org/a/bla/jfinan/v54y1999i5p1647-1691.html | 200 |
+| STW 1999 (JSTOR — closes §8.7 boundary) | https://www.jstor.org/stable/2329113 | 200 |
+| Romano-Wolf 2005 (RePEc — closes §8.7 boundary) | https://ideas.repec.org/a/ecm/emetrp/v73y2005i4p1237-1282.html | 200 |
+| LNS 2010 (RePEc) | https://ideas.repec.org/a/eee/jfinec/v96y2010i2p175-194.html | 200 |
+| FGX 2020 (RePEc) | https://ideas.repec.org/a/bla/jfinan/v75y2020i3p1327-1370.html | 200 |
+| Cochrane 2011 (RePEc) | https://ideas.repec.org/a/bla/jfinan/v66y2011i4p1047-1108.html | 200 |
+| FF 2015 (RePEc) | https://ideas.repec.org/a/eee/jfinec/v116y2015i1p1-22.html | 200 |
+| KPS 2019 (NBER w24540) | https://www.nber.org/papers/w24540 | 200 |
+| KPS 2019 (RePEc) | https://ideas.repec.org/p/nbr/nberwo/24540.html | 200 |
+| GX 2021 (NBER w23527) | https://www.nber.org/papers/w23527 | 200 |
+| GX 2021 (author-hosted PDF) | https://dachxiu.chicagobooth.edu/download/RP.pdf | 200 |
+| HXZ 2015 (NBER w18435) | https://www.nber.org/papers/w18435 | 200 |
+| HXZ 2015 (RePEc RFS handle — NOT claimed) | https://ideas.repec.org/a/oup/rfinst/v28y2015i3p650-705.html | 404 — NOT claimed |
+
+Note on RePEc short-page handles: West96/Andrews91 resolve only under the
+abbreviated end-page form (`1067-84`, `817-58`); the full-page guesses
+(`1067-1084`, `817-858`) return 404. Same paper, same record — the 404 is a
+handle-alias gap, not a missing paper. Recorded so a re-probe does not
+misread it as rot.
+
+### 19.10 Loop-status notes (observed today, for the implement/evaluate passes — NOT fixed here)
+
+1. **Real-data checker state:** `scripts/check_real_data_proof.py` exits 0
+   today against the 2026-10-13 proof (all checks passed). Research records
+   the state; the F-R32…F-R37 rules above are STRICTER than the current
+   checker (nestedness fork, regime tables, spread-CI consumption, premium
+   language, t ≥ 3 floor) and belong to the implement pass as checker
+   upgrades — this pass adds no checker code per the brief.
+2. **Mutation-c5 files:** `reports/mutants-survived-c5.txt` is 0 lines and
+   `reports/mutation-c5.json` is untracked — nothing to disposition from the
+   previous gate in this pass. Authoritative kill score remains cycle-1
+   44.4% per §8.9/§11.6 (mutation-c2 VOID).
+3. **Branch note:** `feat/v0.1` is checked out in a sibling worktree, so
+   this pass commits on the current branch (`tmp-c3p10`) for the
+   orchestrator to merge — content-complete, ref-neutral, as c3-p01 did.
+4. **No code changed in this pass.** Test suite re-ran green before commit
+    (167 collected, rc=0); the only tracked-file change is this section
+    (artifact mtime advances by construction).
+
+---
+
+## 20. Cycle 6 pass 2 — ecosystem re-verification + gap standing (added 2026-10-14, pass c6-p02)
+
+Scope: the second of the reopened brief's three research passes — ECOSYSTEM
+AND COMPETITION. Per MARKET-VERDICTS.md (binding: do not re-litigate, deepen
+the table), this pass re-probes every named tool's live metadata and checks
+whether the claimed gap has narrowed since the last verification
+(2026-10-13T13:00 UTC, cycle 5 pass 2). Method: GitHub REST API
+(`api.github.com/repos/<owner>/<repo>`, unauthenticated, probed 2026-10-14
+~10:30 UTC) for stars/push-date/licence, `/releases/latest` for release
+versions, plus raw-README fetches for the two tools closest to the gap
+(purgedcv, ml4t-diagnostic) to check for a newly added verdict/gate API.
+No citations from memory; every number below is today's probe output.
+
+### 20.1 Live metadata (probed 2026-10-14)
+
+| Tool | Version / release | Stars (today) | Stars (2026-10-13) | Last push | Licence |
+|------|-------------------|---------------|---------------------|-----------|---------|
+| MlFinLab (hudson-and-thames/mlfinlab) | no releases published (None) | 4,941 | 4,939 | 2023-10-02 | NOASSERTION (proprietary) |
+| alphalens (Quantopian/alphalens) | archival-era, no releases | 4,468 | (not re-taken) | 2024-02-12 | Apache-2.0 |
+| pyfolio (Quantopian/pyfolio) | archival-era, no releases | 6,428 | (not re-taken) | 2023-12-23 | Apache-2.0 |
+| empyrical (Quantopian/empyrical) | archival-era, no releases | 1,514 | (not re-taken) | 2024-07-26 | Apache-2.0 |
+| qlib (microsoft/qlib) | **v0.9.8** (published 2026-10-08) | 49,354 | 49,336 (+18/1d) | 2026-10-08 | MIT |
+| purgedcv (eslazarev/purged-cross-validation) | v0.1.10 (PyPI, current) | 57 | 57 | 2026-10-01 | MIT |
+| ml4t-diagnostic (ml4t/diagnostic) | v0.1.8 (published 2026-09-24) | 34 | 34 | 2026-10-13T16:39Z | MIT |
+| pyanomaly (chulwoohan/pyanomaly) | no releases published (None) | 133 | 133 | 2024-03-13 | MIT |
+| alphalens-reloaded (stefan-jansen) | fork, rolling | 671 | 670 (+1) | 2026-10-13T19:15Z | Apache-2.0 |
+| pyfolio-reloaded (stefan-jansen) | fork, rolling | 616 | 617 (-1, count jitter) | 2026-10-13T18:43Z | Apache-2.0 |
+| empyrical-reloaded (stefan-jansen) | fork, rolling | 124 | 125 (-1, count jitter) | 2026-10-13T16:33Z | Apache-2.0 |
+
+Links: https://github.com/hudson-and-thames/mlfinlab ·
+https://github.com/Quantopian/alphalens · https://github.com/Quantopian/pyfolio ·
+https://github.com/Quantopian/empyrical · https://github.com/microsoft/qlib ·
+https://github.com/eslazarev/purged-cross-validation ·
+https://github.com/ml4t/diagnostic · https://github.com/chulwoohan/pyanomaly ·
+https://github.com/stefan-jansen/alphalens-reloaded
+
+Notable movement in the last 24h: qlib shipped **v0.9.8** (2026-10-08 push,
+latest release) and gained 18 stars; the reloaded forks all pushed on
+2026-10-13 (maintenance churn, confirmed no new overfitting-control
+features per the 2026-10-13 source re-check); ml4t-diagnostic pushed twice
+on 2026-10-13 (v0.1.8 remains the latest release). MlFinLab: still no code
+push since 2023-10-02 (+2 stars in two days — marketing-page traffic, not
+development).
+
+### 20.2 Comparison table (standing + today's delta)
+
+| Tool | Approach | What it does well | Gap it leaves | What we do differently |
+|------|----------|-------------------|---------------|------------------------|
+| MlFinLab | Proprietary quant-ML library (AFML ch.7 CV, BHY, haircut/DSR, PBO, profit hurdles) | Breadth: bars, labelling, meta-labels, ensembles, ONC, notebooks; production users | Licence (£100/mo/user, no derivatives); no binary accept/reject verdict API in public source (`unverified` for paid package) | MIT, offline, inspectable; the four controls + an explicit gate, none of the breadth |
+| Quantopian stack (alphalens/pyfolio/empyrical) | Tear-sheet factor/portfolio analytics, 2018-era | Mental model of the field; familiar IC/quantile tear sheets | No purged CV, no FDR, no DSR, no gate; unmaintained (last pushes 2023–2024 are branch-tip churn, not development) | Same IC/quantile vocabulary, but every number passes through purge + FDR + gate |
+| qlib (Microsoft, v0.9.8) | End-to-end ML research platform (data, models, experiments) | Scale: 49k stars, data pipelines, model zoo, active releases | No purged/embargo CV, no multiple-testing correction, plain Sharpe only, no verdict (re-confirmed against v0.9.8 tree scope: no new stats module in release notes path) | Narrow statistics layer qlib lacks; complementary, not competing |
+| purgedcv (v0.1.10) | sklearn-compatible CV/statistics library (PurgedKFold, CPCV, DSR, PSR) | Correct time-series splits + JOSS paper; fastest-growing star count in set (0→57 since May 2026) | No factor computation, no IC, no family-wise correction, **no gate** — today's README check: the only "gate" hits are dev-process gates (`ruff`/`mypy`/prose-quality in CONTRIBUTING), not a promotion verdict | We consume its problem space (purged CV) and add the screen → correct → verdict chain on top |
+| ml4t-diagnostic (v0.1.8) | 7-library ML4T ecosystem signal diagnostics (HAC-IC, FDR, DSR, PBO, White RC) | Closest feature overlap: HAC-adjusted IC t-stat, FDR control, quantile profiles | **No binary accept/reject verdict**: today's README check confirms `analyze_signal` returns a result object (IC/spread/turnover diagnostics) with no verdict API, no exit code, no reject path; Polars-required input; 7-library ecosystem overhead | The gate itself: 10 ordered checks, exit 1 on reject, `--force` forbidden by design |
+| pyanomaly | Academic anomaly replication on WRDS/CRSP | Real-data academic scope (316-factor literature replication) | WRDS subscription required (no offline path); no purged CV, no FDR, no verdict | Offline synthetic-first; controls that prove the gate rejects |
+| stefan-jansen reloaded forks | Community maintenance of the Quantopian stack | Installable on modern Python (670/616/124 stars) | Same feature gaps as upstream (confirmed 2026-10-13 source re-check: none of the four controls) | See Quantopian row |
+
+### 20.3 The gap we claim (unchanged, re-evidenced today)
+
+There is still no live, permissively-licensed tool that packages **purged
+walk-forward CV + multiple-testing correction + deflated Sharpe + an
+explicit binary promotion gate** together. MlFinLab has the statistics but
+not the licence; purgedcv has the CV but not the gate; ml4t-diagnostic has
+the diagnostics but not the verdict; qlib has the platform but not the
+statistics.
+
+How a user notices it (concrete, runnable today):
+
+    factor-lab promote noise_control --data synthetic   # exits 1, prints the failing reasons
+    factor-lab promote mom_20 --data synthetic          # exits 0 on planted-signal data
+
+No tool in §20.2 offers that second line's counterpart — a command whose
+exit code IS the research decision, with the full reason table on stdout
+and no override flag. That is the observable difference, not a feature
+list.
+
+Positioning per MARKET-VERDICTS.md stands: "the overfitting controls that
+quant research actually needs, without a £100/month licence" — with the
+explicit honesty clause that MlFinLab is more complete (COMPARISONS.md "Where
+MlFinLab wins", unchanged).
+
+### 20.4 Alternatives considered (this pass)
+
+(i) qlib v0.9.8 as a new threat — checked the release (2026-10-08): a
+platform release, no overfitting-statistics module added; not a gap
+closure. (ii) ml4t-diagnostic's 2026-10-13 pushes as a possible verdict
+addition — README re-fetched today: `analyze_signal` still returns
+diagnostics only; no verdict API. (iii) Collapsing the table to "MlFinLab
+vs us" — rejected: the verdicts file names the Quantopian stack and qlib
+explicitly, and purgedcv/ml4t are the closest live alternatives; dropping
+them would weaken, not strengthen, the claim.
+
+### 20.5 Falsification — what would prove this pass wrong
+
+F-R39 (gap closure): any §20.2 tool shipping, under a permissive licence,
+the full chain screen → family-wise correction → binary verdict with a
+reject path. Concretely: ml4t-diagnostic adding a verdict API to
+`analyze_signal`, purgedcv adding a gate module, or qlib adding FDR +
+verdict. Standing check today: none observed (two README-level checks +
+release scan, §20.1/§20.2). The next ecosystem pass re-runs exactly these
+checks; the first failure flips this finding to blocking.
+
+F-R40 (this pass's own numbers): star counts are GitHub-API values at probe
+time and jitter (±1 observed on the reloaded forks overnight); push dates
+are branch-tip stamps, not development proof (cf. Quantopian 2023–2024
+tip churn). If the adversarial audit re-probes and finds a count off by
+more than jitter, the table cell — not the gap claim — is corrected.
+
+### 20.6 Loop-status notes (observed today — NOT fixed here)
+
+1. No code changed in this pass. Only `docs/RESEARCH.md` (this section)
+   and `COMPARISONS.md` (star-count/date refresh) are touched.
+2. `reports/mutants-survived-c5.txt` is 0 lines; `reports/mutation-c5.json`
+   untracked — nothing to disposition; authoritative kill score remains
+   cycle-1 44.4% per §19.10.
+3. Branch note: `feat/v0.1` is checked out in a sibling worktree, so this
+   pass commits on the current branch for the orchestrator to merge —
+   content-complete, ref-neutral, as c6-p01 did.
+
+---
+
+## 21. Cycle 6 pass 3 — every pass-1/pass-2 open item closed (2026-10-14, pass c6-p03)
+
+Scope: pass 3 of cycle 6. Pass 1 (§19) opened F-R32…F-R38 with named
+observables; pass 2 (§20) opened F-R39…F-R40. This pass closes every one.
+One experiment executed (/tmp/c6p3_regime.py, read-only, repo untouched);
+all other dispositions are same-day verifications against the standing
+2026-10-13 proof artifact (dataset delta +12 bars — no re-run warranted).
+No code changed. Full Tuesday record: docs/ADOPTION.md §12.
+
+### 21.1 F-R32 — CLOSED (vacuous hold; nested pairs named for implement)
+
+Observable was: any proof OOS-significance claim on a nested pair without
+Clark-West. Verified today: the proof JSON row keys are exactly `factor,
+horizon, ic, ic_ir, t_hac, p_raw, n_obs, oos_ic, bh_fdr_pass,
+deflated_sharpe, verdict` — no loss-differential or strategy-return series
+exists, so no OOS-significance claim exists to violate the rule. The nested
+pairs in the 13-family are named for the implement pass: `deflated_mom` vs
+`mom_20`/`mom_60` (composite vs components) must branch to Clark-West;
+a single DM column is a checker reject. Transfer unchanged from §19.8:
+the prover must emit quintile-leg returns before any DM/CW wiring.
+
+### 21.2 F-R33 — CLOSED (interim delivered: the by-regime table is executed)
+
+Observable was: "robust across regimes" prose without a by-regime table
+or GW Wald. The table is now executed (ADOPTION §12.2, raw output there):
+rev_5 H=1 positive all six years but collapsing in 2026 (+0.0058, t +0.24);
+mom_20 H=5 negative in 2021/2023/2026, positive in 2022/2024/2025; rev_5 H=5
+ranging +0.0996 to -0.0301. No factor clears even a weak yearly bar
+(|t_HAC| > 2 in all six years — best case fails), so the rule bites in the
+honest direction and the standing proof (no robustness claim, 0 promoted)
+holds with evidence rather than vacuously. Standing cross-check bonus: the
+independently reimplemented rev_5 H=1 FULL row (IC +0.0351, t +3.65) agrees
+with the report row (0.0346, 3.5892) within ~2% — the proof numbers
+reproduce from independent code. Remaining transfer: wire the yearly table
+as a report section (implement pass); full GW Wald stays future work.
+
+### 21.3 F-R34 — CLOSED (family fixed and named; verified today)
+
+Observable was: screened family changing between screen and report, or
+m > 30 without a named zoo-control. Verified today: report §2 screens
+exactly the 13 real factors; §4 carries the 10 seeded noise controls
+(JSON `noise_total: 10`); delta section names the BH-FDR control at q=0.15.
+Family fixed ex ante, zoo-control named. Holds.
+
+### 21.4 F-R35 — CLOSED (vacuous hold; report gap re-confirmed)
+
+Observable was: a promotion whose quintile-spread bootstrap CI covers zero.
+Nothing is promoted, so no such promotion exists — vacuous hold, same as
+§19.8. Re-confirmed today: the report still carries no spread-CI column.
+Transfer to implement stands (spread CI beside every promotion, consumed
+by the verdict).
+
+### 21.5 F-R36 — CLOSED (verified clean today)
+
+Observable was: "X premium" prose attached to a single-factor IC screen.
+`grep -io premium reports/real-data-proof.md` run today returns empty —
+the verdict table speaks of IC/spread/hit-rate/turnover/FDR, never premia.
+Holds by inspection, not by pattern alone (columns enumerated in §19.8).
+
+### 21.6 F-R37 — CLOSED (floor attainable and correctly non-sufficient)
+
+Observable was: a daily-H promotion with |t_HAC| < 3. No promotion exists;
+max real |t_HAC| is rev_5 at +3.59 (report) / +3.65 (recomputed §21.2) —
+above the floor yet still rejected by the fuller gate (turnover/
+consistency). The healthy shape stands: the t-hurdle is necessary, not
+sufficient, and HXZ (§19.6) shows t > 3 is attainable, so the floor does
+not ban sensitivity by construction. Holds.
+
+### 21.7 F-R38 — TRANSFERRED (not closable by a research pass)
+
+The DM/HLN, GW Wald, FGX, LNS, GX transcriptions remain verified-against-
+records-and-abstracts, not against typeset PDFs, with the pre-flagged
+correction candidates (HLN factor, GW df, GX step-3 regressand) standing as
+filed in §19.8. No typeset source was available to this pass. Disposition:
+transferred to the adversarial citation audit, which must open every
+§19.9-table link. Recorded, not hidden — a transfer is not a closure and
+is labelled as such.
+
+### 21.8 F-R39/F-R40 — CLOSED (standing; re-probe would be motion)
+
+F-R39's observable (any §20.2 tool shipping the full chain under a
+permissive licence) was checked ~10:30 UTC today by c6-p02 with two
+README-level checks plus a release scan: none observed. Minutes have
+passed, not developments; re-probing is motion. F-R40's jitter caveat
+(±1 star counts, branch-tip stamps) stands as the standing correction
+policy. Both closed as standing, with the next ecosystem pass owning the
+re-check.
+
+### 21.9 Falsification — what would prove this pass wrong
+
+- F-R33: an independent by-regime re-run showing any factor with
+  |t_HAC| > 2 in all six calendar years on this panel — the §12.2 table
+  is the record to beat (method: /tmp/c6p3_regime.py pattern).
+- Cross-check: an independent rev_5 H=1 FULL reimplementation disagreeing
+  with the report row by more than 10% — not observed (within ~2%).
+- F-R36: any "premium" hit in the proof report — grep empty today.
+- F-R34: a screened set other than 13 real + 10 noise — not observed.
+- F-R1…F-R31: dispositions in §8.9/§9.8/§11/§14/§15.8/§18 stand; nothing
+  re-run (proof artifact one day old, dataset delta +12 bars).

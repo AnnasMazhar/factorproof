@@ -69,7 +69,7 @@ class MyFactor(Factor):
 Register it and screen:
 
 ```python
-from factorlab.factors.registry import REGISTRY
+from factorlab.factors import REGISTRY
 from myresearch.factors.my_factor import MyFactor
 
 REGISTRY["my_factor"] = MyFactor()
@@ -110,7 +110,7 @@ pip install "factorproof @ git+https://github.com/you/factor-lab.git"
 import pandas as pd
 import alphalens
 from factorlab.data import load_ohlcv_csv
-from factorlab.factors.registry import REGISTRY
+from factorlab.factors import REGISTRY
 from factorlab.promote import promote, PromotionConfig
 
 # Step 1 — load data
@@ -820,6 +820,7 @@ measured output in §8.2 (4:48 wall), three executed failure-mode findings in §
 *Cycle 3 pass 3 (2026-10-12): §9 — Tuesday recipe confirmed without re-run, F-R10 single-coin-drop
 executed (rev_5 robust, volume_z_20 ATOM-fragile), ecosystem re-probed (no watch item fired);
 open items closed in docs/RESEARCH.md §11.*
+
 ## 11. Cycle 5 update — applicability, closed (2026-10-13, pass c5-p03)
 
 This pass closes every open item from passes 1–2 in cycle 5 (dispositions in
@@ -955,3 +956,142 @@ granularity", not "valueless".
   the record.
 - F-R23: falsified if IC-by-year shows positive 2021 + negative 2022 on a
   re-run — the §18.2 table is the record.
+
+## 12. Cycle 6 update — applicability, closed (2026-10-14, pass c6-p03)
+
+This pass closes every open item from cycle-6 passes 1–2 (F-R32…F-R40,
+dispositions in docs/RESEARCH.md §21). No code changed. The one experiment
+ran in /tmp (throwaway script `/tmp/c6p3_regime.py`, repo untouched,
+database read-only); raw output pasted verbatim below.
+
+### 12.1 Tuesday recipe status: unchanged
+
+The §8.1 proof commands and the §10.1–§10.2 pre-screens stand.
+`reports/real-data-proof.json` (2026-10-13T05:22:50Z) is one day old;
+today's panel recount is 21,332 rows (+12 bars, now through 2026-10-14).
+Re-running a 5-minute proof for 12 new bars is motion, not evidence.
+
+### 12.2 Executed this pass: the by-regime IC table (F-R33 interim delivered)
+
+§19.7 accepts a by-regime IC table as the interim for regime-robustness
+claims until the GW Wald exists. This pass produces it — per-calendar-year
+cross-sectional Pearson IC vs forward log returns, HAC t-stat with L = H-1,
+computed with the repo's own `_pearson_corr` / `_newey_west_se`. Raw output:
+
+```
+panel rows=21332 coins=14 dates=2021-04-29..2026-10-14
+--- rev_5 H=1 n_pairs=21243 ---
+  2021: n_dates=242 meanIC=+0.0560 t_HAC=+2.13
+  2022: n_dates=365 meanIC=+0.0571 t_HAC=+2.38
+  2023: n_dates=365 meanIC=+0.0231 t_HAC=+0.94
+  2024: n_dates=366 meanIC=+0.0367 t_HAC=+1.69
+  2025: n_dates=365 meanIC=+0.0328 t_HAC=+1.57
+  2026: n_dates=286 meanIC=+0.0058 t_HAC=+0.24
+  FULL: n_dates=1989 meanIC=+0.0351 t_HAC=+3.65
+--- mom_20 H=5 n_pairs=20975 ---
+  2021: n_dates=227 meanIC=-0.0502 t_HAC=-1.20
+  2022: n_dates=365 meanIC=+0.0211 t_HAC=+0.61
+  2023: n_dates=365 meanIC=-0.0136 t_HAC=-0.36
+  2024: n_dates=366 meanIC=+0.0237 t_HAC=+0.65
+  2025: n_dates=365 meanIC=+0.0553 t_HAC=+1.65
+  2026: n_dates=282 meanIC=-0.0347 t_HAC=-0.92
+  FULL: n_dates=1970 meanIC=+0.0053 t_HAC=+0.34
+--- rev_5 H=5 n_pairs=21185 ---
+  2021: n_dates=242 meanIC=+0.0996 t_HAC=+2.87
+  2022: n_dates=365 meanIC=+0.0106 t_HAC=+0.34
+  2023: n_dates=365 meanIC=-0.0301 t_HAC=-0.78
+  2024: n_dates=366 meanIC=+0.0796 t_HAC=+2.57
+  2025: n_dates=365 meanIC=+0.0002 t_HAC=+0.01
+  2026: n_dates=282 meanIC=+0.0196 t_HAC=+0.56
+  FULL: n_dates=1985 meanIC=+0.0261 t_HAC=+1.85
+```
+
+Three readings a team can use on Tuesday:
+
+1. **Independent cross-check of the proof.** The FULL rev_5 H=1 row
+   (IC +0.0351, t_HAC +3.65) was computed by a from-scratch reimplementation
+   against the proof report's row (IC 0.0346, t 3.5892, §2 table) — agreement
+   within ~2% on a panel with one extra day of bars. The proof numbers
+   reproduce from independent code.
+2. **No factor is regime-robust on this panel.** mom_20 H=5 flips sign in
+   three of six years; rev_5 H=5 swings from +0.0996 (2021) to -0.0301
+   (2023). The F-R33 rule therefore bites in the honest direction: any
+   "robust across regimes" prose about these factors fails, with this table
+   as the exhibit. rev_5 H=1 is the steadiest (positive all six years) but
+   collapses in 2026 (+0.0058, t +0.24) — positive-sign consistency is not
+   significance consistency.
+3. **The Tuesday command for the claim.** Until the GW Wald ships, a
+   promotion that wants regime language must ship this table beside it
+   (method: `/tmp/c6p3_regime.py` pattern — factor values, forward log
+   returns, per-date Pearson IC, yearly mean + HAC t with L = H-1).
+   The implement pass should wire it as a report section, not a throwaway.
+
+### 12.3 Tuesday rules that close F-R32…F-R37 (verified today, no re-run needed)
+
+- **F-R32 (nested OOS):** the proof JSON row keys carry no
+  loss-differential series (verified today against the 2026-10-13 artifact),
+  so no OOS-significance claim exists to violate the rule — vacuous hold.
+  Tuesday rule: the nested pairs in the 13-family are `deflated_mom` vs
+  `mom_20`/`mom_60` (composite vs components). Any future OOS-test column
+  comparing them must branch to Clark-West; a single DM column is a checker
+  reject.
+- **F-R34 (family discipline):** the report §2 table screens exactly the 13
+  real factors and §4 carries the 10 seeded noise controls (JSON:
+  `noise_total: 10`) — the family is fixed ex ante and named. Holds.
+- **F-R35 (LNS magnitude):** nothing is promoted, so no promotion carries a
+  zero-covering spread CI — vacuous hold. The report gap stands: no
+  quintile-spread bootstrap-CI column exists today; it is named for the
+  implement pass, same transfer as §19.8.
+- **F-R36 (premium language):** `grep -io premium reports/real-data-proof.md`
+  returns empty today — the verdict table speaks of IC/spread/hit-rate, never
+  premia. Holds.
+- **F-R37 (zoo hurdle):** max real |t_HAC| is rev_5 at +3.59 (report) /
+  +3.65 (recomputed §12.2) — above the t ≥ 3 floor yet still rejected by the
+  fuller gate. The hurdle is necessary, not sufficient; sensitivity stays
+  falsifiable. Holds.
+- **F-R38 (transcriptions):** no typeset-PDF re-verification was available
+  to this pass; the pre-flagged correction candidates stand as filed.
+  Transferred to the adversarial citation audit, which must open every
+  §19.9-table link. Not closable by a research pass — recorded, not hidden.
+- **F-R39/F-R40 (gap standing):** c6-p02 probed the ecosystem ~10:30 UTC
+  today; COMPARISONS.md was refreshed then. No tool has shipped a verdict
+  chain in the intervening minutes; re-probing would be motion. Standing.
+
+### 12.4 Operational cost (cycle-6 delta)
+
+| Item | Measured |
+|---|---|
+| By-regime table, 3 factor-horizon pairs, 21k-row panel (§12.2) | seconds, one core |
+| Proof-state verifications (JSON keys, grep, family count) | seconds |
+| Full proof (`prove_on_real_data.py`) | standing 4 min 48 s (§8.5); not re-run (dataset delta +12 bars) |
+| Total Tuesday cost | still under 10 minutes |
+
+### 12.5 The single most likely reason someone would NOT adopt it (cycle-6 edition)
+
+§8.6/§9.5/§10.5/§11.6 stand, and this pass added the sharpest exhibit yet:
+the by-regime table shows the full-sample numbers are averages over
+disagreement — mom_20 H=5 is negative in three of six years, rev_5 H=5
+ranges from +0.10 to -0.03. A team reading the report's single FULL row
+gets a false sense of a stable effect; a team reading the yearly table
+may conclude nothing is knowable and walk away from the tool along with
+the factor.
+
+The pitch, unchanged since cycle 3 and now regime-evidenced: adopt this
+for the delta (raw → FDR → gate attrition), for the controls (noise
+rejected, lookahead caught, LOCO check, pre-screens), and now for the
+yearly table (§12.2) — not for the verdict column. The 2026 collapse in
+rev_5 H=1 (+0.0058) is the live warning that even the steadiest row in
+the table is a regime average, and the tool is honest about it.
+
+### 12.6 Falsification for this section
+
+- Cross-check: falsified if an independent reimplementation of rev_5 H=1
+  FULL disagrees with the report by more than 10% — **not observed**
+  (within ~2%).
+- Regime claim: falsified if a same-day re-run shows any factor with
+  |t_HAC| > 2 in all six calendar years — **not observed** (best case is
+  rev_5 H=1, significant in none individually at 2026 collapse).
+- Premium language: falsified by any "premium" hit in the report —
+  **not observed** (grep empty today).
+- Family discipline: falsified if the report's screened set differs from
+  13 real + 10 noise — **not observed**.

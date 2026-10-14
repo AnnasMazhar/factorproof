@@ -1965,7 +1965,536 @@ D2 (seed sweep) and D5 (determinism): attacks attempted, gate held —
 recorded as refuted/evidence. Prior findings F-T3/F-T2/F-L1/F-C1/F-S1/F-S2/
 F-G1/F-G2/F-A4: remain fixed (untouched by this pass's diff, suite green).
 
-### Status key
+### Status key (c4-p11)
+
+- `open`: reported for the builder; not yet fixed
+- `fixed`: fix implemented and re-verified with the pass's own probes this pass
+- `refuted`: attack attempted, claim held
+
+---
+
+## PASS c5-p10-adversarial-1 (cycle 5, adversarial pass 1 of 2)
+
+Independent reviewer lane. This pass attacks the **claims** (c5-p11 attacks the
+property). Read first: ITERATION-PROTOCOL.md, QUALITY-CONTRACT.md,
+MARKET-VERDICTS.md, specs/factor-lab.md (incl. v0.2 MANDATE), all prior
+c1-p10 through c4-p11 entries above. All three `reports/mutants-survived-c*.txt`
+are present but 0 bytes; authoritative mutation baseline remains
+reports/mutation-c1.json (878/1977 = 44.4%, gate 70%) — quoted, not re-derived.
+
+Branch note: `feat/v0.1` is checked out by a sibling worktree, so this pass ran
+on the current checkout at commit 4650f47 (same content line). No absolute host
+paths appear below per F1.
+
+Cycle-5 delta under review (commits after c4-p11): FDR multiplicity fix (060a1e0),
+pearson centre-then-rescale (c9b2373), roll-spread noise-floor handling (8ad1fd1),
+3 byzantine tests + README badge (ef40a32), ADOPTION recipe fix (4650f47).
+The README's load-bearing claims CHANGED since c4-p10: it now honestly documents
+that standalone `promote mom_20 --plant-signal` REJECTs (exit 1) under the
+tightened gate. This pass audits the claims as they now stand.
+
+All commands below were actually run; output is verbatim terminal output
+(host path prefixes redacted to `<repo>` per F1).
+
+---
+
+## 0. Pre-attack state (c5-p10)
+
+```
+$ .venv/bin/python -m pytest -p no:warnings 2>&1 | tail -1
+165 passed in 107.82s (0:01:47)
+$ .venv/bin/python scripts/check_no_internal_refs.py 2>&1 | tail -1
+check_no_internal_refs: CLEAN — no forbidden tokens found.
+$ .venv/bin/python scripts/check_real_data_proof.py 2>&1 | tail -1
+PROOF_COMPLETE
+$ .venv/bin/python -m ruff check . 2>&1 | tail -1
+All checks passed!
+$ .venv/bin/python -m ruff format --check . 2>&1 | tail -1
+27 files already formatted
+```
+
+README badge `tests-165 passed` is accurate. Both mandate checkers green.
+
+---
+
+## 1. Claims audit — 3 most load-bearing README claims, attacked (c5-p10)
+
+### C1 — Standalone promote: mom_20 REJECTs (exit 1), noise_control REJECTs (exit 1)
+
+The claim flipped since c4-p10 (exit 0 → exit 1 for the planted signal under
+the c5-p04 multiplicity fix). Attacked as written today (README lines 126-130):
+
+```
+$ .venv/bin/python -m factorlab.cli promote mom_20 --data signal --plant-signal >/dev/null 2>&1; echo "mom_20_planted=$?"
+mom_20_planted=1
+$ .venv/bin/python -m factorlab.cli promote noise_control --data signal >/dev/null 2>&1; echo "noise=$?"
+noise=1
+```
+
+Gate row for the documented numbers (README: "BH p=0.1065 vs q=0.10, m=3 horizons"):
+
+```
+survives_fdr                              0.1065       0.1000   FAIL
+  note: BH FDR q=0.1, m=3 tests (3 horizons + 0 extra)
+```
+
+**Verdict: SUPPORTED.** Exit codes and the p/q/m triple match the README
+sentence exactly. The honest-REJECT framing holds.
+
+Consequence, re-verified not trusted (see F-D1 carried): `examples/run_demo.sh`
+step 4 still asserts exit 0 for this exact command, so the demo exits 1:
+
+```
+$ bash examples/run_demo.sh > /tmp/c5_demo.txt 2>&1; echo "demo_exit=$?"
+demo_exit=1
+```
+
+```
+--- 4. Promote mom_20 on planted-signal data (must PROMOTE, exit 0) ---
+Factor:  mom_20
+Verdict: REJECT
+...
+survives_fdr                              0.1065       0.1000   FAIL
+  note: BH FDR q=0.1, m=3 tests (3 horizons + 0 extra)
+...
+Result: REJECT
+```
+
+This is the c5-p09 open conflict (spec criteria 2&3 vs the multiplicity fix),
+deliberately untouched per QUALITY-CONTRACT §0 — recorded as carried, not new.
+
+### C2 — "Real results (from examples/run_demo.sh)": README table is the demo's output
+
+The screen step (step 2) completes before the step-4 failure, so the table is
+still checkable. Diffed fresh output against README:
+
+```
+$ grep '^|' /tmp/c5_demo.txt | sort -u > /tmp/c5_dr.txt; grep '^|' README.md | sort -u > /tmp/c5_rr.txt; diff /tmp/c5_dr.txt /tmp/c5_rr.txt && echo ROWS_IDENTICAL
+ROWS_IDENTICAL
+$ grep -n "Promoted" /tmp/c5_demo.txt | head -2
+39:Promoted (0): none
+```
+
+**Verdict: SUPPORTED.** All 15 table lines byte-identical; "Promoted (0): none"
+matches the README "0/13" framing.
+
+### C3 — Positioning: MlFinLab licence/pricing; Quantopian stack abandoned 2020
+
+```
+$ curl -sS -L --max-time 25 https://raw.githubusercontent.com/hudson-and-thames/mlfinlab/master/LICENSE.txt | grep -cE '6\.6|6\.7|14\.2|14\.3|14\.5'
+6
+$ curl -sS --max-time 20 "https://api.github.com/repos/quantopian/alphalens/commits?per_page=1" | grep -m1 '"date"'
+        "date": "2020-04-27T18:40:41Z"
+$ curl -sS --max-time 20 "https://api.github.com/repos/quantopian/pyfolio/commits?per_page=1" | grep -m1 '"date"'
+        "date": "2020-02-28T17:30:19Z"
+```
+
+**Verdict: SUPPORTED.** Clause grep hits 6 lines covering 6.6/6.7/14.2/14.3/14.5
+(pricing page `£100 (+VAT)` verified in c3-p10/c4-p10; page unchanged, quoted not
+re-fetched). No conflict with MARKET-VERDICTS.md positioning to record
+(README still leads with the licence problem, COMPARISONS.md table present,
+MlFinLab-more-complete stated).
+
+---
+
+## 2. Citation audit — all 163 unique URLs in docs/RESEARCH.md (c5-p10)
+
+Method: extracted 163 unique `https://` URLs (was 119 at c4-p10; cycle 5 added
+~44), probed each with `curl -s -o /dev/null -w '%{http_code}' -L --max-time 25`
+(16-way parallel, research UA). Two ScienceDirect/Elsevier DOI URLs contain
+literal parentheses which truncate under naive extraction — probed in full
+separately (both 200, see below).
+
+```
+probed=163 (+2 full-paren forms)
+     131 200
+      29 403
+       1 404
+       2 302 (redirect-loop, curl final code)
+```
+
+Non-200 detail (raw):
+
+```
+403 https://doi.org/10.1002/ijfe.70036
+403 https://doi.org/10.1080/01621459.1927.10502953
+403 https://doi.org/10.1080/01621459.1994.10476870
+403 https://doi.org/10.1093/rfs/1.1.41
+403 https://doi.org/10.1093/rfs/hhv059
+403 https://doi.org/10.1093/rfs/hhv063
+403 https://doi.org/10.1093/rfs/hhx132
+403 https://doi.org/10.1111/0022-1082.00163
+403 https://doi.org/10.1111/0022-1082.00247
+403 https://doi.org/10.1111/1468-0262.00152
+403 https://doi.org/10.1111/j.1468-0262.2005.00615.x
+403 https://doi.org/10.1111/j.1540-6261.1985.tb05004.x
+403 https://doi.org/10.1111/j.1540-6261.1993.tb04702.x
+403 https://doi.org/10.1111/j.1540-6261.2006.01015.x
+403 https://doi.org/10.1111/j.1540-6261.2009.01527.x
+403 https://doi.org/10.1111/j.1540-6261.2010.01598.x
+403 https://doi.org/10.1111/jofi.12021
+403 https://doi.org/10.1111/jofi.12365
+403 https://doi.org/10.1111/jofi.13131
+403 https://doi.org/10.1198/073500105000000063
+403 https://doi.org/10.2307/2297912
+403 https://doi.org/10.2469/faj.v58.n4.2453
+302 https://doi.org/10.3905/jai.2023.1.189
+302 https://doi.org/10.3905/jpm.2014.40.5.094
+404 https://doi.org/10.1198/073500104000000063
+403 https://papers.ssrn.com/sol3/papers.cfm?abstract_id=1821643
+403 https://papers.ssrn.com/sol3/papers.cfm?abstract_id=377260
+403 https://papers.ssrn.com/sol3/papers.cfm?abstract_id=3913263
+403 https://www.pm-research.com/content/iijaltinv/early/2023/03/25/jai.2023.1.189.full.pdf
+403 https://www.sciencedirect.com/science/article/pii/0304405X86900656
+403 https://www.tandfonline.com/doi/abs/10.1198/073500105000000063
+403 https://www.tandfonline.com/doi/abs/10.2469/faj.v58.n4.2453
+```
+
+Full-paren forms (naive extraction truncated these at `(`; the file carries
+the complete URLs):
+
+```
+200 https://doi.org/10.1016/S1386-4181(01)00024-6
+200 https://doi.org/10.1016/0304-4076(86)90063-1
+```
+
+Disposition:
+
+- **131/163 → HTTP 200** (129 + 2 full-paren forms), including every
+  JSTOR/NBER/arXiv/RePEc/GitHub-API/PyPI alternate the file promises and the
+  cycle-5 §D verification-table URLs.
+- **29× 403**: publisher DOI resolvers + SSRN + ScienceDirect + T&F/PM-Research
+  bot-blocking (same pattern as every prior pass). Cycle-5 additions follow the
+  established discipline: `10.1002/ijfe.70036` is marked "403 — NOT claimed"
+  (line 2880); `abstract_id=1821643` and the T&F/PM-Research URLs sit in §D rows
+  explicitly labelled "bot-walled, NOT cited as verified" (lines 4463/4469);
+  the ScienceDirect URL sits in a "boundary ... 403 — NOT claimed" row
+  (line 3524). Each affected citation block carries a 200-returning alternate
+  or an explicit NOT-claimed flag — verified by grep.
+- **1× 404** (`doi:10.1198/073500104000000063`): still documented "404 — NOT
+  claimed" (line 2318). Unchanged.
+- **2× 302** (both IPR-Journals `10.3905` DOIs): the known redirect-loop shape
+  (curl final code 302 after following); both documented with arXiv/SSRN
+  handling in-file (c1-p10/c3-p10). Unchanged.
+- **Support spot-checks on cycle-5 citations:** the §D2b row claims the
+  Bollerslev DOI "resolves HTTP 200 confirmed 2026-10-13" — re-confirmed 200
+  this pass. The §D1b/§D3c rows claim bot-walled NOT-verified status for the
+  T&F/SSRN URLs — re-confirmed 403 this pass, matching the file. No citation
+  found that resolves to a page contradicting its claim.
+
+---
+
+## 3. Test-quality audit — 6 tests sampled, named fault injected, suite run (c5-p10)
+
+Driver `/tmp/opencode/c5_inject.py`: back up the source file, apply one exact
+string mutation (asserted unique), run the single node, restore.
+Sampling deliberately covers the cycle-5 diff surface (T1–T3) plus the gate,
+validation, and detector layers (T4–T6).
+
+| # | test | injected fault (one string mutation) | result |
+|---|------|--------------------------------------|--------|
+| T1 | `test_evaluate.py::test_pearson_corr_wild_magnitudes` | deviation rescale removed: `xs = xd / sx` → `xs = xd`, `ys = yd / sy` → `ys = yd` (reverts c9b2373) | exit 1 — DETECTED (`assert nan...` at test_evaluate.py) |
+| T2 | `test_microstructure.py::test_roll_spread_hand_computed` | Roll constant dropped: `2.0 * np.sqrt(-cov1)` → `np.sqrt(-cov1)` | exit 1 — DETECTED (`AssertionError` at test_microstructure.py:88) |
+| T3 | `test_adversarial.py::test_embargo_uses_max_horizon_not_min` | min-embargo fault: `embargo_days=cfg.embargo_days` → `embargo_days=min(cfg.horizons)` in the walk-forward construction | exit 1 — DETECTED (`ValueError` at cv.py:106 — the construction-time `embargo_days >= H` guard fires) |
+| T4 | `test_promote.py::test_planted_signal_promoted` | verdict forced: `"promote" if all_passed else "reject"` → `"reject"` | exit 1 — DETECTED (`AssertionError` at test_promote.py:123) |
+| T5 | `test_significance.py::test_wilson_lower_rejects_negative_k` | validation removed: `if k < 0 or k > n:` → `if False:` | exit 1 — DETECTED (`AssertionError` at test_significance.py:102) |
+| T6 | `test_adversarial.py::test_internal_refs_detector_catches_forbidden_token` | detector blinded: `scan_file` forced to `return []` | exit 1 — DETECTED (`AssertionError` at test_adversarial.py:1419) |
+
+Restore check: `git status --porcelain -- src tests scripts` empty after every
+restore (verified). Pre-attack full suite was 165 passed.
+
+**Score: 6 of 6 named faults fail on their fault.** Notes:
+
+- T1 is the fix-verification for the c9b2373 rescale: removing the deviation
+  rescale reproduces NaN on mixed magnitudes, exactly the pre-fix symptom quoted
+  in the test docstring. The KAT pins the fix, not just the function.
+- T3 faults the caller (min instead of max/default), not the splitter: the
+  suite fails via the `PurgedWalkForward` construction guard (`embargo_days >=
+  label_horizon`), i.e. defense in depth — the guard catches what the caller
+  got wrong. Detection is real at suite level; the test's assertion text
+  (`emb >= 20`) is not what fires, the constructor raises first. Test-precision
+  note only, not a finding: the suite still fails on the named fault.
+- T6 guards the F1 mandate layer itself (the checker the v0.2 MANDATE depends
+  on). Blinding it fails its pin test alone.
+
+---
+
+## 4. Bypass hunt, pass-1 scope (c5-p10)
+
+- **Force flag:** not re-probed (c1-p10/c2-p10/c4-p10 all confirm `--force` is
+  rejected by argparse; `git log` shows no cli.py changes since those probes).
+- **Gate relaxation / permissive config:** by design per c1-p11; not
+  re-litigated.
+- **README command honesty:** the exact quickstart commands re-run unmodified
+  in §C1 above — with the documented flipped expectation (exit 1) holding.
+- **Seed-shopping (B3):** still 8/30 (c3-p11 seeds 1-4 + c4-p11 seeds 5,6,8,9),
+  all reject. Not extended (same ~45-60s-per-promote foreground cost). Carried
+  as method note.
+
+---
+
+## 5. Findings table (c5-p10)
+
+| id | severity | finding | evidence | status |
+|----|----------|---------|----------|--------|
+| F-D1 | major (carried) | (c5-p04..c5-p09) `examples/run_demo.sh` step 4 asserts `promote mom_20 --plant-signal` exits 0; the tightened multi-horizon FDR gate returns exit 1 (BH p=0.1065 vs q=0.10, m=3). Demo exits 1; spec criteria 2&3 red. Gate side is correct (c5-p09 ruling); criterion needs orchestrator re-scope. Deliberately untouched per QUALITY-CONTRACT §0. | demo_exit=1 + REJECT gate table §C1; reports/improvements.md c5-p09 open-conflict entry | open (orchestrator ruling needed) |
+| B3 | — | Noise seed-shopping sweep still 8/30, all reject | c3-p11 §1, c4-p11 §D2; same foreground-cost constraint | open (method note: background job for remaining 22) |
+| P08 | — | Positioning conflict with MARKET-VERDICTS.md: none found (re-checked §C3) | README lines 3, 12-13; COMPARISONS.md table | refuted (no conflict) |
+
+Claims C1/C2/C3: all three **supported** — no blocker, no new major. Citation
+audit: 131/163 URLs 200 (incl. 2 full-paren forms), 29× documented
+publisher-403-with-alternate-or-NOT-claimed, 1× documented 404-NOT-claimed,
+2× known redirect-loops. Test audit: 6/6 named faults detected, including
+three pins on the cycle-5 diff surface. Prior findings
+F-T3/F-T2/F-L1/F-A4/F-T5/F-C1/F-S1/F-S2/F-G1/F-G2/F-B1/F-B2/F-B3/F-C2: remain
+fixed (untouched by this pass's diff — this pass touched no Python files, only
+appended to this markdown file; suite green at 165).
+
+### Status key (c5-p10)
+
+- `open`: reported for the builder; not yet fixed (reviewer does not fix code)
+- `fixed`: fix implemented and re-verified with the pass's own probes this pass
+- `refuted`: attack attempted, claim held
+- `carried`: reported by an earlier pass, re-verified this pass, unchanged
+
+---
+
+## PASS c5-p11-adversarial-2 (cycle 5, adversarial pass 2 of 2)
+
+Independent reviewer lane. This pass attacks the **property** (c5-p10 attacked the
+claims). Read first: ITERATION-PROTOCOL.md, QUALITY-CONTRACT.md,
+MARKET-VERDICTS.md, specs/factor-lab.md (incl. v0.2 MANDATE), all prior
+c1-p10 through c5-p10 entries above. All three `reports/mutants-survived-c*.txt`
+are present but 0 bytes; authoritative mutation baseline remains
+reports/mutation-c1.json (878/1977 = 44.4%, gate 70%), with
+reports/mutation-c3.json and reports/mutation-c4.json recording 0/0 infra
+failures (rc=2) — quoted from the files, not re-derived.
+
+Branch note: `feat/v0.1` is checked out by a sibling worktree, so this pass ran
+on the current checkout `tmp-c3p10` at commit ea32840 (same content line as
+c5-p10). No absolute host paths appear below per F1.
+
+All commands below were actually run; output is verbatim terminal output
+(host path prefixes redacted to `<repo>` per F1 where present).
+
+---
+
+## 0. Pre-attack state
+
+```
+$ git log --oneline -1
+ea32840 docs(review): cycle 5 adversarial pass 1 — claims hold, 6/6 faults detected, demo conflict carried
+$ .venv/bin/python scripts/check_no_internal_refs.py 2>&1 | tail -1
+check_no_internal_refs: CLEAN — no forbidden tokens found.
+$ .venv/bin/python scripts/check_real_data_proof.py 2>&1 | tail -1
+PROOF_COMPLETE
+```
+
+Prior-findings triage: F-D1 (demo step-4 vs tightened FDR gate) carried open —
+untouched per QUALITY-CONTRACT section 0, re-verified red in section 4. B3 (noise
+seed-shopping) stands at 8/30, all reject — not extended (same ~45-60s-per-promote
+foreground cost; the suite itself occupies the box this pass). Everything else
+remains fixed (suite green at c5-p10: 165 passed).
+
+---
+
+## 1. Property attacks — defeat the promotion gate
+
+### ATTACK E3: window-start-gapped leak — **BYPASSED ALL GATES (BLOCKER F-B4)**
+
+Goal: dodge the F-B3 contiguous tiling the way F-B3 dodged quartile spacing —
+aim at what the tiling leaves uncovered. Contiguous tiling with step == length
+starts windows at deterministic multiples of `tail_days` (20, 40, ...). An
+output at t reading a future row at t+d is only compared against windows
+starting in (t, t+d]. With d=5 and step=20, dates with (pos mod 20) <= 14 have
+NO window start in (t, t+5] — a 75%-coverage safe set. Blend 5-30% future
+5-day returns via `np.roll` (no `.shift` literal for Gate 0.5) active only on
+safe dates (plus dodging the four quartile read-zones, so legacy spacings stay
+blind too).
+
+Mechanism probes (plain synthetic, seed 7, no planted signal):
+
+```
+rows: 18000
+source patterns: []
+flag: False
+runtime: (False, '')
+perturbation: (False, '')
+```
+
+All three lookahead layers blind — including the F-B3 perturbation gate the
+previous pass installed. Full-gate verdicts vs the clean twin (same momentum,
+no future leg, rejects at IC=0.0061):
+
+```
+W=0.05: runtime=False perturbation=False verdict=reject IC=0.0290 fails=[survives_fdr]
+W=0.15: runtime=False perturbation=False verdict=promote IC=0.0720 fails=[]
+W=0.30: runtime=False perturbation=False verdict=promote IC=0.1577 fails=[]
+TWIN verdict: reject (min_abs_ic/min_ic_ir/survives_fdr all FAIL)
+```
+
+At W=0.05 the leak already lifts IC 0.006 -> 0.029 (past the 0.02 floor) and
+only the FDR multiplicity gate holds; at W=0.15 the verdict flips to PROMOTE
+with all gates passing. Decisiveness proven: the core safety property ("refuse
+factors that read future rows") was defeated by a leak confined to
+window-start gaps. Root cause: deterministic step==length starts let a
+dedicated adversary compute the safe set exactly (the F-B3 docstring's residual
+paragraph anticipated gap-aiming at bodies; starts are aimable the same way).
+
+### ATTACK E4: forged F3 aggregates — **CHECKER PRINTS PROOF_COMPLETE (MAJOR F-C3)**
+
+Goal: cross the F4 finish gate on a knowingly-bad run without touching the
+numbers the F-C2 fix cross-checks. The F-C2 fix compares per-factor IC/IC-IR/
+t-HAC/p-raw/OOS/Sharpe/verdict between md and JSON — but the F3 aggregates the
+mandate actually cares about (`f3_specificity.rejection_rate`,
+`f3_stability.flip_count`, `delta` counts) are self-reported and never
+recomputed from the per-entry verdicts sitting in the same JSON. Forgery on
+copies in /tmp (real files untouched): flip 5/10 `noise_controls` verdicts to
+`promote`, keep `rejection_rate=1.0`:
+
+```
+forged: 5/10 noise verdicts=promote, rejection_rate still 1.0
+$ check_real_data_proof.main() against forged copies
+check_real_data_proof: all checks passed.
+PROOF_COMPLETE
+forged_checker_exit= 0
+```
+
+The checker certified a run that promotes half its noise controls. Same class
+as F-C2 (self-certified artifact), one layer up: the per-factor numbers are
+now bound to each other, but the aggregates that decide F3 pass/fail are bound
+to nothing.
+
+### ATTACK E2: global-normalization leak — BLOCKED (failed attack is evidence)
+
+Goal: smuggle future influence through full-sample z-scoring
+(`(v - v.mean()) / v.std()` over the whole panel — reads future rows
+indirectly, no shift/roll anywhere):
+
+```
+E2 global-norm flagged: True
+```
+
+The perturbation gate flags it (the documented assumption — global
+normalization is itself in-sample leakage — holds behaviourally, not just on
+paper).
+
+### ATTACK E5: determinism of the rewritten gate — HOLDS
+
+```
+E5 deterministic: True (False, False) twice on mom_20, seed 7
+```
+
+Two consecutive `check_lookahead_perturbation` runs return identical verdicts;
+the rewrite introduces no RNG or ordering dependence.
+
+---
+
+## 2. Fixes (applied this pass, reviewer-implemented per c2-p11/c3-p11/c4-p11 precedent)
+
+### F-B4 fix: stride-1 dense tiling (`src/factorlab/cv.py`)
+
+`check_lookahead_perturbation()` now starts a perturbation window at EVERY
+sample date by default (`n_windows=None` = stride-1, window length
+`tail_days`). Any output at t reading a future row at t+d is caught by the
+window starting inside (t, t+d] — which always exists when starts are dense.
+Gap-aiming has no safe set left because there are no gaps. Explicit small
+`n_windows` (1 = tail-only, 4 = quartile) reproduces the legacy spacings for
+the regression tests' preconditions — never in the gate path (`promote()`
+calls with defaults). Cost: one recompute per date (~16s for a clean factor on
+the 1500x12 panel; leaks exit early on the first differing window).
+
+Post-fix verification (same filed shape):
+
+```
+leak W=0.15 stride-1: True | Factor values at 12 past dates changed when only
+  future OHLCV data was perturbed (window 21/1499 starting 2019-...)
+leak legacy n_windows=4: False | leak legacy n_windows=1: False
+mom_20 clean: False (16s) | noise clean: False (15s)
+LEAK verdict: reject (FAIL no_future_dependence) | TWIN verdict: reject
+```
+
+The filed shape is now flagged and rejected via `no_future_dependence`; both
+legacy spacings stay blind (pinning the test to the new mechanism); clean
+factors still scan clean.
+
+Tests added (`tests/test_adversarial.py`, fault-naming docstrings +
+top-of-file fault-list entries):
+`test_mod_gated_leak_rejected_by_stride_one_tiling` (pins verdict + reason
+code, with preconditions asserting source, runtime, quartile `n_windows=4`,
+AND tail-only `n_windows=1` all stay blind so the test cannot pass
+vacuously).
+Speed note: `test_perturbation_no_false_positives_on_library` now runs on a
+400x6 panel (was 1500x12) — same default gate path, size-independent property,
+with the reason recorded in the test.
+
+### F-C3 fix: F3 aggregate cross-check (`scripts/check_real_data_proof.py`)
+
+New `check_f3_aggregate_consistency(data)`: recomputes every self-reported
+aggregate from the entry lists with the same arithmetic
+`prove_on_real_data.write_report` uses — `noise_rejected`/`noise_total`/
+`rejection_rate` vs `noise_controls` verdicts, `flip_count` vs
+`flipped_names`, `n_promoted`/`promoted_names` vs `real_factors` verdicts,
+`delta` counts vs `p_raw`/`bh_fdr_pass`/verdict fields — failing closed on
+any divergence. Post-fix, the same forgery fails:
+
+```
+check_real_data_proof: FAIL
+  F3 CONSISTENCY FAIL: f3_specificity.noise_rejected=10 but 5/10 noise_controls entries have verdict=reject.
+  F3 CONSISTENCY FAIL: f3_specificity.rejection_rate=1.0 but entry verdicts give 0.5 — one artifact was doctored.
+forged_exit= 1
+```
+
+Residual (documented, not a new finding): a forger who rewrites entries AND
+aggregates coherently in both files still passes — only a full recomputation
+gate closes that, which costs a real-data run per check. The bar is now "forge
+a fully self-consistent pair of artifacts" instead of "edit one aggregate
+field".
+
+Tests added: `test_proof_checker_rejects_forged_specificity` (positive
+control on the committed artifacts + in-memory forgery, no file writes).
+
+Post-fix state (full suite + lint + both mandate checkers, this pass):
+
+```
+$ .venv/bin/python -m pytest -p no:warnings 2>&1 | tail -1
+167 passed in 239.79s (0:03:59)
+$ .venv/bin/python -m ruff check . 2>&1 | tail -1
+All checks passed!
+$ .venv/bin/python -m ruff format --check . 2>&1 | tail -1
+27 files already formatted
+$ .venv/bin/python scripts/check_no_internal_refs.py 2>&1 | tail -1
+check_no_internal_refs: CLEAN — no forbidden tokens found.
+$ .venv/bin/python scripts/check_real_data_proof.py 2>&1 | tail -1
+PROOF_COMPLETE
+```
+
+(Suite cost 108s -> 240s from stride-1 tiling: one recompute per date for
+clean factors; leaks exit early. The library no-false-positives sweep runs on
+a 400x6 panel for the same reason. Demo/F-D1 state unchanged by this diff —
+no gate threshold touched, clean-factor verdicts identical; carried as open.)
+
+---
+
+## 3. Findings table (c5-p11)
+
+| id | severity | finding | evidence | status |
+|----|----------|---------|----------|--------|
+| F-B4 | **blocker** | Window-start-gapped leak (5-30% future admixture via `np.roll`, active only at dates with no tiling-window start in (t, t+5]) promoted with all gates passing at W>=0.15 (IC=0.072); clean twin rejects (IC=0.0061) so the leak flips the verdict. Deterministic step==length starts let the adversary compute the safe set exactly. | E3 mechanism + verdict rows section 1 (pre-fix) | **fixed** (stride-1 tiling; post-fix verdict=reject via `no_future_dependence`; 1 test; section 2) |
+| F-C3 | major | `check_real_data_proof.py` trusted self-reported F3 aggregates without recomputing them from the per-entry verdicts: flipping 5/10 noise verdicts to promote while keeping rejection_rate=1.0 printed PROOF_COMPLETE, exit 0. The F4 finish gate was crossable on a knowingly-bad run. | E4 outputs section 1 (pre-fix `all checks passed` on forged copies) | **fixed** (aggregate cross-check; same forgery now exit 1; section 2) |
+| F-D1 | major (carried) | (c5-p04..c5-p10) `examples/run_demo.sh` step 4 asserts `promote mom_20 --plant-signal` exits 0; the tightened multi-horizon FDR gate returns exit 1. Spec criteria 2&3 red. Deliberately untouched per QUALITY-CONTRACT section 0. | c5-p10 section C1; untouched by this pass's diff | open (orchestrator ruling needed) |
+| F-B1 | blocker | (c2-p11) diluted tail-visible leak | regression tests re-run green this pass | fixed (stands) |
+| F-B2 | blocker | (c3-p11) windowed early leak | regression test re-run green this pass | fixed (stands) |
+| F-B3 | blocker | (c4-p11) gap-aimed leak | regression test re-run green this pass | fixed (stands) |
+| F-C2 | major | (c4-p11) md/JSON per-factor forgery | `test_proof_checker_rejects_forged_metrics` green this pass | fixed (stands) |
+| B3 | — | Noise seed-shopping sweep: 8/30 seeds, all reject | c3-p11/c4-p11; not extended (suite occupied the box) | open (method note: background job for remaining 22) |
+| P09 | — | Positioning conflict with MARKET-VERDICTS.md: none found (re-checked: README line 3 leads with the licence problem, COMPARISONS.md table present, MlFinLab-more-complete stated) | README/COMPARISONS.md greps | refuted (no conflict) |
+
+E2 (global-norm) and E5 (determinism): attacks attempted, gate held —
+recorded as refuted/evidence. Prior findings F-T3/F-T2/F-L1/F-A4/F-T5/F-C1/
+F-S1/F-S2/F-G1/F-G2: remain fixed (untouched by this pass's diff).
+
+### Status key (c5-p11)
 
 - `open`: reported for the builder; not yet fixed
 - `fixed`: fix implemented and re-verified with the pass's own probes this pass

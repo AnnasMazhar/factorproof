@@ -2,15 +2,15 @@
 
 Factual comparison against the tools people actually ask about. Every cell was checked against
 source or official pages. Cells that could not be verified say `unverified`. Star counts are GitHub
-API values on **2026-10-13T13:00 UTC** (latest re-verification; prior runs: 2026-09-26, 2026-09-27, 2026-10-12, 2026-10-13T11:00 UTC).
+API values on **2026-10-14 ~10:30 UTC** (latest re-verification; prior runs: 2026-09-26, 2026-09-27, 2026-10-12, 2026-10-13T11:00 UTC, 2026-10-13T13:00 UTC).
 
 | | Licence | Maintained? | Purged/embargoed CV | Multiple-testing correction | Deflated Sharpe | Promotion gate that rejects | Runnable offline |
 |---|---|---|---|---|---|---|---|
-| **MlFinLab** (Hudson & Thames) | All rights reserved, not open source. Commercial use needs a paid licence; Business tier is **£100 (+VAT) per month, per user** | Commercial product; public repo last pushed **2023-10-02** (**4,939** stars as of 2026-10-12; no code push since 2023-10-02) | **Yes** — purged K-fold and combinatorial purged CV (AFML ch. 7) | **Yes** — Bonferroni, Holm and BHY adjustments in the Sharpe-haircut and profit-hurdle algorithms | **Yes** | **No** — threshold helpers (profit hurdles, minimum track record), but no accept/reject verdict API in the public source; the current paid package was not inspected (`unverified`) | **Yes**, local install |
+| **MlFinLab** (Hudson & Thames) | All rights reserved, not open source. Commercial use needs a paid licence; Business tier is **£100 (+VAT) per month, per user** | Commercial product; public repo last pushed **2023-10-02** (**4,941** stars as of 2026-10-14; no code push since 2023-10-02) | **Yes** — purged K-fold and combinatorial purged CV (AFML ch. 7) | **Yes** — Bonferroni, Holm and BHY adjustments in the Sharpe-haircut and profit-hurdle algorithms | **Yes** | **No** — threshold helpers (profit hurdles, minimum track record), but no accept/reject verdict API in the public source; the current paid package was not inspected (`unverified`) | **Yes**, local install |
 | **Quantopian stack** (alphalens / pyfolio / empyrical) | Apache-2.0 (all three) | **No** — last commits on the default branch: alphalens 2020-04-27, pyfolio 2020-02-28, empyrical 2020-10-14. Not archived | **No** — no purged or embargo code | **No** — no Benjamini-Hochberg, Bonferroni or FDR code | **No** | **No** — metrics and tear sheets only | **Yes** |
-| **qlib** (Microsoft) | MIT | **Yes** — **49,336** stars, last push **2026-10-08** (as of 2026-10-13T13:00 UTC) | **No** — no purged/embargo/walk-forward code or docs | **No** | **No** — plain Sharpe ratios only | **No** — experiment tracking and metrics, no accept/reject gate | Only after downloading its dataset (`scripts/get_data.py`); then yes |
-| **purgedcv** (eslazarev) | MIT | **Yes** — **v0.1.10** (PyPI, current); **57** stars as of 2026-10-13T13:00 UTC (was 55 at ~11:00 UTC same day — growing fast; 0 to 57 stars since May 2026); JOSS paper | **Yes** — `PurgedKFold`, `WalkForwardSplit`, `CombinatorialPurgedCV` with full embargo support | **No** — no BH/Bonferroni across a factor family; only single-strategy DSR/PSR | **Yes** — `deflated_sharpe_ratio` and `probabilistic_sharpe_ratio` fully implemented | **No** — a CV/statistics library only; no factor computation, no IC, no quantile spread, no accept/reject gate | **Yes** — offline, pure time-series inputs |
-| **ml4t-diagnostic** (ml4t org) | MIT | **Yes** — **34** stars, last push **2026-10-13T05:27Z** (two pushes on 2026-10-13; as of 2026-10-13T13:00 UTC), part of a 7-library ML4T ecosystem | **Yes** — `WalkForwardCV`, `CombinatorialCV`, purge + embargo + CPCV | **Yes** — HAC-adjusted IC t-stat (added to README 2026-10-13), FDR control, White's Reality Check, DSR, PBO | **Yes** | **No** — `analyze_signal` returns a result object with IC/FDR metrics; no binary accept/reject gate, no exit code, no standalone verdict API | **Partial** — Polars is a required input (not optional); optional Numba/LightGBM/SHAP extras; 7-library ecosystem |
+| **qlib** (Microsoft) | MIT | **Yes** — **49,354** stars, **v0.9.8** released **2026-10-08**, last push **2026-10-08** (as of 2026-10-14; platform release, no overfitting-statistics module) | **No** — no purged/embargo/walk-forward code or docs | **No** | **No** — plain Sharpe ratios only | **No** — experiment tracking and metrics, no accept/reject gate | Only after downloading its dataset (`scripts/get_data.py`); then yes |
+| **purgedcv** (eslazarev) | MIT | **Yes** — **v0.1.10** (PyPI, current); **57** stars as of 2026-10-14 (0 to 57 stars since May 2026); JOSS paper | **Yes** — `PurgedKFold`, `WalkForwardSplit`, `CombinatorialPurgedCV` with full embargo support | **No** — no BH/Bonferroni across a factor family; only single-strategy DSR/PSR | **Yes** — `deflated_sharpe_ratio` and `probabilistic_sharpe_ratio` fully implemented | **No** — a CV/statistics library only; no factor computation, no IC, no quantile spread, no accept/reject gate | **Yes** — offline, pure time-series inputs |
+| **ml4t-diagnostic** (ml4t org) | MIT | **Yes** — **34** stars, **v0.1.8** (2026-09-24), last push **2026-10-13T16:39Z** (as of 2026-10-14) | **Yes** — `WalkForwardCV`, `CombinatorialCV`, purge + embargo + CPCV | **Yes** — HAC-adjusted IC t-stat (added to README 2026-10-13), FDR control, White's Reality Check, DSR, PBO | **Yes** | **No** — `analyze_signal` returns a result object with IC/FDR metrics; no binary accept/reject gate, no exit code, no standalone verdict API | **Partial** — Polars is a required input (not optional); optional Numba/LightGBM/SHAP extras; 7-library ecosystem |
 | **pyanomaly** (chulwoohan) | MIT | **Partial** — **133** stars as of 2026-10-12; last push 2024-03-13; no commits since | **No** — no purged or embargo CV | **No** | **No** | **No** — quantile portfolios and factor regression; no promotion verdict | **No** — requires a WRDS subscription for all data; no offline synthetic path |
 | **factorproof** (this repo) | MIT | Yes — v0.1.0, active development | **Yes** — `PurgedWalkForward`: label-overlap purge plus an explicit embargo | **Yes** — Benjamini-Hochberg (primary) and Bonferroni, applied inside the gate across the screened family | **Yes** — implemented and property-tested; *not* wired into the default gate | **Yes** — 10 checks, all must pass, exit code 1 on reject, no `--force` | **Yes** — synthetic OHLCV built in, CSV loader, no network calls |
 
@@ -34,7 +34,7 @@ implement overfitting-control statistics.
 
 The Quantopian stack wins on ecosystem familiarity and history — alphalens' tear sheets are still the
 mental model most people have for factor analysis. Community forks (`stefan-jansen/alphalens-reloaded`,
-**670** stars; `pyfolio-reloaded`, **617**; `empyrical-reloaded`, **125**, pushed **2026-10-10…13**) keep them
+**671** stars; `pyfolio-reloaded`, **616**; `empyrical-reloaded`, **124**, all pushed **2026-10-13**) keep them
 installable on modern Python. Source re-check 2026-10-13 (after all three moved that morning) confirms the forks add none of the four features
 either.
 
@@ -48,7 +48,7 @@ either.
 - Thresholds are documented defaults, not calibrated on live market data.
 - No production history. MlFinLab has paying users; this has a test suite.
 
-## Sources (fetched 2026-09-26; star counts and last-push dates re-verified 2026-10-13T13:00 UTC)
+## Sources (fetched 2026-09-26; star counts and last-push dates re-verified 2026-10-14 ~10:30 UTC)
 
 - MlFinLab licence: https://github.com/hudson-and-thames/mlfinlab/blob/master/LICENSE.txt (clauses 6.6, 6.7, 14.3–14.5)
 - MlFinLab "NOT open-source" statement: https://github.com/hudson-and-thames/mlfinlab/blob/master/docs/source/index.rst

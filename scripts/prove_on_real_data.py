@@ -48,7 +48,7 @@ import pandas as pd
 _REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(_REPO_ROOT / "src"))
 
-from factorlab.evaluate import evaluate_factor  # noqa: E402
+from factorlab.evaluate import evaluate_factor, yearly_ic_table  # noqa: E402
 from factorlab.factors import REGISTRY, get_factor  # noqa: E402
 from factorlab.microstructure import (  # noqa: E402
     STALENESS_THRESHOLD,
@@ -377,6 +377,20 @@ def _evaluate_all_factors(
         except Exception as exc:
             row["verdict"] = f"ERROR: {exc}"
 
+    # ---- by-year IC table (regime robustness; research F-R33 transfer) ----
+    # Computed at each factor's best horizon from freshly computed values.
+    for row in real_rows:
+        if "error" in row:
+            row["by_year"] = []
+            continue
+        factor = get_factor(row["factor"])
+        try:
+            vals = factor.compute(df)
+            tab = yearly_ic_table(vals, df, [row["horizon"]])
+            row["by_year"] = [{"horizon": row["horizon"], **entry} for entry in tab[row["horizon"]]]
+        except Exception:
+            row["by_year"] = []
+
     # ---- seeded noise controls ----
     for i in range(n_noise_factors):
         noise_seed = int(rng.integers(0, 2**31))
@@ -623,6 +637,30 @@ def write_report(
         md_lines.append(_row_md(row))
     md_lines.append("")
 
+    # --- By-year IC (regime robustness; unnumbered: keeps §7/§8 headers stable) ---
+    md_lines.append("### By-year IC (regime robustness)\n")
+    md_lines.append(
+        "Mean IC and HAC t-stat per calendar year at each factor's best horizon. "
+        "A factor whose full-sample t-stat passes but whose yearly ICs flip sign "
+        "is not robust across regimes. `n/a` = fewer than 2 valid cross-sections."
+    )
+    md_lines.append("")
+    md_lines.append("| Factor | H | Year | n | IC | t-HAC |")
+    md_lines.append("|--------|---|------|---|-----|-------|")
+    for row in sorted(real_rows, key=lambda r: r.get("factor", "")):
+        if "error" in row:
+            continue
+        for entry in row.get("by_year", []):
+            ic = entry.get("ic", float("nan"))
+            t = entry.get("t_hac", float("nan"))
+            ic_txt = f"{ic:.4f}" if isinstance(ic, float) and math.isfinite(ic) else "n/a"
+            t_txt = f"{t:.4f}" if isinstance(t, float) and math.isfinite(t) else "n/a"
+            md_lines.append(
+                f"| {row['factor']} | {entry.get('horizon', '?')} | {entry.get('year', '?')} | "
+                f"{entry.get('n', 0)} | {ic_txt} | {t_txt} |"
+            )
+    md_lines.append("")
+
     # --- F2 section 3: the delta ---
     md_lines.append("## 3. The Delta — What the Gate Actually Does\n")
     md_lines.append(
@@ -737,6 +775,7 @@ def write_report(
         "command": command,
         "dataset_summary": summary,
         "real_factors": real_rows,
+        "by_year_ic": {r["factor"]: r.get("by_year", []) for r in real_rows if "error" not in r},
         "noise_controls": noise_rows,
         "f3_specificity": {
             "noise_rejected": n_noise_rejected,

@@ -1065,3 +1065,27 @@ Also fixed two divergences from feat/v0.1:
 - tests/test_microstructure.py: noise-floor edge case in test_roll_spread_scales_linearly
 - src/factorlab/promote.py: FDR multiplicity now spans all horizons evaluated (m=3
   not m=1); fdr_q 0.15→0.10; n_days 1500→2000; n_assets 12→20 for test margins.
+
+## c5-p09-improve-2 (2026-10-14) — criterion-3 conflict record (quality-contract §0)
+
+The c5-p04 gate above is the correct side, but it leaves spec acceptance
+criterion 3 (`factor-lab promote mom_20` on planted-signal data exits 0) and
+`examples/run_demo.sh` step 4 failing. Measured this pass, verbatim:
+
+```
+$ .venv/bin/factor-lab promote mom_20 --data signal --plant-signal
+survives_fdr                              0.1065       0.1000   FAIL
+  note: BH FDR q=0.1, m=3 tests (3 horizons + 0 extra)
+Result: REJECT
+CLI-promote EXIT:1
+```
+
+Argument for leaving it failing: p=0.1065 clears neither q=0.10 at m=3 nor
+q=0.10 at m=1, so no family-scoping subtlety is involved — the planted signal
+(IC=0.025 at H=5) simply sits below the default bar. Recovering exit 0 would
+require raising q or narrowing the family for one factor, i.e. tuning a
+threshold to make a factor pass, which the spec forbids. Sensitivity is pinned
+by tests/test_promote.py::test_planted_signal_promoted under the explicit
+single-horizon config (horizons=[5], q=0.15). Orchestrator ruling needed:
+re-scope criterion 3 to that config, or accept REJECT as the honest default
+verdict on this panel.

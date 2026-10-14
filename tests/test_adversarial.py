@@ -53,6 +53,16 @@ Faults detected per test:
         Fault: check_real_data_proof.py trusting the JSON's claimed numbers
         without comparing them to the markdown table (hand-edited JSON
         printing PROOF_COMPLETE).
+    test_mod_gated_leak_rejected_by_stride_one_tiling (F-B4 FIX):
+        Fault: step==length tiling starting windows at deterministic
+        multiples of tail_days — a leak active only at dates with no
+        window start in (t, t+d] dodges source, runtime, tail, quartile
+        AND contiguous perturbation while flipping REJECT into PROMOTE.
+    test_proof_checker_rejects_forged_specificity (F-C3 FIX):
+        Fault: check_real_data_proof.py trusting self-reported F3
+        aggregates (rejection_rate, flip_count, delta counts) without
+        recomputing them from the per-entry verdicts (finish line crossed
+        on a knowingly-bad run by editing one aggregate field).
     test_factor_wrong_index_names_handled:
         Fault: a factor returning a Series with wrong index level names
         (e.g. "ticker" instead of "asset") propagating silently into IC
@@ -1014,7 +1024,10 @@ def test_perturbation_no_false_positives_on_library():
     from factorlab.data import synthetic_ohlcv
     from factorlab.factors import REGISTRY, get_factor
 
-    df = synthetic_ohlcv(n_days=1500, n_assets=12, seed=7)
+    # Smaller panel (400x6) keeps the exact default gate path while holding
+    # suite time: stride-1 tiling costs one recompute per date, and the
+    # no-false-positive property is panel-size independent. (c5-p11.)
+    df = synthetic_ohlcv(n_days=400, n_assets=6, seed=7)
     for name in REGISTRY.keys():
         if name == "lookahead_control":
             continue  # deliberate positive control — covered by test_perturbation_flags_registered_lookahead_control
@@ -1215,6 +1228,105 @@ def test_gap_aimed_leak_rejected_by_dense_tiling():
     assert "no_future_dependence" in codes, f"expected no_future_dependence FAIL, got {codes}"
 
 
+def _mod_gated_leak(weight: float = 0.15):
+    """Build a leak that dodges window STARTS instead of window bodies (F-B4 shape).
+
+    Contiguous tiling (step == length) starts windows at deterministic
+    multiples of `tail_days`, and an output at t reading t+d is only
+    checked against windows starting in (t, t+d]. With d=5 and step=20, a
+    leak active only where (pos mod 20) <= 14 (plus dodging the four
+    quartile read-zones) never meets a window start — 70%+ coverage with
+    source, runtime, quartile AND tail layers all blind. At w=0.15 the
+    admixture flips a clean REJECT (twin IC=0.006) into PROMOTE (IC=0.072,
+    all gates passing) on plain synthetic data, seed 7. Only stride-1
+    tiling (a start at every date) sees it.
+    """
+    import numpy as np
+    import pandas as pd
+
+    from factorlab.factors.base import Factor
+
+    _w = weight
+
+    class ModGatedLeak(Factor):
+        name = "mod_gated_leak"
+        category = "attack"
+        description = "future-data admixture confined to window-start gaps"
+        params = {}
+        uses_future_data = False  # lie: reads t+5 rows at start-safe dates
+
+        def compute(self, df: pd.DataFrame) -> pd.Series:
+            base = get_factor("mom_20").compute(df)
+            close = df.pivot(index="date", columns="asset", values="close")
+            rolled = pd.DataFrame(
+                np.roll(close.to_numpy(), -5, axis=0),
+                index=close.index,
+                columns=close.columns,
+            )
+            lead = (rolled / close - 1).stack()
+            lead.index.names = ["date", "asset"]
+            all_dates = sorted(df["date"].unique())
+            pos_of = {d: i for i, d in enumerate(all_dates)}
+            dates = lead.index.get_level_values("date")
+            pos = np.array([pos_of[d] for d in dates])
+            # No window start in (t, t+5] under step-20 tiling (quartile or
+            # contiguous): pos%20 <= 14; also dodge the quartile read-zones.
+            active = ((pos % 20) <= 14) & ~((pos % 375 >= 350) & (pos % 375 < 355))
+            blend = base.copy()
+            b_aligned, l_aligned = blend.align(lead, join="inner")
+            a_aligned = pd.Series(active, index=lead.index).loc[b_aligned.index]
+            blend.loc[b_aligned.index] = (
+                ((1 - _w) * b_aligned + _w * l_aligned.where(a_aligned, 0.0))
+                .fillna(b_aligned)
+                .to_numpy()
+            )
+            return blend
+
+    return ModGatedLeak()
+
+
+def test_mod_gated_leak_rejected_by_stride_one_tiling():
+    """F-B4 FIX: a window-start-gapped leak must be rejected by stride-1 tiling.
+
+    Fault detected: contiguous tiling with step == length starts windows
+    at deterministic multiples of tail_days; a leak active only at dates
+    with no window start in (t, t+d] dodges source inspection (np.roll),
+    the 0.30 correlation screen, AND the perturbation check (tail-only,
+    quartile, and contiguous alike) while flipping REJECT into PROMOTE.
+    Stride-1 tiling starts a window at every date, so gap-aiming has no
+    safe set left.
+    """
+    from factorlab.cv import (
+        check_lookahead_perturbation,
+        check_lookahead_runtime,
+        check_lookahead_source,
+    )
+    from factorlab.data import synthetic_ohlcv
+    from factorlab.promote import promote
+
+    df = synthetic_ohlcv(n_days=1500, n_assets=12, seed=7)
+    factor = _mod_gated_leak(0.15)
+
+    # Preconditions: every legacy layer is blind to this shape.
+    assert check_lookahead_source(factor) == []
+    flagged_rt, _ = check_lookahead_runtime(factor, df, threshold=0.30)
+    assert not flagged_rt, "precondition broken: runtime check now fires; test needs update"
+    flagged_q, _ = check_lookahead_perturbation(factor, df, n_windows=4)
+    assert not flagged_q, "precondition broken: quartile check fires; test needs update"
+    flagged_tail, _ = check_lookahead_perturbation(factor, df, n_windows=1)
+    assert not flagged_tail, "precondition broken: tail-only check fires; test needs update"
+
+    is_lookahead, reason = check_lookahead_perturbation(factor, df)
+    assert is_lookahead, f"stride-1 tiling missed the mod-gated leak: {reason}"
+
+    decision = promote(factor, df)
+    assert (
+        decision.verdict == "reject"
+    ), f"mod-gated leak promoted: {[(r.code, r.passed) for r in decision.reasons]}"
+    codes = [r.code for r in decision.reasons if not r.passed]
+    assert "no_future_dependence" in codes, f"expected no_future_dependence FAIL, got {codes}"
+
+
 def _load_proof_checker():
     """Import scripts/check_real_data_proof.py by path (scripts/ is not a package)."""
     import importlib.util
@@ -1262,6 +1374,38 @@ def test_proof_checker_rejects_forged_metrics():
         assert any("0.91" in f or "verdict" in f for f in fails), f"unexpected fails: {fails}"
     finally:
         tmp_json.unlink(missing_ok=True)
+
+
+def test_proof_checker_rejects_forged_specificity():
+    """F-C3 FIX: the F4 checker must reject doctored F3 aggregates.
+
+    Fault detected: check_real_data_proof.py trusted the JSON's
+    self-reported F3 aggregates (rejection_rate, flip_count, delta counts)
+    without recomputing them from the per-entry verdicts in the same file,
+    so flipping 5/10 noise_controls verdicts to 'promote' while keeping
+    rejection_rate=1.0 still printed PROOF_COMPLETE with exit 0 — the
+    finish line crossed on a knowingly-bad run. The aggregate
+    cross-check recomputes every number from the entry lists.
+    """
+    import copy
+    import json
+    from pathlib import Path
+
+    checker = _load_proof_checker()
+
+    data = json.loads(Path(checker._PROOF_JSON).read_text(encoding="utf-8"))
+
+    # Positive control: the committed artifacts are self-consistent.
+    assert checker.check_f3_aggregate_consistency(data) == []
+
+    # Forgery: promote half the noise controls, keep the aggregate at 1.0.
+    forged = copy.deepcopy(data)
+    for entry in forged["noise_controls"][:5]:
+        entry["verdict"] = "promote"
+        entry["bh_fdr_pass"] = True
+    fails = checker.check_f3_aggregate_consistency(forged)
+    assert fails, "forged specificity aggregates passed the cross-check"
+    assert any("rejection_rate" in f for f in fails), f"unexpected fails: {fails}"
 
 
 # ---------------------------------------------------------------------------

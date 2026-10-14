@@ -1077,3 +1077,246 @@ All checks passed!
   still unaddressed, still needs a dedicated pass with its own KAT.
 - Branch note: `feat/v0.1` is checked out in the sibling reconcile worktree.
   Commit below is on `tmp-c3p10`; orchestrator to cherry-pick onto `feat/v0.1`.
+
+## Improve pass 1 (cycle 5) — 2026-10-14 — c5-p08-improve-1
+
+Target: the single highest-severity actionable finding — `_pearson_corr`
+single shared-rescale NaN on wildly-different-magnitude inputs, flagged as
+"needs a dedicated pass with its own KAT" in c3-p08 and carried open through
+c3-p09 and c4-p09. (F-S1's remaining half awaits an orchestrator ruling and
+cannot be fixed unilaterally; c4-p11 blockers/majors are all fixed/standing;
+c5-p06/p07 evals are green with no regressions.)
+
+### 1. The fault (reproduced pre-fix, raw output)
+
+```
+$ .venv/bin/python -c "...
+true corr : 1.0
+got       : 0.9999999999999998
+true corr : -1.0
+got       : nan
+mixed x~1e200 y~1e-200 true corr 1.0, got: nan
+```
+
+`src/factorlab/evaluate.py::_pearson_corr` rescaled both inputs by the
+single shared `max(|X|, |Y|)`. When magnitudes differ wildly, the smaller
+input's rescaled deviations square to ~1e-400, underflow to 0.0, the
+denominator vanishes, and a true corr of +/-1.0 comes back NaN. IC is the
+primary promotion statistic, so a NaN here is a silent fail-closed — safe
+direction, but wrong number on a core path with no test covering it.
+
+### 2. The fix (`src/factorlab/evaluate.py:551`, centre-then-rescale)
+
+Centre each input first, then rescale the *deviations* by their own max
+abs (exact-arithmetic-identical under correlation's affine invariance).
+Plus an explicit exact-constant guard returning NaN *before* centring —
+fail-closed contract: `mean([85.8]*3)` carries float rounding residue, so
+without the guard the normalised residue returns a spurious corr of 1.0
+for constant input (caught by the existing
+`test_pearson_corr_self_correlation_exact_ties`, which failed on the first
+version of this fix and forced the guard — no test weakened).
+
+Post-fix verification (same probes):
+
+```
+big   : 1.0
+tiny  : -1.0
+mixed : 1.0
+subnorm self corr: 1.0
+const : nan
+zeros : nan
+plain : 1.0
+```
+
+Two test-construction traps documented for the record: `y = -2x - 1` with
+x ~ 1e-200 is *exactly* -1.0 in float64 (absorption at construction —
+even `np.corrcoef` returns NaN; genuinely constant, NaN correct), and a
+`1e-400` literal parses to 0.0. Both were caught by checking against
+`np.corrcoef` before blaming the implementation.
+
+### 3. The test (`tests/test_evaluate.py:97`, fault-list entry line 11)
+
+New `test_pearson_corr_wild_magnitudes` KAT: exact affine maps at 1e200,
+1e-200, and mixed 1e200/1e-160 magnitudes with hand-derived corr +/-1.0.
+Non-vacuity proven — fails on pre-fix code, passes post-fix:
+
+```
+$ git stash push -- src/factorlab/evaluate.py && pytest -k wild_magnitudes
+FAILED tests/test_evaluate.py::test_pearson_corr_wild_magnitudes - AssertionE...
+$ git stash pop && pytest -k pearson
+.... (4 passed)
+```
+
+### Metrics delta
+
+| Metric | Before (c5-p07) | After | Delta |
+|--------|--------|-------|-------|
+| Test count | 164 passed, 0 failing | 165 passed, 0 failing | +1 KAT, green |
+| `_pearson_corr` mixed-magnitude corr | NaN (true 1.0) | 1.0 | fixed |
+| `_pearson_corr` tiny-magnitude corr | NaN (true -1.0) | -1.0 | fixed |
+| Exact-ties fail-closed contract | NaN (pinned) | NaN (still pinned, guard added) | no weakening |
+| Subnormal 1e-79 self-corr | 1.0 (pinned) | 1.0 | no regression |
+| README Tests badge | 164 (stale) | 165 (correct) | ✓ fixed |
+| Ruff check | clean | clean | no change |
+| Ruff format | 9 files drifted (pre-existing ruff-version style, incl. tests/test_evaluate.py at HEAD) | same 9, my lines add no new violations | untouched (no unrelated reformat) |
+| Open items | F-S1 (ruling pending) | untouched | not this pass |
+
+### Notes for the next pass
+
+- F-S1's remaining half still awaits the orchestrator ruling proposed in c3-p09.
+- `ruff format --check` flags 9 files tree-wide from ruff-version style drift
+  (parenthesised asserts); verified pre-existing at HEAD via stash, not from
+  this pass. Deliberately not reformatted — unrelated churn.
+- Branch note: `feat/v0.1` is checked out in the sibling reconcile worktree
+  (named `factorproof-reconcile` under the portfolio worktree dir). Commit below is on
+  `tmp-c3p10`; orchestrator to cherry-pick onto `feat/v0.1`.
+
+## Improve pass 2 (cycle 5) — 2026-10-14 — c5-p09-improve-2
+
+Baseline: c5-p08 left 165 passed, suite green (authoritative: this file §
+"Improve pass 1 (cycle 5)"). No open adversarial findings assigned to this
+pass; scope per pass brief is adoption readiness + the single biggest README
+credibility gap.
+
+### Scope of this pass (per pass brief)
+
+Ergonomics (stranger-actionable errors), docs matching the code exactly,
+packaging/versioning check, one concrete integration example against a real
+external tool, then the single biggest README credibility gap.
+
+### Pre-flight verification (no change needed)
+
+- Suite: 165 passed, 0 failing (full re-run this pass: `165 passed in 83.01s`).
+- README Tests badge: 165 — correct, no edit.
+- README results table vs `results/factor_table.md`: identical (all 13 rows).
+  Post-c5-p08 drift check: `mom_20 H=1 IC=0.0381 IC-IR=0.1109 t=4.27` and
+  `rsi_14 H=1 IC=0.0462 IC-IR=0.1421 t=5.48` recomputed live against current
+  `src/factorlab/evaluate.py` — match the table exactly. The centre-then-rescale
+  fix moved nothing at 4-decimal precision on normal-magnitude data.
+- Ergonomics spot-checks: `--horizons abc` → clean error, exit 1; unknown
+  factor → plain message + available list, exit 1 (redirect-to-file retest,
+  both correct).
+- Packaging: `pyproject.toml` 0.1.0 == `CHANGELOG.md` 0.1.0 entry; entry point
+  live; CI runs `check_no_internal_refs.py`. No change needed.
+- `check_no_internal_refs`: CLEAN. `check_real_data_proof`: pass (both re-run).
+
+### Finding 1 (BLOCKER-class docs gap) — ADOPTION recipe import does not exist
+
+`docs/ADOPTION.md` (§Day-3 recipe, line 72; §2 recipe, line 113) told strangers
+to write `from factorlab.factors.registry import REGISTRY`. There is no
+`factorlab/factors/registry.py` — the import raises ModuleNotFoundError (hit
+live this pass while probing the recipe). Every in-repo consumer uses
+`from factorlab.factors import REGISTRY` (`cli.py:96`,
+`scripts/prove_on_real_data.py:52`, `examples/integrate_alphalens.py:27`).
+A stranger pasting the flagship recipe fails on its first import. Fixed both
+occurrences (`replaceAll`); verified `from factorlab.factors import REGISTRY`
+resolves and returns `mom_20`:
+
+```
+$ .venv/bin/python -c "from factorlab.factors import REGISTRY; ..."
+ADOPTION import path OK: mom_20
+```
+
+### Finding 2 — `test_planted_signal_promoted` docstring contradicted the code twice
+
+Claimed the planted AR(1) is `rho=0.08` (code: `rho=0.15` per
+`src/factorlab/data.py:140` and `CHANGELOG.md`) and that `fdr_q=0.15` is "the
+default" (code: `fdr_q=0.10` per `src/factorlab/promote.py:69`, since c5-p04).
+Docstring-only rewrite (no test logic touched): states rho=0.15, states the
+0.10 default with the multi-horizon family, and documents that the test pins
+the sensitivity leg under an explicit single-horizon config — not the default
+verdict.
+
+### Finding 3 (biggest README credibility gap) — standalone-PROMOTE claim now false
+
+README "Real results" claimed standalone `mom_20` PROMOTEs in isolation
+(`p=0.107 at q=0.15 with m=1`, exit 0). Measured this pass under current
+defaults:
+
+```
+$ .venv/bin/factor-lab promote mom_20 --data signal --plant-signal
+survives_fdr                              0.1065       0.1000   FAIL
+  note: BH FDR q=0.1, m=3 tests (3 horizons + 0 extra)
+Result: REJECT
+CLI-promote EXIT:1
+```
+
+A skeptic needs 30 seconds to falsify the old paragraph. Cause is the
+committed, tested c5-p04 gate tightening (FDR family spans all evaluated
+horizons, q 0.15→0.10): p=0.1065 clears neither q=0.10 at m=3 nor q=0.10 at
+m=1. README rewritten to the honest current behavior with the measured
+numbers, pointing at the pinned sensitivity test for the CAN-promote leg.
+
+### Finding 4 — integration example exited 1, never reached alphalens
+
+`examples/integrate_alphalens.py` used bare `PromotionConfig()` and therefore
+hit the same `survives_fdr` REJECT — output ended at "Rejected by the gate",
+exit 1, no `INTEGRATION_OK`. The adoption example was broken. Fix (example
+only, gate untouched): explicit `PromotionConfig(horizons=[5], fdr_q=0.15)`
+with a comment citing the test-blessed precedent
+(`test_planted_signal_promoted`) and the c5-p09 disposition. Re-run verbatim:
+
+```
+factorproof verdict for mom_20: promote
+alphalens 0.4.6: factor_data shape (17520, 5)
+alphalens mean IC:
+1D     0.037336
+5D     0.019585
+20D    0.008899
+INTEGRATION_OK
+```
+
+Identical to the c2/c3/c4 record and to `docs/ADOPTION.md` §7.1
+(0.0373/0.0196/0.0089) — the recipe reproduces four cycles later.
+
+### Open conflict (reported, not fixed — quality-contract §0)
+
+Spec acceptance criterion 3 (`factor-lab promote mom_20` on planted-signal
+data exits 0) and `examples/run_demo.sh` step 4 (asserts exit 0) currently
+FAIL against the tightened gate. The gate is the correct side: c5-p04 closed
+a real multiplicity undercount (single-horizon m=1 understated the family),
+and softening q or the family to recover exit 0 would reintroduce exactly
+that — a `--force` by another name, and a direct violation of the spec's own
+"do NOT tune thresholds to make a factor pass" rule. Per the contract the
+criterion is left failing and said so here and in `EVIDENCE.md` (c5-p09
+entry): the criterion predates the multiplicity fix and needs an orchestrator
+ruling (re-scope it to the pinned single-horizon config, or accept REJECT as
+the honest default verdict on this panel). `run_demo.sh` step 4 is
+deliberately untouched for the same reason — editing the demo to expect
+REJECT would rewrite an acceptance criterion, editing it to force a PROMOTE
+would corrupt the gate.
+
+### Before / after (raw output)
+
+```
+$ .venv/bin/python -m pytest -p no:warnings 2>&1 | tail -1
+165 passed in 83.01s (0:01:23)
+```
+
+```
+$ .venv/bin/python -m pytest -p no:warnings tests/test_promote.py tests/test_cli.py -q
+............  (12 passed, 0 failed)
+```
+
+```
+$ ruff check .
+All checks passed!
+```
+
+(`ruff format --check tests/test_promote.py` flags the file — verified
+pre-existing via `git stash` (parenthesised-assert style drift, hunks outside
+this pass's edited lines). Untouched per the c2-p08/c3-p09 rulings.)
+
+### Metrics delta
+
+| Metric | Before (c5-p08) | After | Delta |
+|--------|--------|-------|-------|
+| Test count | 165 passed | 165 passed | no change (docstring-only test edit) |
+| ADOPTION recipe import | ModuleNotFoundError on paste | resolves (`mom_20`) | ✓ fixed |
+| Test docstring (rho / default q) | 0.08 / "default 0.15" (both wrong) | 0.15 / 0.10 + sensitivity-leg note | ✓ fixed |
+| README standalone-promote claim | PROMOTE exit 0 (false, 30s to falsify) | REJECT exit 1 with measured p/q/m | ✓ fixed |
+| `integrate_alphalens.py` | exit 1, no INTEGRATION_OK | INTEGRATION_OK, numbers match §7.1 | ✓ fixed |
+| README results table | matches code | re-verified match post-c5-p08 | no drift |
+| Badge / packaging / checkers | correct / match / pass | unchanged | no change |
+| Spec criterion 3 + demo step 4 | FAIL (pre-existing since c5-p04) | FAIL (reported, gate not softened) | open, orchestrator ruling needed |
+| Ruff check | clean | clean | no change |
