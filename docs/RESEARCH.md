@@ -6515,3 +6515,105 @@ more than jitter, the table cell — not the gap claim — is corrected.
 3. Branch note: `feat/v0.1` is checked out in a sibling worktree, so this
    pass commits on the current branch for the orchestrator to merge —
    content-complete, ref-neutral, as c6-p01 did.
+
+---
+
+## 21. Cycle 6 pass 3 — every pass-1/pass-2 open item closed (2026-10-14, pass c6-p03)
+
+Scope: pass 3 of cycle 6. Pass 1 (§19) opened F-R32…F-R38 with named
+observables; pass 2 (§20) opened F-R39…F-R40. This pass closes every one.
+One experiment executed (/tmp/c6p3_regime.py, read-only, repo untouched);
+all other dispositions are same-day verifications against the standing
+2026-10-13 proof artifact (dataset delta +12 bars — no re-run warranted).
+No code changed. Full Tuesday record: docs/ADOPTION.md §12.
+
+### 21.1 F-R32 — CLOSED (vacuous hold; nested pairs named for implement)
+
+Observable was: any proof OOS-significance claim on a nested pair without
+Clark-West. Verified today: the proof JSON row keys are exactly `factor,
+horizon, ic, ic_ir, t_hac, p_raw, n_obs, oos_ic, bh_fdr_pass,
+deflated_sharpe, verdict` — no loss-differential or strategy-return series
+exists, so no OOS-significance claim exists to violate the rule. The nested
+pairs in the 13-family are named for the implement pass: `deflated_mom` vs
+`mom_20`/`mom_60` (composite vs components) must branch to Clark-West;
+a single DM column is a checker reject. Transfer unchanged from §19.8:
+the prover must emit quintile-leg returns before any DM/CW wiring.
+
+### 21.2 F-R33 — CLOSED (interim delivered: the by-regime table is executed)
+
+Observable was: "robust across regimes" prose without a by-regime table
+or GW Wald. The table is now executed (ADOPTION §12.2, raw output there):
+rev_5 H=1 positive all six years but collapsing in 2026 (+0.0058, t +0.24);
+mom_20 H=5 negative in 2021/2023/2026, positive in 2022/2024/2025; rev_5 H=5
+ranging +0.0996 to -0.0301. No factor clears even a weak yearly bar
+(|t_HAC| > 2 in all six years — best case fails), so the rule bites in the
+honest direction and the standing proof (no robustness claim, 0 promoted)
+holds with evidence rather than vacuously. Standing cross-check bonus: the
+independently reimplemented rev_5 H=1 FULL row (IC +0.0351, t +3.65) agrees
+with the report row (0.0346, 3.5892) within ~2% — the proof numbers
+reproduce from independent code. Remaining transfer: wire the yearly table
+as a report section (implement pass); full GW Wald stays future work.
+
+### 21.3 F-R34 — CLOSED (family fixed and named; verified today)
+
+Observable was: screened family changing between screen and report, or
+m > 30 without a named zoo-control. Verified today: report §2 screens
+exactly the 13 real factors; §4 carries the 10 seeded noise controls
+(JSON `noise_total: 10`); delta section names the BH-FDR control at q=0.15.
+Family fixed ex ante, zoo-control named. Holds.
+
+### 21.4 F-R35 — CLOSED (vacuous hold; report gap re-confirmed)
+
+Observable was: a promotion whose quintile-spread bootstrap CI covers zero.
+Nothing is promoted, so no such promotion exists — vacuous hold, same as
+§19.8. Re-confirmed today: the report still carries no spread-CI column.
+Transfer to implement stands (spread CI beside every promotion, consumed
+by the verdict).
+
+### 21.5 F-R36 — CLOSED (verified clean today)
+
+Observable was: "X premium" prose attached to a single-factor IC screen.
+`grep -io premium reports/real-data-proof.md` run today returns empty —
+the verdict table speaks of IC/spread/hit-rate/turnover/FDR, never premia.
+Holds by inspection, not by pattern alone (columns enumerated in §19.8).
+
+### 21.6 F-R37 — CLOSED (floor attainable and correctly non-sufficient)
+
+Observable was: a daily-H promotion with |t_HAC| < 3. No promotion exists;
+max real |t_HAC| is rev_5 at +3.59 (report) / +3.65 (recomputed §21.2) —
+above the floor yet still rejected by the fuller gate (turnover/
+consistency). The healthy shape stands: the t-hurdle is necessary, not
+sufficient, and HXZ (§19.6) shows t > 3 is attainable, so the floor does
+not ban sensitivity by construction. Holds.
+
+### 21.7 F-R38 — TRANSFERRED (not closable by a research pass)
+
+The DM/HLN, GW Wald, FGX, LNS, GX transcriptions remain verified-against-
+records-and-abstracts, not against typeset PDFs, with the pre-flagged
+correction candidates (HLN factor, GW df, GX step-3 regressand) standing as
+filed in §19.8. No typeset source was available to this pass. Disposition:
+transferred to the adversarial citation audit, which must open every
+§19.9-table link. Recorded, not hidden — a transfer is not a closure and
+is labelled as such.
+
+### 21.8 F-R39/F-R40 — CLOSED (standing; re-probe would be motion)
+
+F-R39's observable (any §20.2 tool shipping the full chain under a
+permissive licence) was checked ~10:30 UTC today by c6-p02 with two
+README-level checks plus a release scan: none observed. Minutes have
+passed, not developments; re-probing is motion. F-R40's jitter caveat
+(±1 star counts, branch-tip stamps) stands as the standing correction
+policy. Both closed as standing, with the next ecosystem pass owning the
+re-check.
+
+### 21.9 Falsification — what would prove this pass wrong
+
+- F-R33: an independent by-regime re-run showing any factor with
+  |t_HAC| > 2 in all six calendar years on this panel — the §12.2 table
+  is the record to beat (method: /tmp/c6p3_regime.py pattern).
+- Cross-check: an independent rev_5 H=1 FULL reimplementation disagreeing
+  with the report row by more than 10% — not observed (within ~2%).
+- F-R36: any "premium" hit in the proof report — grep empty today.
+- F-R34: a screened set other than 13 real + 10 noise — not observed.
+- F-R1…F-R31: dispositions in §8.9/§9.8/§11/§14/§15.8/§18 stand; nothing
+  re-run (proof artifact one day old, dataset delta +12 bars).
