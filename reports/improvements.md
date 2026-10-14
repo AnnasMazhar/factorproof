@@ -1433,3 +1433,106 @@ c6-p04 base per EVIDENCE.md and no src file changed this pass.)
 - Branch note: `feat/v0.1` is checked out in the sibling reconcile
   worktree. Commit below is on `tmp-c3p10`; orchestrator to cherry-pick
   onto `feat/v0.1` (same procedure as c3-p08 through c5-p08).
+
+## Improve pass 2 (cycle 6) — 2026-10-14 — c6-p09-improve-2
+
+Baseline: c6-p08 left 174 passed, suite green (authoritative: this file §
+"Improve pass 1 (cycle 6)"). Open items at pass start: F-D1 (spec criteria
+2&3 + `examples/run_demo.sh` step 4 vs the multi-horizon FDR gate,
+orchestrator ruling needed — untouchable per QUALITY-CONTRACT §0), B3
+(method note). No open adversarial findings assigned to this pass; scope per
+pass brief is adoption readiness + the single biggest README credibility gap
+after re-reading RESEARCH pass-2 (§20) and docs/ADOPTION.md.
+
+### Pre-flight verification (no change needed)
+
+- Suite green at base and at end (full re-run this pass, verbatim):
+```
+$ .venv/bin/python -m pytest -p no:warnings 2>&1 | tail -1
+174 passed in 233.36s (0:03:53)
+```
+- README Tests badge: 174 — correct, no edit. Results table untouched (no
+  src change, so every number stands as verified in c3-p09/c5-p09).
+- Ergonomics spot-checks (verbatim): `--horizons abc` → `Error:
+  --horizons must be comma-separated positive integers (e.g. '1,5,20'),
+  got 'abc'.`, exit 1; unknown factor → `Error: Unknown factor:
+  'no_such_factor'. Available: [...]` (13 names), exit 1. Both correct.
+- Packaging: `pyproject.toml` 0.1.0 == `CHANGELOG.md` 0.1.0 entry; entry
+  point live; CI runs `check_no_internal_refs.py`. No change needed.
+- `check_no_internal_refs`: CLEAN. `check_real_data_proof`: pass
+  (`PROOF_COMPLETE`). Both re-run this pass.
+- Integration re-run this pass (verbatim tail):
+```
+alphalens 0.4.6: factor_data shape (17520, 5)
+alphalens mean IC:
+1D     0.037336
+5D     0.019585
+20D    0.008899
+INTEGRATION_OK
+```
+  Matches docs/ADOPTION.md §7.1 (0.0373/0.0196/0.0089) — five cycles later.
+- Wilson illustration spot-checked, NOT changed: README says "55% hit rate
+  on 30 observations has Wilson LB = 37%"; measured `wilson_lower(16,30) =
+  0.3614`, `wilson_lower(17,30) = 0.3920` — 55% of 30 is 16.5, so 37% is
+  inside the bracket. Illustration stands.
+- ADOPTION.md q=0.15 occurrences (§8.2) refer to the real-data prover
+  config (report §4 names BH-FDR at q=0.15), not the gate default — no edit.
+
+### Finding 1 (biggest README credibility gap) — header quickstart claims exit 0
+
+README lines 22-24 (the first command block a stranger runs) said
+`factor-lab promote mom_20 --data signal --plant-signal` promotes with
+"exit 0". Measured this pass (verbatim):
+```
+$ .venv/bin/factor-lab promote mom_20 --data signal --plant-signal; echo "mom20 EXIT:$?"
+mom20 EXIT:1
+Best horizon: 5d | IC: 0.0252 | IC-IR: 0.0750
+OOS consistency: 60.00% | Observations: 1475
+Result: REJECT
+```
+A skeptic falsifies the header in 30 seconds — and the README body
+(Real results, lines 126-130) already says REJECT, so the file
+contradicted itself. Cause: the c5-p04 multiplicity fix (FDR family spans
+all horizons, q 0.15→0.10) postdates the header comment; c5-p09 fixed the
+body but not the header. Fixed: header rewritten to state both commands
+reject under defaults, with the pointer to Real results. No `--force`
+exists by design, and the promote CLI takes no horizon/q flags, so no
+CLI command can currently exit 0 — the header no longer implies one.
+
+### Finding 2 (same class, one line) — gates-explained quotes the old default q
+
+"The gates explained" said "BH q=0.15 with 13 tests means at most ~2
+promoted factors are expected to be noise". Code default is `fdr_q = 0.10`
+(`src/factorlab/promote.py:69`, since c5-p04). Fixed to q=0.10 with the
+matching expectation ("roughly 1 in 10 promoted factors is expected to
+be noise"). The q=0.15 single-horizon mention (line 137, test-blessed
+sensitivity config) is a different number and stays.
+
+### Noted, not fixed (dated-record convention, ruling pending)
+
+RESEARCH §20.3 (c6-p02's dated probe record) shows `factor-lab promote
+mom_20 --data synthetic  # exits 0 on planted-signal data` as the
+observable difference. Under current defaults that command rejects. Per
+the c3-p09 convention (dated re-verification records stay verbatim;
+live numbers live in COMPARISONS.md + ADOPTION.md §9.3) this pass does
+not rewrite the dated section — F-S1's pending ruling covers whether
+that convention stands. Flagged here instead of hidden.
+
+### Metrics delta
+
+| Metric | Before (c6-p08) | After | Delta |
+|--------|--------|-------|-------|
+| Test count | 174 passed | 174 passed | no change (docs-only pass) |
+| README header promote claim | exit 0 (false, 30s to falsify) | both-reject + Real-results pointer | ✓ fixed |
+| README gates q | 0.15 (stale default) | 0.10 (matches `promote.py:69`) | ✓ fixed |
+| alphalens integration | INTEGRATION_OK (cycle 5) | INTEGRATION_OK re-verified, same numbers | no regression |
+| mom_20 / noise_control verdicts | REJECT / REJECT | unchanged | no regression |
+| check_no_internal_refs / check_real_data_proof | CLEAN / pass | CLEAN / pass | no change |
+| Ruff check | clean | clean | no change |
+| Open items | F-D1 (ruling needed), B3 (note) | untouched, not this pass | — |
+
+### Notes for the next pass
+
+- F-D1 still awaits the orchestrator ruling proposed in c5-p09 (re-scope
+  criteria 2&3 to the pinned single-horizon config, or accept REJECT as
+  the honest default verdict).
