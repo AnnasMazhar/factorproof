@@ -28,6 +28,10 @@ Faults detected per test:
         Fault: quantile bins assigned in wrong order (1=top instead of 1=bottom).
     test_evaluate_factor_deterministic:
         Fault: non-seeded randomness inside evaluate_factor.
+    test_yearly_ic_known_answer:
+        Fault: calendar-year slicing mis-assigns or drops observation dates.
+    test_yearly_ic_partition_and_determinism:
+        Fault: yearly slices that drop/duplicate dates, or hidden randomness.
 """
 
 from __future__ import annotations
@@ -46,7 +50,9 @@ from factorlab.evaluate import (
     evaluate_factor,
     forward_returns,
     hit_rate_metrics,
+    information_coefficient,
     quantile_analysis,
+    yearly_ic_table,
 )
 
 # ---------------------------------------------------------------------------
@@ -593,3 +599,100 @@ def test_hac_tstat_field_is_corrected():
         assert isinstance(m.ic_tstat_naive, float), "ic_tstat_naive must be float"
         # ic_tstat_naive should be labelled as diagnostic only — verified by field name
         # (no runtime check possible; the name is the contract)
+
+
+def _tiny_two_year_panel() -> tuple[pd.DataFrame, pd.Series]:
+    """Build a 3-asset panel spanning 2021-2022 with factor == forward return.
+
+    Closes are hand-set with distinct per-asset drifts; factor values are set
+    exactly equal to the H=1 forward log-returns, so every per-date
+    cross-sectional IC is +1.0 by construction. The KAT below then checks the
+    yearly *grouping* (not the IC maths, covered by the tests above).
+    """
+    dates = pd.to_datetime(["2021-06-01", "2021-06-02", "2022-06-01", "2022-06-02", "2022-06-03"])
+    closes = {
+        "A": [100.0, 101.0, 102.0, 103.0, 104.0],
+        "B": [100.0, 102.0, 104.0, 106.0, 108.0],
+        "C": [100.0, 103.0, 106.0, 109.0, 112.0],
+    }
+    rows = []
+    for i, d in enumerate(dates):
+        for a in ("A", "B", "C"):
+            c = closes[a][i]
+            rows.append(
+                {
+                    "date": d,
+                    "asset": a,
+                    "open": c,
+                    "high": c,
+                    "low": c,
+                    "close": c,
+                    "volume": 1000.0,
+                }
+            )
+    df = pd.DataFrame(rows)
+    fwd = forward_returns(df, [1])[1]  # columns: date, asset, fwd_ret
+    # Drop the last date: its forward return needs a close we do not have.
+    fac = fwd[fwd["date"] < pd.Timestamp("2022-06-03")].copy()
+    factor_vals = pd.Series(
+        fac["fwd_ret"].to_numpy(),
+        index=pd.MultiIndex.from_arrays([fac["date"], fac["asset"]], names=["date", "asset"]),
+    )
+    return df, factor_vals
+
+
+def test_yearly_ic_known_answer():
+    """KAT: yearly grouping on a hand-built two-year panel.
+
+    Fault detected: calendar-year slicing mis-assigns or drops dates.
+
+    Manual: 3 assets, factor == H=1 forward return on every row, so each of
+    the 4 dates has cross-sectional corr(factor, fwd) = +1.0 exactly.
+    Year 2021 holds 2 dates, year 2022 holds 2 dates, so each year row must
+    read n=2, ic=1.0.
+    """
+    df, factor_vals = _tiny_two_year_panel()
+    table = yearly_ic_table(factor_vals, df, [1])[1]
+
+    assert [r["year"] for r in table] == [2021, 2022]
+    for row in table:
+        assert row["n"] == 2, f"year {row['year']}: expected n=2, got {row['n']}"
+        assert (
+            abs(float(row["ic"]) - 1.0) < 1e-9
+        ), f"year {row['year']}: expected ic=1.0, got {row['ic']}"
+
+
+@pytest.mark.parametrize("seed", [1, 2, 3])
+def test_yearly_ic_partition_and_determinism(seed):
+    """Property: yearly slices partition the full sample; reruns identical.
+
+    Fault detected: year slicing that drops/duplicates dates, or hidden RNG.
+
+    Partition law: sum(yearly n) == full-sample n_obs for every horizon.
+    Bounds: every yearly ic lies in [-1, 1] (or is NaN for <2 dates).
+    Order: year rows ascending. Determinism: two calls agree exactly.
+    """
+    from factorlab.factors import get_factor
+
+    df = synthetic_ohlcv(n_days=300, n_assets=6, seed=seed)
+    vals = get_factor("mom_20").compute(df)
+
+    first = yearly_ic_table(vals, df, [1, 5])
+    second = yearly_ic_table(vals, df, [1, 5])
+    assert first == second, "yearly_ic_table not deterministic"
+
+    for h in (1, 5):
+        _, _, _, _, full_n = information_coefficient(
+            vals, forward_returns(df, [h])[h], "pearson", horizon=h
+        )
+        rows = first[h]
+        assert (
+            sum(r["n"] for r in rows) == full_n
+        ), f"h={h}: yearly n sums to {sum(r['n'] for r in rows)}, full-sample n={full_n}"
+        years = [r["year"] for r in rows]
+        assert years == sorted(years), f"h={h}: year rows not ascending: {years}"
+        for r in rows:
+            ic = r["ic"]
+            assert (
+                math.isnan(ic) or -1.0 - 1e-9 <= ic <= 1.0 + 1e-9
+            ), f"h={h} year {r['year']}: ic out of bounds: {ic}"

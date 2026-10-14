@@ -216,6 +216,53 @@ def ic_decay(
     return result
 
 
+def yearly_ic_table(
+    factor_vals: pd.Series,
+    df: pd.DataFrame,
+    horizons: list[int],
+) -> dict[int, list[dict[str, float | int]]]:
+    """Per-calendar-year mean IC and HAC t-stat (regime-robustness table).
+
+    Splits the factor's observation dates by calendar year and runs
+    :func:`information_coefficient` on each year slice at each horizon.
+    Forward returns are computed on the full panel first, so year-edge
+    labels still use the correct t+h closes — only the grouping is yearly.
+
+    This is the machine behind the "by-year IC" report section: a factor
+    whose full-sample t-stat looks significant but whose yearly ICs flip
+    sign is not robust across regimes.
+
+    Parameters
+    ----------
+    factor_vals:
+        Factor output Series with MultiIndex (date, asset).
+    df:
+        Original OHLCV panel (used to compute forward returns).
+    horizons:
+        List of horizons in trading days.
+
+    Returns
+    -------
+    Dict mapping horizon -> list of {"year", "n", "ic", "t_hac"} dicts,
+    years in ascending order. A year with fewer than 2 valid
+    cross-sections keeps its (small) n with NaN statistics.
+    """
+    fwd_dict = forward_returns(df, horizons)
+    dates = pd.DatetimeIndex(pd.to_datetime(factor_vals.index.get_level_values("date")))
+    year_of = dates.year.to_numpy()
+    out: dict[int, list[dict[str, float | int]]] = {}
+    for h in horizons:
+        rows: list[dict[str, float | int]] = []
+        for year in sorted(set(year_of.tolist())):
+            sub = factor_vals[year_of == year]
+            mean_ic, _, t_hac, _, n = information_coefficient(
+                sub, fwd_dict[h], "pearson", horizon=h
+            )
+            rows.append({"year": int(year), "n": int(n), "ic": mean_ic, "t_hac": t_hac})
+        out[h] = rows
+    return out
+
+
 def quantile_analysis(
     factor_vals: pd.Series,
     fwd_ret: pd.DataFrame,
