@@ -1320,3 +1320,116 @@ this pass's edited lines). Untouched per the c2-p08/c3-p09 rulings.)
 | Badge / packaging / checkers | correct / match / pass | unchanged | no change |
 | Spec criterion 3 + demo step 4 | FAIL (pre-existing since c5-p04) | FAIL (reported, gate not softened) | open, orchestrator ruling needed |
 | Ruff check | clean | clean | no change |
+
+## Improve pass 1 (cycle 6) — 2026-10-14 — c6-p08-improve-1
+
+Baseline: c6-p06/p07 evals green, 171 passed, 0 failures (authoritative:
+reports/eval-c6-p6.json, reports/eval-c6-p7.json). No open adversarial
+findings assigned to this pass: c5-p11's F-D1 (demo step 4 vs tightened FDR
+gate) needs an orchestrator ruling and is untouchable per QUALITY-CONTRACT
+section 0; B3 is a method note. The highest-severity actionable item is the
+red F1 mandate gate at pass start.
+
+### Finding addressed — F1 refs gate RED on c6 eval artifacts (F-G1 class, 4th occurrence)
+
+`scripts/check_no_internal_refs.py` FAILED on 6 hits — absolute host-path
+prefixes in the untracked evaluator artifacts reports/eval-c6-p6.json /
+reports/eval-c6-p7.json (3 per file: two numpy RuntimeWarning traceback
+lines from `test_constant_factor_rejected`, one junit-xml path line). Same
+shape c2-p09/c3-p08/c4-p09 fixed for earlier cycles; the evaluator harness
+embeds `pytest_tail` verbatim, so every cycle re-dirties the new files.
+
+Before (verbatim):
+
+```
+$ .venv/bin/python scripts/check_no_internal_refs.py 2>&1 | tail -3
+FORBIDDEN [host-prefix]  reports/eval-c6-p7.json:18      "- generated xml file: repo/.cycle-eval-c6-p7.xml -",
+check_no_internal_refs: FAIL — 6 forbidden token(s) found.
+```
+
+(checker label and host prefix inside the quoted lines redacted per F1 —
+the checker scans this file too; same convention as c2-p09/c4-p09.)
+
+What the prior three scrubs never added: the test that would have caught
+it. The word-token class has a pin
+(`test_adversarial.py::test_internal_refs_detector_catches_forbidden_token`);
+the host-path substring class had none, and nothing in the suite watches
+the live tree.
+
+### Fix (artifacts + new pin test, no src change)
+
+1. Mechanically scrubbed the repo prefix to `repo/` in both JSONs
+(3 replacements per file, both re-validated with `json.load`); checker
+now CLEAN. Same redaction convention as the c2-p09 precedent. No numbers
+touched — counts, pytest tails and timestamps byte-identical otherwise.
+2. New `tests/test_internal_refs.py` (3 tests, fault-list docstring per
+quality contract):
+   - `test_scan_file_flags_host_path_in_eval_artifact`: KAT on the exact
+     eval-artifact line shapes (venv traceback + junit xml line; prefix
+     built at runtime via concatenation so the test file itself stays
+     checker-clean).
+   - `test_scan_file_accepts_scrubbed_repo_prefix`: the scrubbed form must
+     be clean, or the gate can never go green (false-positive guard).
+   - `test_tree_free_of_internal_refs`: runs the checker's `main()` on the
+     live tree and demands exit 0 — the test that would have caught this
+     finding and all three predecessors.
+
+Red-green proof (test-first: new tests run BEFORE the scrub):
+
+```
+$ .venv/bin/python -m pytest tests/test_internal_refs.py -q -p no:warnings 2>&1 | tail -2
+check_no_internal_refs: FAIL — 6 forbidden token(s) found.
+FAILED tests/test_internal_refs.py::test_tree_free_of_internal_refs
+$ # ... scrub applied ...
+$ .venv/bin/python -m pytest tests/test_internal_refs.py -p no:warnings 2>&1 | tail -1
+3 passed in 0.33s
+```
+
+Checker state after:
+
+```
+$ .venv/bin/python scripts/check_no_internal_refs.py 2>&1 | tail -1
+check_no_internal_refs: CLEAN — no forbidden tokens found.
+$ .venv/bin/python scripts/check_real_data_proof.py 2>&1 | tail -1
+PROOF_COMPLETE
+```
+
+Full suite + lint after:
+
+```
+$ .venv/bin/python -m pytest -p no:warnings 2>&1 | tail -1
+174 passed in 244.62s (0:04:04)
+$ ruff check tests/test_internal_refs.py
+All checks passed!
+```
+
+(`ruff format` applied once to the new file only; tree-wide
+`ruff format --check` state untouched. `ruff check .` was clean at the
+c6-p04 base per EVIDENCE.md and no src file changed this pass.)
+
+### Metrics delta
+
+| Metric | Before (c6-p07) | After | Delta |
+|--------|--------|-------|-------|
+| Test count | 171 passed, 0 failing | 174 passed, 0 failing | +3 |
+| check_no_internal_refs | FAIL (6 hits, eval-c6 JSONs) | CLEAN | fixed |
+| Host-path substring pin test | absent (word-token pin only) | present, red-before/green-after proven | ✓ |
+| Scrubbed-form false-positive guard | absent | present | ✓ |
+| README Tests badge | 171 (stale) | 174 (correct) | ✓ fixed |
+| check_real_data_proof | pass | pass | no regression |
+| mom_20 / noise_control / lookahead_control verdicts | REJECT / REJECT / REJECT (tightened-gate behavior per c5-p09) | unchanged (no src touched) | no regression |
+| Ruff check (new file) | — | clean | ✓ |
+| Open items | F-D1 (ruling needed), B3 (method note) | untouched, not this pass | — |
+
+### Notes for the next pass
+
+- F-D1 (spec criteria 2&3 + `examples/run_demo.sh` step 4 vs the
+  multi-horizon FDR gate) still awaits the orchestrator ruling proposed in
+  c5-p09. Untouched per QUALITY-CONTRACT section 0.
+- Structural note: the evaluator harness writes absolute paths into
+  `pytest_tail` every cycle, so this scrub will recur at c7 unless the
+  harness redacts at write time. The new `test_tree_free_of_internal_refs`
+  turns the recurrence into a suite failure instead of a silent gate red.
+- Branch note: `feat/v0.1` is checked out in the sibling reconcile
+  worktree. Commit below is on `tmp-c3p10`; orchestrator to cherry-pick
+  onto `feat/v0.1` (same procedure as c3-p08 through c5-p08).
