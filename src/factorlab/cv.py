@@ -472,9 +472,28 @@ def check_lookahead_perturbation(
     it while still flipping a REJECT into a PROMOTE.
 
     This function tests the property directly instead of the mechanism.
-    By default it tiles the sample with contiguous, non-overlapping
-    windows of `tail_days` dates (`n_windows=None` means full tiling:
-    `n_dates // tail_days` windows, step == length so there are no gaps):
+    By default it uses stride-1 dense tiling: every sample date starts a
+    perturbation window of `tail_days` dates (`n_windows=None`):
+
+    1. Compute the factor on the panel (baseline, once).
+    2. Deterministically perturb only the OHLCV rows inside each window
+       (per-asset value reversal — no RNG, fully reproducible).
+    3. Recompute. Factor values at dates strictly BEFORE the perturbed
+       window must be bit-identical: a causal factor cannot change its
+       past outputs when only future inputs change.
+
+    Stride-1 matters (F-B4 fix): contiguous tiling with step == length
+    starts windows at deterministic multiples of `tail_days`, and a leak
+    active only at dates t with no window start in (t, t+d] dodges every
+    window — with d=5 and step=20 that is 75% coverage, enough to flip a
+    clean REJECT (IC=0.006) into PROMOTE (IC=0.072) with all gates passing
+    while source, runtime, AND perturbation layers stay blind. With a
+    window starting at every date, any output at t reading a future row at
+    t+d is caught by the window starting at min(t+d, n_dates-1): the read
+    row is inside it and t is strictly before its start. Gap-aiming is
+    impossible because there are no gaps. Cost: one recompute per date
+    (~10ms on the bundled panel size); leaks exit early on the first
+    differing window, so only clean factors pay the full scan.
 
     1. Compute the factor on the panel (baseline, once).
     2. Deterministically perturb only the OHLCV rows inside each window
@@ -504,12 +523,12 @@ def check_lookahead_perturbation(
     test_perturbation_no_false_positives_on_library).
 
     Residual: passing an explicit small `n_windows` (e.g. 1, tail only)
-    reintroduces gaps and the F-B2/F-B3 shapes dodge again — the
+    reintroduces gaps and the F-B2/F-B3/F-B4 shapes dodge again — the
     regression tests pin that `n_windows=1` stays blind so the default
-    tiling cannot silently regress to it. An attacker who reads rows
-    more than `tail_days` ahead of any tiled window start... cannot:
-    tiling covers the whole sample, so every future row is inside some
-    window; the binding constraint is the (t, t+d] start coverage above.
+    tiling cannot silently regress to it. An explicit `n_windows >= 2`
+    reproduces the legacy quartile-style spacings for those regression
+    preconditions — never in the gate path (`promote()` calls with
+    defaults).
 
     Parameters
     ----------
@@ -523,9 +542,10 @@ def check_lookahead_perturbation(
     max_diffs:
         Tolerated number of differing past values. Default 0.
     n_windows:
-        Number of evenly spaced perturbation windows. Default None means
-        full contiguous tiling (no gaps). Pass an explicit small int only
-        to reproduce legacy spacings in tests — never in the gate path.
+        Legacy spacings for regression-test preconditions only. Default
+        None means stride-1 dense tiling (no gaps; the gate path). Pass an
+        explicit small int only to reproduce legacy spacings in tests —
+        never in the gate path.
 
     Returns
     -------
@@ -538,23 +558,34 @@ def check_lookahead_perturbation(
 
     all_dates = sorted(df["date"].unique())
     n_dates = len(all_dates)
-    full_tiling = n_dates // max(1, int(tail_days))
-    if n_windows is None:
-        n_windows = full_tiling
-    n_windows = max(1, min(int(n_windows), full_tiling))
+    legacy = n_windows is not None
+    if not legacy:
+        # Stride-1 dense tiling: a window starts at every date (F-B4 fix).
+        # Any output at t reading a future row at t+d is caught by the
+        # window starting inside (t, t+d] — which always exists.
+        starts = list(range(1, n_dates))
+        total_windows = len(starts)
+    else:
+        full_tiling = n_dates // max(1, int(tail_days))
+        n_windows = max(1, min(int(n_windows), full_tiling))
+        starts = []
+        for i in range(1, n_windows + 1):
+            end_pos = (n_dates * i) // n_windows
+            start_pos = max(0, end_pos - tail_days)
+            starts.append(start_pos)
+        total_windows = n_windows
     # Precompute position/asset index structures once: per-window work is
     # then a vectorized reversal, not a groupby + isin + loc per window.
-    # (Full tiling runs ~n_dates/tail_days windows; the naive loop costs
-    # ~60ms/window, this one ~5ms.)
+    # (Stride-1 runs ~n_dates windows; the naive loop costs ~60ms/window,
+    # this one ~5ms plus one factor recompute.)
     date_to_pos = {d: i for i, d in enumerate(all_dates)}
     pos = df["date"].map(date_to_pos).to_numpy()
     asset_codes = pd.factorize(df["asset"].to_numpy())[0]
     group_rows = [np.flatnonzero(asset_codes == k) for k in range(int(asset_codes.max()) + 1)]
     pcols = [c for c in ("open", "high", "low", "close", "volume") if c in df.columns]
     base_vals = {c: df[c].to_numpy().copy() for c in pcols}
-    for i in range(1, n_windows + 1):
-        end_pos = (n_dates * i) // n_windows
-        start_pos = max(0, end_pos - tail_days)
+    for seq, start_pos in enumerate(starts, 1):
+        end_pos = min(start_pos + tail_days, n_dates)
         window_dates = all_dates[start_pos:end_pos]
         if not window_dates:
             continue
@@ -588,7 +619,7 @@ def check_lookahead_perturbation(
             return (
                 True,
                 f"Factor values at {n_diffs} past dates changed when only future "
-                f"OHLCV data was perturbed (window {i}/{n_windows} starting "
+                f"OHLCV data was perturbed (window {seq}/{total_windows} starting "
                 f"{first_perturbed.date()}, tail_days={tail_days}). "
                 f"A causal factor cannot do this — lookahead contamination.",
             )

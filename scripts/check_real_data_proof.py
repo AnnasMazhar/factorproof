@@ -334,6 +334,86 @@ def check_md_json_consistency() -> list[str]:
     return fails
 
 
+def check_f3_aggregate_consistency(data: dict) -> list[str]:
+    """Verify F3 self-reported aggregates match the per-entry verdicts (F-C3 fix).
+
+    Without this check, a hand-edited JSON claiming rejection_rate=1.0
+    passes the checker while the noise_controls list still shows promoted
+    noise factors — the F4 finish gate can be crossed on a knowingly-bad
+    run by editing one aggregate field. Every aggregate below is
+    recomputed from the entry lists by the same arithmetic
+    prove_on_real_data.py uses; any divergence proves the file was
+    doctored after the run.
+    """
+    fails: list[str] = []
+    real_rows = data.get("real_factors")
+    noise_rows = data.get("noise_controls")
+    if not isinstance(real_rows, list) or not isinstance(noise_rows, list):
+        return []  # already caught by check_json_fields / structure checks
+
+    # --- specificity: rejection_rate vs noise_controls verdicts ---
+    n_noise_total = len(noise_rows)
+    n_rejected = sum(1 for r in noise_rows if r.get("verdict") == "reject")
+    spec = data.get("f3_specificity", {})
+    if spec.get("noise_rejected") != n_rejected:
+        fails.append(
+            f"F3 CONSISTENCY FAIL: f3_specificity.noise_rejected={spec.get('noise_rejected')} "
+            f"but {n_rejected}/{n_noise_total} noise_controls entries have verdict=reject."
+        )
+    if spec.get("noise_total") != n_noise_total:
+        fails.append(
+            f"F3 CONSISTENCY FAIL: f3_specificity.noise_total={spec.get('noise_total')} "
+            f"but noise_controls has {n_noise_total} entries."
+        )
+    claimed_rate = spec.get("rejection_rate")
+    expected_rate = round(n_rejected / n_noise_total, 4) if n_noise_total > 0 else 0.0
+    if not isinstance(claimed_rate, float | int) or isinstance(claimed_rate, bool):
+        fails.append("F3 CONSISTENCY FAIL: f3_specificity.rejection_rate missing/non-numeric.")
+    elif abs(float(claimed_rate) - expected_rate) > 1e-4:
+        fails.append(
+            f"F3 CONSISTENCY FAIL: f3_specificity.rejection_rate={claimed_rate} "
+            f"but entry verdicts give {expected_rate} — one artifact was doctored."
+        )
+
+    # --- stability: flip_count vs flipped_names ---
+    stab = data.get("f3_stability", {})
+    flipped = stab.get("flipped_names", [])
+    if isinstance(flipped, list) and stab.get("flip_count") != len(flipped):
+        fails.append(
+            f"F3 CONSISTENCY FAIL: f3_stability.flip_count={stab.get('flip_count')} "
+            f"but flipped_names has {len(flipped)} entries."
+        )
+
+    # --- sensitivity + delta vs real_factors rows ---
+    # (same arithmetic as prove_on_real_data.write_report)
+    n_raw_sig = sum(1 for r in real_rows if r.get("p_raw", 1.0) < 0.05 and "error" not in r)
+    n_bh_sig = sum(1 for r in real_rows if r.get("bh_fdr_pass"))
+    promoted = [r for r in real_rows if r.get("verdict") == "promote"]
+    sens = data.get("f3_sensitivity", {})
+    if sens.get("n_promoted") != len(promoted):
+        fails.append(
+            f"F3 CONSISTENCY FAIL: f3_sensitivity.n_promoted={sens.get('n_promoted')} "
+            f"but {len(promoted)} real_factors entries have verdict=promote."
+        )
+    if sorted(sens.get("promoted_names", [])) != sorted(r.get("factor") for r in promoted):
+        fails.append(
+            "F3 CONSISTENCY FAIL: f3_sensitivity.promoted_names does not match "
+            "the factors with verdict=promote in real_factors."
+        )
+    delta = data.get("delta", {})
+    for key, expected in (
+        ("n_raw_sig", n_raw_sig),
+        ("n_bh_fdr_sig", n_bh_sig),
+        ("n_promoted", len(promoted)),
+    ):
+        if delta.get(key) != expected:
+            fails.append(
+                f"F3 CONSISTENCY FAIL: delta.{key}={delta.get(key)} "
+                f"but real_factors entries give {expected}."
+            )
+    return fails
+
+
 def check_no_internal_refs() -> list[str]:
     check_script = _REPO_ROOT / "scripts" / "check_no_internal_refs.py"
     if not check_script.exists():
@@ -360,6 +440,13 @@ def main() -> int:
     all_failures.extend(check_bars_against_source())
     all_failures.extend(check_section_content())
     all_failures.extend(check_md_json_consistency())
+    if _PROOF_JSON.exists():
+        try:
+            _data = json.loads(_PROOF_JSON.read_text(encoding="utf-8"))
+            if isinstance(_data, dict):
+                all_failures.extend(check_f3_aggregate_consistency(_data))
+        except json.JSONDecodeError:
+            pass  # already caught by check_json_fields
     all_failures.extend(check_no_internal_refs())
 
     if all_failures:

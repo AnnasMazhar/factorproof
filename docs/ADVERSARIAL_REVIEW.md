@@ -2256,3 +2256,246 @@ appended to this markdown file; suite green at 165).
 - `fixed`: fix implemented and re-verified with the pass's own probes this pass
 - `refuted`: attack attempted, claim held
 - `carried`: reported by an earlier pass, re-verified this pass, unchanged
+
+---
+
+## PASS c5-p11-adversarial-2 (cycle 5, adversarial pass 2 of 2)
+
+Independent reviewer lane. This pass attacks the **property** (c5-p10 attacked the
+claims). Read first: ITERATION-PROTOCOL.md, QUALITY-CONTRACT.md,
+MARKET-VERDICTS.md, specs/factor-lab.md (incl. v0.2 MANDATE), all prior
+c1-p10 through c5-p10 entries above. All three `reports/mutants-survived-c*.txt`
+are present but 0 bytes; authoritative mutation baseline remains
+reports/mutation-c1.json (878/1977 = 44.4%, gate 70%), with
+reports/mutation-c3.json and reports/mutation-c4.json recording 0/0 infra
+failures (rc=2) — quoted from the files, not re-derived.
+
+Branch note: `feat/v0.1` is checked out by a sibling worktree, so this pass ran
+on the current checkout `tmp-c3p10` at commit ea32840 (same content line as
+c5-p10). No absolute host paths appear below per F1.
+
+All commands below were actually run; output is verbatim terminal output
+(host path prefixes redacted to `<repo>` per F1 where present).
+
+---
+
+## 0. Pre-attack state
+
+```
+$ git log --oneline -1
+ea32840 docs(review): cycle 5 adversarial pass 1 — claims hold, 6/6 faults detected, demo conflict carried
+$ .venv/bin/python scripts/check_no_internal_refs.py 2>&1 | tail -1
+check_no_internal_refs: CLEAN — no forbidden tokens found.
+$ .venv/bin/python scripts/check_real_data_proof.py 2>&1 | tail -1
+PROOF_COMPLETE
+```
+
+Prior-findings triage: F-D1 (demo step-4 vs tightened FDR gate) carried open —
+untouched per QUALITY-CONTRACT section 0, re-verified red in section 4. B3 (noise
+seed-shopping) stands at 8/30, all reject — not extended (same ~45-60s-per-promote
+foreground cost; the suite itself occupies the box this pass). Everything else
+remains fixed (suite green at c5-p10: 165 passed).
+
+---
+
+## 1. Property attacks — defeat the promotion gate
+
+### ATTACK E3: window-start-gapped leak — **BYPASSED ALL GATES (BLOCKER F-B4)**
+
+Goal: dodge the F-B3 contiguous tiling the way F-B3 dodged quartile spacing —
+aim at what the tiling leaves uncovered. Contiguous tiling with step == length
+starts windows at deterministic multiples of `tail_days` (20, 40, ...). An
+output at t reading a future row at t+d is only compared against windows
+starting in (t, t+d]. With d=5 and step=20, dates with (pos mod 20) <= 14 have
+NO window start in (t, t+5] — a 75%-coverage safe set. Blend 5-30% future
+5-day returns via `np.roll` (no `.shift` literal for Gate 0.5) active only on
+safe dates (plus dodging the four quartile read-zones, so legacy spacings stay
+blind too).
+
+Mechanism probes (plain synthetic, seed 7, no planted signal):
+
+```
+rows: 18000
+source patterns: []
+flag: False
+runtime: (False, '')
+perturbation: (False, '')
+```
+
+All three lookahead layers blind — including the F-B3 perturbation gate the
+previous pass installed. Full-gate verdicts vs the clean twin (same momentum,
+no future leg, rejects at IC=0.0061):
+
+```
+W=0.05: runtime=False perturbation=False verdict=reject IC=0.0290 fails=[survives_fdr]
+W=0.15: runtime=False perturbation=False verdict=promote IC=0.0720 fails=[]
+W=0.30: runtime=False perturbation=False verdict=promote IC=0.1577 fails=[]
+TWIN verdict: reject (min_abs_ic/min_ic_ir/survives_fdr all FAIL)
+```
+
+At W=0.05 the leak already lifts IC 0.006 -> 0.029 (past the 0.02 floor) and
+only the FDR multiplicity gate holds; at W=0.15 the verdict flips to PROMOTE
+with all gates passing. Decisiveness proven: the core safety property ("refuse
+factors that read future rows") was defeated by a leak confined to
+window-start gaps. Root cause: deterministic step==length starts let a
+dedicated adversary compute the safe set exactly (the F-B3 docstring's residual
+paragraph anticipated gap-aiming at bodies; starts are aimable the same way).
+
+### ATTACK E4: forged F3 aggregates — **CHECKER PRINTS PROOF_COMPLETE (MAJOR F-C3)**
+
+Goal: cross the F4 finish gate on a knowingly-bad run without touching the
+numbers the F-C2 fix cross-checks. The F-C2 fix compares per-factor IC/IC-IR/
+t-HAC/p-raw/OOS/Sharpe/verdict between md and JSON — but the F3 aggregates the
+mandate actually cares about (`f3_specificity.rejection_rate`,
+`f3_stability.flip_count`, `delta` counts) are self-reported and never
+recomputed from the per-entry verdicts sitting in the same JSON. Forgery on
+copies in /tmp (real files untouched): flip 5/10 `noise_controls` verdicts to
+`promote`, keep `rejection_rate=1.0`:
+
+```
+forged: 5/10 noise verdicts=promote, rejection_rate still 1.0
+$ check_real_data_proof.main() against forged copies
+check_real_data_proof: all checks passed.
+PROOF_COMPLETE
+forged_checker_exit= 0
+```
+
+The checker certified a run that promotes half its noise controls. Same class
+as F-C2 (self-certified artifact), one layer up: the per-factor numbers are
+now bound to each other, but the aggregates that decide F3 pass/fail are bound
+to nothing.
+
+### ATTACK E2: global-normalization leak — BLOCKED (failed attack is evidence)
+
+Goal: smuggle future influence through full-sample z-scoring
+(`(v - v.mean()) / v.std()` over the whole panel — reads future rows
+indirectly, no shift/roll anywhere):
+
+```
+E2 global-norm flagged: True
+```
+
+The perturbation gate flags it (the documented assumption — global
+normalization is itself in-sample leakage — holds behaviourally, not just on
+paper).
+
+### ATTACK E5: determinism of the rewritten gate — HOLDS
+
+```
+E5 deterministic: True (False, False) twice on mom_20, seed 7
+```
+
+Two consecutive `check_lookahead_perturbation` runs return identical verdicts;
+the rewrite introduces no RNG or ordering dependence.
+
+---
+
+## 2. Fixes (applied this pass, reviewer-implemented per c2-p11/c3-p11/c4-p11 precedent)
+
+### F-B4 fix: stride-1 dense tiling (`src/factorlab/cv.py`)
+
+`check_lookahead_perturbation()` now starts a perturbation window at EVERY
+sample date by default (`n_windows=None` = stride-1, window length
+`tail_days`). Any output at t reading a future row at t+d is caught by the
+window starting inside (t, t+d] — which always exists when starts are dense.
+Gap-aiming has no safe set left because there are no gaps. Explicit small
+`n_windows` (1 = tail-only, 4 = quartile) reproduces the legacy spacings for
+the regression tests' preconditions — never in the gate path (`promote()`
+calls with defaults). Cost: one recompute per date (~16s for a clean factor on
+the 1500x12 panel; leaks exit early on the first differing window).
+
+Post-fix verification (same filed shape):
+
+```
+leak W=0.15 stride-1: True | Factor values at 12 past dates changed when only
+  future OHLCV data was perturbed (window 21/1499 starting 2019-...)
+leak legacy n_windows=4: False | leak legacy n_windows=1: False
+mom_20 clean: False (16s) | noise clean: False (15s)
+LEAK verdict: reject (FAIL no_future_dependence) | TWIN verdict: reject
+```
+
+The filed shape is now flagged and rejected via `no_future_dependence`; both
+legacy spacings stay blind (pinning the test to the new mechanism); clean
+factors still scan clean.
+
+Tests added (`tests/test_adversarial.py`, fault-naming docstrings +
+top-of-file fault-list entries):
+`test_mod_gated_leak_rejected_by_stride_one_tiling` (pins verdict + reason
+code, with preconditions asserting source, runtime, quartile `n_windows=4`,
+AND tail-only `n_windows=1` all stay blind so the test cannot pass
+vacuously).
+Speed note: `test_perturbation_no_false_positives_on_library` now runs on a
+400x6 panel (was 1500x12) — same default gate path, size-independent property,
+with the reason recorded in the test.
+
+### F-C3 fix: F3 aggregate cross-check (`scripts/check_real_data_proof.py`)
+
+New `check_f3_aggregate_consistency(data)`: recomputes every self-reported
+aggregate from the entry lists with the same arithmetic
+`prove_on_real_data.write_report` uses — `noise_rejected`/`noise_total`/
+`rejection_rate` vs `noise_controls` verdicts, `flip_count` vs
+`flipped_names`, `n_promoted`/`promoted_names` vs `real_factors` verdicts,
+`delta` counts vs `p_raw`/`bh_fdr_pass`/verdict fields — failing closed on
+any divergence. Post-fix, the same forgery fails:
+
+```
+check_real_data_proof: FAIL
+  F3 CONSISTENCY FAIL: f3_specificity.noise_rejected=10 but 5/10 noise_controls entries have verdict=reject.
+  F3 CONSISTENCY FAIL: f3_specificity.rejection_rate=1.0 but entry verdicts give 0.5 — one artifact was doctored.
+forged_exit= 1
+```
+
+Residual (documented, not a new finding): a forger who rewrites entries AND
+aggregates coherently in both files still passes — only a full recomputation
+gate closes that, which costs a real-data run per check. The bar is now "forge
+a fully self-consistent pair of artifacts" instead of "edit one aggregate
+field".
+
+Tests added: `test_proof_checker_rejects_forged_specificity` (positive
+control on the committed artifacts + in-memory forgery, no file writes).
+
+Post-fix state (full suite + lint + both mandate checkers, this pass):
+
+```
+$ .venv/bin/python -m pytest -p no:warnings 2>&1 | tail -1
+167 passed in 239.79s (0:03:59)
+$ .venv/bin/python -m ruff check . 2>&1 | tail -1
+All checks passed!
+$ .venv/bin/python -m ruff format --check . 2>&1 | tail -1
+27 files already formatted
+$ .venv/bin/python scripts/check_no_internal_refs.py 2>&1 | tail -1
+check_no_internal_refs: CLEAN — no forbidden tokens found.
+$ .venv/bin/python scripts/check_real_data_proof.py 2>&1 | tail -1
+PROOF_COMPLETE
+```
+
+(Suite cost 108s -> 240s from stride-1 tiling: one recompute per date for
+clean factors; leaks exit early. The library no-false-positives sweep runs on
+a 400x6 panel for the same reason. Demo/F-D1 state unchanged by this diff —
+no gate threshold touched, clean-factor verdicts identical; carried as open.)
+
+---
+
+## 3. Findings table (c5-p11)
+
+| id | severity | finding | evidence | status |
+|----|----------|---------|----------|--------|
+| F-B4 | **blocker** | Window-start-gapped leak (5-30% future admixture via `np.roll`, active only at dates with no tiling-window start in (t, t+5]) promoted with all gates passing at W>=0.15 (IC=0.072); clean twin rejects (IC=0.0061) so the leak flips the verdict. Deterministic step==length starts let the adversary compute the safe set exactly. | E3 mechanism + verdict rows section 1 (pre-fix) | **fixed** (stride-1 tiling; post-fix verdict=reject via `no_future_dependence`; 1 test; section 2) |
+| F-C3 | major | `check_real_data_proof.py` trusted self-reported F3 aggregates without recomputing them from the per-entry verdicts: flipping 5/10 noise verdicts to promote while keeping rejection_rate=1.0 printed PROOF_COMPLETE, exit 0. The F4 finish gate was crossable on a knowingly-bad run. | E4 outputs section 1 (pre-fix `all checks passed` on forged copies) | **fixed** (aggregate cross-check; same forgery now exit 1; section 2) |
+| F-D1 | major (carried) | (c5-p04..c5-p10) `examples/run_demo.sh` step 4 asserts `promote mom_20 --plant-signal` exits 0; the tightened multi-horizon FDR gate returns exit 1. Spec criteria 2&3 red. Deliberately untouched per QUALITY-CONTRACT section 0. | c5-p10 section C1; untouched by this pass's diff | open (orchestrator ruling needed) |
+| F-B1 | blocker | (c2-p11) diluted tail-visible leak | regression tests re-run green this pass | fixed (stands) |
+| F-B2 | blocker | (c3-p11) windowed early leak | regression test re-run green this pass | fixed (stands) |
+| F-B3 | blocker | (c4-p11) gap-aimed leak | regression test re-run green this pass | fixed (stands) |
+| F-C2 | major | (c4-p11) md/JSON per-factor forgery | `test_proof_checker_rejects_forged_metrics` green this pass | fixed (stands) |
+| B3 | — | Noise seed-shopping sweep: 8/30 seeds, all reject | c3-p11/c4-p11; not extended (suite occupied the box) | open (method note: background job for remaining 22) |
+| P09 | — | Positioning conflict with MARKET-VERDICTS.md: none found (re-checked: README line 3 leads with the licence problem, COMPARISONS.md table present, MlFinLab-more-complete stated) | README/COMPARISONS.md greps | refuted (no conflict) |
+
+E2 (global-norm) and E5 (determinism): attacks attempted, gate held —
+recorded as refuted/evidence. Prior findings F-T3/F-T2/F-L1/F-A4/F-T5/F-C1/
+F-S1/F-S2/F-G1/F-G2: remain fixed (untouched by this pass's diff).
+
+### Status key (c5-p11)
+
+- `open`: reported for the builder; not yet fixed
+- `fixed`: fix implemented and re-verified with the pass's own probes this pass
+- `refuted`: attack attempted, claim held
