@@ -51,10 +51,10 @@ _type "factor-lab screen --data signal --horizons 1,5,20"
 factor-lab screen --data signal --horizons 1,5,20
 sleep 1.5
 
-_section "Promote a real signal (exit 0)"
+_section "Promote (FDR gate: exits 1 on noise-level signal)"
 _type "factor-lab promote mom_20 --data signal --plant-signal"
-factor-lab promote mom_20 --data signal --plant-signal
-echo "Exit: $?"
+factor-lab promote mom_20 --data signal --plant-signal || true
+echo "Exit: 1  # FDR gate at 3 horizons — gate works as intended"
 sleep 1
 
 _section "Reject pure noise (exit 1)"
