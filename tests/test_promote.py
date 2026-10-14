@@ -97,16 +97,20 @@ def test_planted_signal_promoted(signal_df):
     Fault detected: gate too strict or factor computing zero IC on data
     with embedded autocorrelation.
 
-    The planted_signal dataset has AR(1) rho=0.08 embedded in returns.
+    The planted_signal dataset has AR(1) rho=0.15 embedded in returns.
     At horizon 5, the HAC-corrected t-stat is ~1.6 (weaker than naive 2.9
     because overlapping labels inflate naive by ~sqrt(5)≈2.2x). The factor
-    achieves IC=0.025, IC-IR=0.075, HR-LB=0.5013. We use fdr_q=0.15 (the
-    default since HAC already deflates the statistic substantially) and
-    min_abs_ic=0.015 to detect the genuine planted signal. This is still
-    more conservative than no FDR correction.
+    achieves IC=0.025, IC-IR=0.075, HR-LB=0.5013. We use an explicit
+    single-horizon config (horizons=[5], fdr_q=0.15, min_abs_ic=0.015) to
+    demonstrate sensitivity. Under the PromotionConfig defaults
+    (horizons=[1,5,20], fdr_q=0.10, FDR family spanning all evaluated
+    horizons since c5-p04) this factor is REJECTED on survives_fdr
+    (p=0.1065 > 0.10) — the test pins the gate's sensitivity leg, not the
+    default verdict.
 
-    The spec requires: 'planted-signal factor is promoted'. The PromotionConfig
-    default fdr_q=0.15 is set to compensate for HAC deflation at h > 1.
+    The spec requires: 'planted-signal factor is promoted'. This test
+    demonstrates it under the documented single-horizon config; the
+    default-config verdict is REJECT (see reports/improvements.md c5-p09).
     """
     factor = get_factor("mom_20")
     cfg = PromotionConfig(

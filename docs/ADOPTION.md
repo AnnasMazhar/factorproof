@@ -69,7 +69,7 @@ class MyFactor(Factor):
 Register it and screen:
 
 ```python
-from factorlab.factors.registry import REGISTRY
+from factorlab.factors import REGISTRY
 from myresearch.factors.my_factor import MyFactor
 
 REGISTRY["my_factor"] = MyFactor()
@@ -110,7 +110,7 @@ pip install "factorproof @ git+https://github.com/you/factor-lab.git"
 import pandas as pd
 import alphalens
 from factorlab.data import load_ohlcv_csv
-from factorlab.factors.registry import REGISTRY
+from factorlab.factors import REGISTRY
 from factorlab.promote import promote, PromotionConfig
 
 # Step 1 — load data

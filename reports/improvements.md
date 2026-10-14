@@ -1170,3 +1170,153 @@ $ git stash pop && pytest -k pearson
 - Branch note: `feat/v0.1` is checked out in the sibling reconcile worktree
   (named `factorproof-reconcile` under the portfolio worktree dir). Commit below is on
   `tmp-c3p10`; orchestrator to cherry-pick onto `feat/v0.1`.
+
+## Improve pass 2 (cycle 5) — 2026-10-14 — c5-p09-improve-2
+
+Baseline: c5-p08 left 165 passed, suite green (authoritative: this file §
+"Improve pass 1 (cycle 5)"). No open adversarial findings assigned to this
+pass; scope per pass brief is adoption readiness + the single biggest README
+credibility gap.
+
+### Scope of this pass (per pass brief)
+
+Ergonomics (stranger-actionable errors), docs matching the code exactly,
+packaging/versioning check, one concrete integration example against a real
+external tool, then the single biggest README credibility gap.
+
+### Pre-flight verification (no change needed)
+
+- Suite: 165 passed, 0 failing (full re-run this pass: `165 passed in 83.01s`).
+- README Tests badge: 165 — correct, no edit.
+- README results table vs `results/factor_table.md`: identical (all 13 rows).
+  Post-c5-p08 drift check: `mom_20 H=1 IC=0.0381 IC-IR=0.1109 t=4.27` and
+  `rsi_14 H=1 IC=0.0462 IC-IR=0.1421 t=5.48` recomputed live against current
+  `src/factorlab/evaluate.py` — match the table exactly. The centre-then-rescale
+  fix moved nothing at 4-decimal precision on normal-magnitude data.
+- Ergonomics spot-checks: `--horizons abc` → clean error, exit 1; unknown
+  factor → plain message + available list, exit 1 (redirect-to-file retest,
+  both correct).
+- Packaging: `pyproject.toml` 0.1.0 == `CHANGELOG.md` 0.1.0 entry; entry point
+  live; CI runs `check_no_internal_refs.py`. No change needed.
+- `check_no_internal_refs`: CLEAN. `check_real_data_proof`: pass (both re-run).
+
+### Finding 1 (BLOCKER-class docs gap) — ADOPTION recipe import does not exist
+
+`docs/ADOPTION.md` (§Day-3 recipe, line 72; §2 recipe, line 113) told strangers
+to write `from factorlab.factors.registry import REGISTRY`. There is no
+`factorlab/factors/registry.py` — the import raises ModuleNotFoundError (hit
+live this pass while probing the recipe). Every in-repo consumer uses
+`from factorlab.factors import REGISTRY` (`cli.py:96`,
+`scripts/prove_on_real_data.py:52`, `examples/integrate_alphalens.py:27`).
+A stranger pasting the flagship recipe fails on its first import. Fixed both
+occurrences (`replaceAll`); verified `from factorlab.factors import REGISTRY`
+resolves and returns `mom_20`:
+
+```
+$ .venv/bin/python -c "from factorlab.factors import REGISTRY; ..."
+ADOPTION import path OK: mom_20
+```
+
+### Finding 2 — `test_planted_signal_promoted` docstring contradicted the code twice
+
+Claimed the planted AR(1) is `rho=0.08` (code: `rho=0.15` per
+`src/factorlab/data.py:140` and `CHANGELOG.md`) and that `fdr_q=0.15` is "the
+default" (code: `fdr_q=0.10` per `src/factorlab/promote.py:69`, since c5-p04).
+Docstring-only rewrite (no test logic touched): states rho=0.15, states the
+0.10 default with the multi-horizon family, and documents that the test pins
+the sensitivity leg under an explicit single-horizon config — not the default
+verdict.
+
+### Finding 3 (biggest README credibility gap) — standalone-PROMOTE claim now false
+
+README "Real results" claimed standalone `mom_20` PROMOTEs in isolation
+(`p=0.107 at q=0.15 with m=1`, exit 0). Measured this pass under current
+defaults:
+
+```
+$ .venv/bin/factor-lab promote mom_20 --data signal --plant-signal
+survives_fdr                              0.1065       0.1000   FAIL
+  note: BH FDR q=0.1, m=3 tests (3 horizons + 0 extra)
+Result: REJECT
+CLI-promote EXIT:1
+```
+
+A skeptic needs 30 seconds to falsify the old paragraph. Cause is the
+committed, tested c5-p04 gate tightening (FDR family spans all evaluated
+horizons, q 0.15→0.10): p=0.1065 clears neither q=0.10 at m=3 nor q=0.10 at
+m=1. README rewritten to the honest current behavior with the measured
+numbers, pointing at the pinned sensitivity test for the CAN-promote leg.
+
+### Finding 4 — integration example exited 1, never reached alphalens
+
+`examples/integrate_alphalens.py` used bare `PromotionConfig()` and therefore
+hit the same `survives_fdr` REJECT — output ended at "Rejected by the gate",
+exit 1, no `INTEGRATION_OK`. The adoption example was broken. Fix (example
+only, gate untouched): explicit `PromotionConfig(horizons=[5], fdr_q=0.15)`
+with a comment citing the test-blessed precedent
+(`test_planted_signal_promoted`) and the c5-p09 disposition. Re-run verbatim:
+
+```
+factorproof verdict for mom_20: promote
+alphalens 0.4.6: factor_data shape (17520, 5)
+alphalens mean IC:
+1D     0.037336
+5D     0.019585
+20D    0.008899
+INTEGRATION_OK
+```
+
+Identical to the c2/c3/c4 record and to `docs/ADOPTION.md` §7.1
+(0.0373/0.0196/0.0089) — the recipe reproduces four cycles later.
+
+### Open conflict (reported, not fixed — quality-contract §0)
+
+Spec acceptance criterion 3 (`factor-lab promote mom_20` on planted-signal
+data exits 0) and `examples/run_demo.sh` step 4 (asserts exit 0) currently
+FAIL against the tightened gate. The gate is the correct side: c5-p04 closed
+a real multiplicity undercount (single-horizon m=1 understated the family),
+and softening q or the family to recover exit 0 would reintroduce exactly
+that — a `--force` by another name, and a direct violation of the spec's own
+"do NOT tune thresholds to make a factor pass" rule. Per the contract the
+criterion is left failing and said so here and in `EVIDENCE.md` (c5-p09
+entry): the criterion predates the multiplicity fix and needs an orchestrator
+ruling (re-scope it to the pinned single-horizon config, or accept REJECT as
+the honest default verdict on this panel). `run_demo.sh` step 4 is
+deliberately untouched for the same reason — editing the demo to expect
+REJECT would rewrite an acceptance criterion, editing it to force a PROMOTE
+would corrupt the gate.
+
+### Before / after (raw output)
+
+```
+$ .venv/bin/python -m pytest -p no:warnings 2>&1 | tail -1
+165 passed in 83.01s (0:01:23)
+```
+
+```
+$ .venv/bin/python -m pytest -p no:warnings tests/test_promote.py tests/test_cli.py -q
+............  (12 passed, 0 failed)
+```
+
+```
+$ ruff check .
+All checks passed!
+```
+
+(`ruff format --check tests/test_promote.py` flags the file — verified
+pre-existing via `git stash` (parenthesised-assert style drift, hunks outside
+this pass's edited lines). Untouched per the c2-p08/c3-p09 rulings.)
+
+### Metrics delta
+
+| Metric | Before (c5-p08) | After | Delta |
+|--------|--------|-------|-------|
+| Test count | 165 passed | 165 passed | no change (docstring-only test edit) |
+| ADOPTION recipe import | ModuleNotFoundError on paste | resolves (`mom_20`) | ✓ fixed |
+| Test docstring (rho / default q) | 0.08 / "default 0.15" (both wrong) | 0.15 / 0.10 + sensitivity-leg note | ✓ fixed |
+| README standalone-promote claim | PROMOTE exit 0 (false, 30s to falsify) | REJECT exit 1 with measured p/q/m | ✓ fixed |
+| `integrate_alphalens.py` | exit 1, no INTEGRATION_OK | INTEGRATION_OK, numbers match §7.1 | ✓ fixed |
+| README results table | matches code | re-verified match post-c5-p08 | no drift |
+| Badge / packaging / checkers | correct / match / pass | unchanged | no change |
+| Spec criterion 3 + demo step 4 | FAIL (pre-existing since c5-p04) | FAIL (reported, gate not softened) | open, orchestrator ruling needed |
+| Ruff check | clean | clean | no change |

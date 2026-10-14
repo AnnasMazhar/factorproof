@@ -124,13 +124,19 @@ Run on synthetic data with an embedded AR(1) momentum signal (rho=0.15).
 | amihud_illiq_20 | 5 | 0.0041 | 0.0122 | 0.25 | 0.0001 | 0.4790 | 0.1038 | 0.99 | N | REJECT |
 
 Promoted in screen: 0/13 (all factors rejected under HAC + BH FDR across 13 factors).
-Promoted (standalone): `mom_20` promotes in isolation (IC=0.025, p=0.107 at q=0.15 with m=1).
+Promoted (standalone, defaults): 0 — `factor-lab promote mom_20 --data signal --plant-signal`
+currently REJECTs on `survives_fdr` (BH p=0.1065 vs q=0.10, m=3 horizons; exit 1, measured
+2026-10-14). The planted signal (IC=0.025 at H=5) does not clear the default bar once the
+FDR family spans all evaluated horizons (c5-p04 multiplicity fix).
 
 **Why does the screen reject everything?** HAC t-stats at H=20 are ~3x lower than naive t-stats
 due to overlapping-label autocorrelation. Combined with FDR over 13 factors (BH threshold for
 rank 6 = 0.069), no factor survives. This is correct behaviour — this AR(1) signal (rho=0.15)
-is genuinely weak when measured honestly. `factor-lab promote mom_20 --data signal` demonstrates
-the pipeline CAN promote a real signal when evaluated in isolation (exit 0; see step 4 of demo).
+is genuinely weak when measured honestly. Sensitivity (the gate CAN see a real signal) is
+pinned by `tests/test_promote.py::test_planted_signal_promoted` under an explicit
+single-horizon config (horizons=[5], q=0.15). Spec acceptance criterion 3
+(`promote mom_20` exits 0) currently fails against the tightened gate; see
+reports/improvements.md (c5-p09) for the disposition — the gate is not softened to meet it.
 
 ## The gates explained
 
