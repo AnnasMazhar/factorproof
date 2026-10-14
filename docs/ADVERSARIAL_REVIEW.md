@@ -2782,3 +2782,212 @@ files, only appended to this markdown file; suite green at 174).
 - `fixed`: fix implemented and re-verified with the pass's own probes this pass
 - `refuted`: attack attempted, claim held
 - `carried`: reported by an earlier pass, re-verified this pass, unchanged
+
+---
+
+## PASS c6-p11-adversarial-2 (cycle 6, adversarial pass 2 of 2)
+
+Independent reviewer lane. This pass attacks the **property** (c6-p10 attacked the
+claims). Read first, in order: ITERATION-PROTOCOL.md, QUALITY-CONTRACT.md,
+MARKET-VERDICTS.md, specs/factor-lab.md (incl. v0.2 MANDATE), the c1-p10
+through c6-p10 entries above. All four `reports/mutants-survived-c*.txt`
+(c2–c5) are present but 0 bytes; reports/mutation-c5.json records a 0/0 infra
+failure (rc=2); authoritative mutation baseline remains reports/mutation-c1.json
+(878/1977 = 44.4%, gate 70%) — quoted, not re-derived.
+
+Branch note: this pass ran in the repo root on `feat/v0.1`.
+No absolute host paths appear below per F1.
+
+All commands below were actually run; output is verbatim terminal output.
+Driver: `/tmp/c6p11_attacks.py` (attacks G1/G2/G4/G5) plus inline probes (G3).
+
+---
+
+## 0. Pre-attack state
+
+```
+$ git log --oneline -1
+8084dbe docs(review): cycle 6 adversarial pass 1 — claims hold, 6/6 faults detected, F-D1 carried
+$ .venv/bin/python scripts/check_no_internal_refs.py 2>&1 | tail -1
+check_no_internal_refs: CLEAN — no forbidden tokens found.
+$ .venv/bin/python scripts/check_real_data_proof.py 2>&1 | tail -1
+PROOF_COMPLETE
+```
+
+Prior-findings triage: F-D1 (demo step-4 vs tightened FDR gate) carried open —
+untouched per QUALITY-CONTRACT section 0 (needs orchestrator re-scope, not a
+reviewer edit). B3 (noise seed-shopping) stands at 8/30, all reject — not
+extended (the suite occupies the box this pass). Everything else remains fixed.
+
+---
+
+## 1. Property attacks — defeat the promotion gate
+
+### ATTACK G1: fail-open exception bypass — **BYPASSED ALL GATES (BLOCKER F-B5)**
+
+Goal: dodge the stride-1 perturbation gate (F-B4 fix) without aiming at
+anything — refuse the test instead. A stateful factor computes normally on
+the first-seen panel but raises on any recompute with different values,
+which is exactly what the perturbation gate feeds it. Leak: 15–30% future
+blend via `np.roll` (no `.shift` literal for Gate 0.5, sub-threshold for
+Gate 0.75). Panel: plain synthetic, 400x6, seed 7 (small for speed; same
+default gate path).
+
+```
+rows: 2400
+=== G1: fail-open exception bypass ===
+W=0.15: source=[] runtime=False perturbation=False verdict=promote
+  *** BYPASS: leaky stateful factor PROMOTED ***
+W=0.3: source=[] runtime=False perturbation=False verdict=promote
+  *** BYPASS: leaky stateful factor PROMOTED ***
+=== G1 control: stateless twin ===
+plain W=0.15: perturbation=True verdict=reject
+```
+
+Decisiveness proven: the stateless twin with the identical leak is flagged
+and rejected, while the stateful twin — differing only by raising on
+recompute — is promoted. Root cause: all three lookahead `except` branches
+in `src/factorlab/cv.py` (runtime baseline, perturbation baseline,
+perturbation recompute) returned `(False, ...)` on exception, i.e. the
+safety gate failed OPEN. A factor that computes on real data but refuses
+perturbed panels is either evading the test or too fragile to trust; either
+way it must not promote.
+
+### ATTACK G2: single-date minimal leak — BLOCKED (failed attack is evidence)
+
+Goal: test stride-1 mechanism sensitivity at the smallest footprint — a
+future 5-day read confined to ONE output date (t0=100), clean momentum
+elsewhere. Direct mechanism probe (not a verdict flip: one date cannot move
+full-sample IC):
+
+```
+=== G2: single-date leak mechanism sensitivity ===
+single-date: perturbation=True msg=Factor values at 6 past dates changed when only future
+OHLCV data was perturbed (window 101/399 star...
+```
+
+`max_diffs=0` holds: even a one-date read flips 6 past outputs and is
+caught. Sensitivity floor confirmed, not assumed.
+
+### ATTACK G3: F3 checker edge cases — HELD (evidence, one minor noted)
+
+In-memory probes against `check_f3_aggregate_consistency` (no file writes):
+
+```
+empty-list consistency fails: []
+malformed: AttributeError 'str' object has no attribute 'get'
+```
+
+- Empty `noise_controls` + self-consistent zeros passes the *consistency*
+  layer — but the *threshold* layer (`rejection_rate=0.0 < 0.90`,
+  checker lines 140–148) rejects it. Defense in depth holds; no forgery
+  path. → refuted.
+- Malformed entries (strings in `noise_controls`) crash with an unhandled
+  `AttributeError` instead of a `F3 CONSISTENCY FAIL` line. Exit is still
+  non-zero (fail-closed in effect — never prints PROOF_COMPLETE), so this
+  is a robustness wart, not a bypass. → minor F-C4, open.
+
+### ATTACK G4: stochastic causal factor — FLAGGED, wrong reason (minor F-S3)
+
+Goal: a causal-but-unseeded factor (mom_20 + N(0,1e-9) jitter, no
+lookahead) through the perturbation gate:
+
+```
+=== G4: stochastic causal factor ===
+jittered: perturbation=True msg=Factor values at 6 past dates changed when only future
+OHLCV data was perturbed (window 1/399 starti...
+```
+
+Correct verdict direction (a non-reproducible factor should not promote),
+wrong diagnosis: the reason claims "lookahead contamination" when the true
+cause is nondeterminism. The docstring's determinism assumption is
+behaviourally real but the reason string over-claims. → minor F-S3, open
+(precision-only; no fix — mislabelled rejection is the safe direction).
+
+### ATTACK G5: registered lookahead_control — REJECTED (regression sanity)
+
+```
+=== G5: registered lookahead_control ===
+lookahead_control verdict=reject
+```
+
+The deliberate control still rejects after the fail-closed rewrite. Gate
+0.85's reason mapping (`no_future_dependence`) is exercised by the new
+test below, not just by this probe.
+
+---
+
+## 2. F-B5 fix (applied this pass, reviewer-implemented per c2-p11/c3-p11/c4-p11/c5-p11 precedent)
+
+All three fail-open branches in `src/factorlab/cv.py` now fail closed —
+any `factor.compute()` raise inside a lookahead check returns `(True, ...)`
+with an honest `fail-closed` reason string:
+
+- `check_lookahead_runtime` baseline raise → `(True, "raised on real data,
+  fail-closed")`: an honest factor computes on real data.
+- `check_lookahead_perturbation` baseline raise → `(True, "raised on
+  baseline, fail-closed")`: without a baseline, causality is unverifiable.
+- `check_lookahead_perturbation` perturbed-recompute raise → `(True,
+  "raised on perturbed panel, fail-closed")`: the perturbed panel has
+  identical shape/dtypes/index with only values reordered, so refusing it
+  while the baseline computed is data-dependent refusal.
+
+No legitimate factor is affected: the full adversarial file (37 tests,
+including the no-false-positives library sweep) is green post-fix.
+
+Post-fix verification (the new regression test itself + targeted re-probe):
+
+```
+$ .venv/bin/python -m pytest tests/test_adversarial.py::test_stateful_raise_on_perturbation_rejected -p no:warnings 2>&1 | tail -1
+1 passed in 0.97s
+$ .venv/bin/python -m pytest tests/test_adversarial.py -p no:warnings 2>&1 | tail -1
+37 passed in 80.60s (0:01:20)
+$ .venv/bin/python -m ruff check src/factorlab/cv.py tests/test_adversarial.py 2>&1 | tail -1
+All checks passed!
+$ .venv/bin/python scripts/check_no_internal_refs.py 2>&1 | tail -1
+check_no_internal_refs: CLEAN — no forbidden tokens found.
+$ .venv/bin/python scripts/check_real_data_proof.py 2>&1 | tail -1
+PROOF_COMPLETE
+```
+
+Tests added (`tests/test_adversarial.py`, fault-naming docstring +
+top-of-file fault-list entry): `test_stateful_raise_on_perturbation_rejected`
+(pins verdict=reject + `no_future_dependence` reason code, with
+preconditions asserting source AND runtime stay blind so the test cannot
+pass vacuously; the mechanism assertion pins the fail-closed behaviour
+directly). Residual (documented, not a new finding): a factor that returns
+*plausible-but-wrong* values on perturbed panels instead of raising still
+relies on bit-exact comparison to catch — which G2 shows holds down to a
+single differing date.
+
+---
+
+## 3. Findings table (c6-p11)
+
+| id | severity | finding | evidence | status |
+|----|----------|---------|----------|--------|
+| F-B5 | **blocker** | Lookahead checks failed OPEN on exception: a stateful factor (computes on real data, raises on any perturbed recompute) with a 15–30% `np.roll` future blend promoted with source=[], runtime=False, perturbation=False; the stateless twin with the identical leak is flagged and rejected, so the raise flips the verdict. | G1 outputs §1 (pre-fix verdict=promote rows + control) | **fixed** (fail-closed on all three raise branches in `cv.py`; post-fix verdict=reject via `no_future_dependence`; 1 test; §2) |
+| F-C4 | minor | `check_f3_aggregate_consistency` crashes with unhandled `AttributeError` on non-dict entries in `noise_controls` instead of emitting a `F3 CONSISTENCY FAIL` line. Exit stays non-zero (never prints PROOF_COMPLETE), so fail-closed in effect — robustness wart only. | G3 output §1 | open |
+| F-S3 | minor | Perturbation gate misdiagnoses nondeterminism as lookahead: an unseeded-jitter causal factor is flagged with reason "lookahead contamination". Safe direction (reject), wrong label; the determinism assumption is documented but the reason string over-claims. | G4 output §1 | open |
+| F-D1 | major (carried) | (c5-p04..c6-p10) `examples/run_demo.sh` step 4 asserts `promote mom_20 --plant-signal` exits 0; the tightened multi-horizon FDR gate returns exit 1. Spec criteria 2&3 red. Deliberately untouched per QUALITY-CONTRACT §0. | c6-p10 §C1/§4; untouched by this pass's diff | open (orchestrator ruling needed) |
+| F-B1 | blocker | (c2-p11) diluted tail-visible leak | regression tests re-run green this pass (37 passed) | fixed (stands) |
+| F-B2 | blocker | (c3-p11) windowed early leak | regression tests re-run green this pass | fixed (stands) |
+| F-B3 | blocker | (c4-p11) gap-aimed leak | regression tests re-run green this pass | fixed (stands) |
+| F-B4 | blocker | (c5-p11) window-start-gapped leak | `test_mod_gated_leak_rejected_by_stride_one_tiling` green this pass | fixed (stands) |
+| F-C2 | major | (c4-p11) md/JSON per-factor forgery | `test_proof_checker_rejects_forged_metrics` green this pass | fixed (stands) |
+| F-C3 | major | (c5-p11) F3 aggregate forgery | `test_proof_checker_rejects_forged_specificity` green this pass | fixed (stands) |
+| B3 | — | Noise seed-shopping sweep: 8/30 seeds, all reject | c3-p11/c4-p11; not extended (suite occupied the box) | open (method note: background job for remaining 22) |
+| P11 | — | Positioning conflict with MARKET-VERDICTS.md: none found (README licence lead, COMPARISONS.md table, MlFinLab-more-complete stated — untouched by this pass's diff) | README/COMPARISONS.md | refuted (no conflict) |
+
+G2 (single-date sensitivity) and G5 (lookahead_control): attacks attempted,
+gate held — recorded as refuted/evidence. G3 empty-list: forgery path
+closed by the threshold layer — refuted. Prior precision findings
+F-T3/F-T2/F-L1/F-A4/F-T5/F-C1/F-S1/F-S2/F-G1/F-G2: remain fixed (untouched
+by this pass's diff).
+
+### Status key (c6-p11)
+
+- `open`: reported for the builder; not yet fixed
+- `fixed`: fix implemented and re-verified with the pass's own probes this pass
+- `refuted`: attack attempted, claim held
+- `carried`: reported by an earlier pass, re-verified this pass, unchanged

@@ -75,6 +75,11 @@ Faults detected per test:
         Fault: check_no_internal_refs.py failing to find a newly-introduced
         forbidden token (e.g. a misplaced import or a comment referencing
         internal system names), allowing the CI gate to pass on a dirty file.
+    test_stateful_raise_on_perturbation_rejected (F-B5 FIX):
+        Fault: check_lookahead_runtime() and check_lookahead_perturbation()
+        returning clean (False) when factor.compute() raises — a factor that
+        computes on real data but refuses perturbed panels dodges every
+        lookahead layer while flipping REJECT into PROMOTE.
 """
 
 from __future__ import annotations
@@ -1323,6 +1328,85 @@ def test_mod_gated_leak_rejected_by_stride_one_tiling():
     assert (
         decision.verdict == "reject"
     ), f"mod-gated leak promoted: {[(r.code, r.passed) for r in decision.reasons]}"
+    codes = [r.code for r in decision.reasons if not r.passed]
+    assert "no_future_dependence" in codes, f"expected no_future_dependence FAIL, got {codes}"
+
+
+class _StatefulRaiseLeak:
+    """F-B5 attack shape: computes on the first-seen panel, raises on any
+    recompute with different values (exactly what the perturbation gate
+    feeds it), and embeds a 15% future blend via np.roll (no .shift
+    literal for source inspection, sub-threshold for the runtime screen).
+    """
+
+    name = "stateful_raise_leak"
+    category = "attack"
+    description = "Refuses perturbed panels; embeds future blend"
+    params = {}
+    uses_future_data = False
+
+    def __init__(self, w: float = 0.15):
+        self._w = w
+        self._fp: bytes | None = None
+
+    def compute(self, df: pd.DataFrame) -> pd.Series:
+        import numpy as np
+
+        fp = df["close"].to_numpy().tobytes()
+        if self._fp is None:
+            self._fp = fp
+        elif fp != self._fp:
+            raise ValueError("panel changed between calls (fail-open probe)")
+        close = df.pivot(index="date", columns="asset", values="close")
+        mom = close.pct_change(20)
+        lead = (
+            pd.DataFrame(
+                np.roll(close.values, -5, axis=0),
+                index=close.index,
+                columns=close.columns,
+            )
+            / close
+            - 1
+        )
+        out = ((1 - self._w) * mom.fillna(0) + self._w * lead.fillna(0)).stack()
+        out.index.names = ["date", "asset"]
+        return out
+
+
+def test_stateful_raise_on_perturbation_rejected():
+    """F-B5 FIX: a factor that raises on perturbed panels must be rejected.
+
+    Fault detected: check_lookahead_runtime() and
+    check_lookahead_perturbation() failing OPEN (returning clean) when
+    factor.compute() raises — the stateful shape above computes fine on
+    real data (so every other gate sees a working factor) but refuses
+    every perturbed recompute, dodging source, runtime AND stride-1
+    perturbation while flipping a clean-twin REJECT into PROMOTE.
+    Fail-closed: any raise inside a lookahead check flags the factor.
+    """
+    from factorlab.cv import (
+        check_lookahead_perturbation,
+        check_lookahead_runtime,
+        check_lookahead_source,
+    )
+    from factorlab.promote import promote
+
+    df = synthetic_ohlcv(n_days=400, n_assets=6, seed=7)
+    factor = _StatefulRaiseLeak(0.15)
+
+    # Preconditions: the non-behavioral layers are blind to this shape.
+    assert check_lookahead_source(factor) == []
+    flagged_rt, _ = check_lookahead_runtime(factor, df, threshold=0.30)
+    assert not flagged_rt, "precondition broken: runtime check now fires; test needs update"
+
+    # The mechanism: the raise itself must flag (fail-closed).
+    is_lookahead, _ = check_lookahead_perturbation(factor, df)
+    assert is_lookahead, "perturbation gate missed the refusing factor (fail-open)"
+
+    decision = promote(_StatefulRaiseLeak(0.15), df)
+    assert (
+        decision.verdict == "reject"
+    ), f"refusing leak promoted: {[(r.code, r.passed) for r in decision.reasons]}"
     codes = [r.code for r in decision.reasons if not r.passed]
     assert "no_future_dependence" in codes, f"expected no_future_dependence FAIL, got {codes}"
 
