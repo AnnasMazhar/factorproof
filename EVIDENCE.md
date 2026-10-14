@@ -1089,3 +1089,45 @@ by tests/test_promote.py::test_planted_signal_promoted under the explicit
 single-horizon config (horizons=[5], q=0.15). Orchestrator ruling needed:
 re-scope criterion 3 to that config, or accept REJECT as the honest default
 verdict on this panel.
+
+## c6-p04-implement-1 (2026-10-14) — cycle 6 implement pass 1
+
+### pytest
+
+```
+$ /home/openclaw/portfolio/factor-lab/.venv/bin/pytest tests/ 2>&1 | tail -5
+171 passed, 2 warnings in 240.23s (0:04:00)
+```
+
+### ruff
+
+```
+$ ruff check .
+All checks passed!
+$ ruff format --check .
+30 files already formatted
+```
+
+### check_real_data_proof.py
+
+```
+$ python scripts/check_real_data_proof.py
+check_real_data_proof: all checks passed.
+PROOF_COMPLETE
+```
+
+### check_no_internal_refs.py
+
+```
+$ python scripts/check_no_internal_refs.py
+check_no_internal_refs: CLEAN — no forbidden tokens found.
+```
+
+### Branch state
+
+Branch: feat/v0.1, commit 861930e
+- Merged cycle 6 research passes (F-R32..F-R40) from tmp-c3p10
+- Added yearly_ic_table() to src/factorlab/evaluate.py with KAT tests (test_yearly_ic_known_answer, test_yearly_ic_partition_and_determinism)
+- Added test_proof_checker_rejects_forged_specificity (F-C3 fix) to tests/test_adversarial.py
+- Updated real-data-proof.md/json with dataset as of 2026-10-14 (21,332 bars, 14 coins)
+- 171 tests passing (up from 167 in cycle 5)
