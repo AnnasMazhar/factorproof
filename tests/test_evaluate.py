@@ -8,6 +8,8 @@ Faults detected per test:
         Fault: rank computation wrong (e.g., using ordinal instead of average ranks for ties).
     test_pearson_corr_known_values:
         Fault: _pearson_corr internal arithmetic error.
+    test_pearson_corr_wild_magnitudes:
+        Fault: shared-rescale underflow (smaller input rounds to 0, NaN verdict).
     test_rankdata_ties:
         Fault: _rankdata not averaging tied ranks.
     test_forward_returns_horizon:
@@ -90,6 +92,36 @@ def test_pearson_corr_constant():
     y = np.array([5.0, 5.0, 5.0])
     r = _pearson_corr(x, y)
     assert math.isnan(r), f"Expected NaN for constant y, got {r}"
+
+
+def test_pearson_corr_wild_magnitudes():
+    """KAT: wildly-different-magnitude inputs keep their true correlation.
+
+    Fault detected: single shared rescale by max(|X|, |Y|) underflows the
+    smaller input to zero, so a true corr of +/-1.0 comes back NaN.
+
+    Manual: y = 3x + 5 is an exact positive affine map, so corr = 1.0
+    regardless of scale; y = -2x - 1 gives corr = -1.0. Pre-fix, the
+    y ~ 1e-200 and mixed-magnitude cases returned NaN (verified 2026-10-14
+    on the pre-fix implementation: nan vs true +/-1.0).
+    """
+    rng = np.random.default_rng(11)
+    base = rng.normal(0, 1, 50)
+
+    x_big = base * 1e200
+    assert abs(_pearson_corr(x_big, 3.0 * x_big + 5.0) - 1.0) < 1e-9
+
+    # Same-magnitude tiny inputs (squares ~1e-400 would underflow unscaled).
+    x_tiny = base * 1e-200
+    assert abs(_pearson_corr(x_tiny, -2.0 * x_tiny + 1e-200) - (-1.0)) < 1e-9
+
+    # Wildly different magnitudes: exact affine map, built in representable
+    # steps (a single 1e-400 literal would parse to 0.0). Pre-fix this
+    # returned NaN; true corr is 1.0.
+    y_tiny = (x_big * 1e-160) * 3.0e-160  # ~1e-160, affine in x_big
+    r = _pearson_corr(x_big, y_tiny)
+    assert not math.isnan(r), "Expected ~1.0 for mixed magnitudes, got NaN"
+    assert abs(r - 1.0) < 1e-9, f"Expected 1.0 for mixed magnitudes, got {r}"
 
 
 def test_rankdata_ties():

@@ -1077,3 +1077,96 @@ All checks passed!
   still unaddressed, still needs a dedicated pass with its own KAT.
 - Branch note: `feat/v0.1` is checked out in the sibling reconcile worktree.
   Commit below is on `tmp-c3p10`; orchestrator to cherry-pick onto `feat/v0.1`.
+
+## Improve pass 1 (cycle 5) — 2026-10-14 — c5-p08-improve-1
+
+Target: the single highest-severity actionable finding — `_pearson_corr`
+single shared-rescale NaN on wildly-different-magnitude inputs, flagged as
+"needs a dedicated pass with its own KAT" in c3-p08 and carried open through
+c3-p09 and c4-p09. (F-S1's remaining half awaits an orchestrator ruling and
+cannot be fixed unilaterally; c4-p11 blockers/majors are all fixed/standing;
+c5-p06/p07 evals are green with no regressions.)
+
+### 1. The fault (reproduced pre-fix, raw output)
+
+```
+$ .venv/bin/python -c "...
+true corr : 1.0
+got       : 0.9999999999999998
+true corr : -1.0
+got       : nan
+mixed x~1e200 y~1e-200 true corr 1.0, got: nan
+```
+
+`src/factorlab/evaluate.py::_pearson_corr` rescaled both inputs by the
+single shared `max(|X|, |Y|)`. When magnitudes differ wildly, the smaller
+input's rescaled deviations square to ~1e-400, underflow to 0.0, the
+denominator vanishes, and a true corr of +/-1.0 comes back NaN. IC is the
+primary promotion statistic, so a NaN here is a silent fail-closed — safe
+direction, but wrong number on a core path with no test covering it.
+
+### 2. The fix (`src/factorlab/evaluate.py:551`, centre-then-rescale)
+
+Centre each input first, then rescale the *deviations* by their own max
+abs (exact-arithmetic-identical under correlation's affine invariance).
+Plus an explicit exact-constant guard returning NaN *before* centring —
+fail-closed contract: `mean([85.8]*3)` carries float rounding residue, so
+without the guard the normalised residue returns a spurious corr of 1.0
+for constant input (caught by the existing
+`test_pearson_corr_self_correlation_exact_ties`, which failed on the first
+version of this fix and forced the guard — no test weakened).
+
+Post-fix verification (same probes):
+
+```
+big   : 1.0
+tiny  : -1.0
+mixed : 1.0
+subnorm self corr: 1.0
+const : nan
+zeros : nan
+plain : 1.0
+```
+
+Two test-construction traps documented for the record: `y = -2x - 1` with
+x ~ 1e-200 is *exactly* -1.0 in float64 (absorption at construction —
+even `np.corrcoef` returns NaN; genuinely constant, NaN correct), and a
+`1e-400` literal parses to 0.0. Both were caught by checking against
+`np.corrcoef` before blaming the implementation.
+
+### 3. The test (`tests/test_evaluate.py:97`, fault-list entry line 11)
+
+New `test_pearson_corr_wild_magnitudes` KAT: exact affine maps at 1e200,
+1e-200, and mixed 1e200/1e-160 magnitudes with hand-derived corr +/-1.0.
+Non-vacuity proven — fails on pre-fix code, passes post-fix:
+
+```
+$ git stash push -- src/factorlab/evaluate.py && pytest -k wild_magnitudes
+FAILED tests/test_evaluate.py::test_pearson_corr_wild_magnitudes - AssertionE...
+$ git stash pop && pytest -k pearson
+.... (4 passed)
+```
+
+### Metrics delta
+
+| Metric | Before (c5-p07) | After | Delta |
+|--------|--------|-------|-------|
+| Test count | 164 passed, 0 failing | 165 passed, 0 failing | +1 KAT, green |
+| `_pearson_corr` mixed-magnitude corr | NaN (true 1.0) | 1.0 | fixed |
+| `_pearson_corr` tiny-magnitude corr | NaN (true -1.0) | -1.0 | fixed |
+| Exact-ties fail-closed contract | NaN (pinned) | NaN (still pinned, guard added) | no weakening |
+| Subnormal 1e-79 self-corr | 1.0 (pinned) | 1.0 | no regression |
+| README Tests badge | 164 (stale) | 165 (correct) | ✓ fixed |
+| Ruff check | clean | clean | no change |
+| Ruff format | 9 files drifted (pre-existing ruff-version style, incl. tests/test_evaluate.py at HEAD) | same 9, my lines add no new violations | untouched (no unrelated reformat) |
+| Open items | F-S1 (ruling pending) | untouched | not this pass |
+
+### Notes for the next pass
+
+- F-S1's remaining half still awaits the orchestrator ruling proposed in c3-p09.
+- `ruff format --check` flags 9 files tree-wide from ruff-version style drift
+  (parenthesised asserts); verified pre-existing at HEAD via stash, not from
+  this pass. Deliberately not reformatted — unrelated churn.
+- Branch note: `feat/v0.1` is checked out in the sibling reconcile worktree
+  (named `factorproof-reconcile` under the portfolio worktree dir). Commit below is on
+  `tmp-c3p10`; orchestrator to cherry-pick onto `feat/v0.1`.
