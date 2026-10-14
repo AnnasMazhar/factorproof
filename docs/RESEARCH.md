@@ -6393,5 +6393,125 @@ misread it as rot.
    this pass commits on the current branch (`tmp-c3p10`) for the
    orchestrator to merge — content-complete, ref-neutral, as c3-p01 did.
 4. **No code changed in this pass.** Test suite re-ran green before commit
-   (167 collected, rc=0); the only tracked-file change is this section
-   (artifact mtime advances by construction).
+    (167 collected, rc=0); the only tracked-file change is this section
+    (artifact mtime advances by construction).
+
+---
+
+## 20. Cycle 6 pass 2 — ecosystem re-verification + gap standing (added 2026-10-14, pass c6-p02)
+
+Scope: the second of the reopened brief's three research passes — ECOSYSTEM
+AND COMPETITION. Per MARKET-VERDICTS.md (binding: do not re-litigate, deepen
+the table), this pass re-probes every named tool's live metadata and checks
+whether the claimed gap has narrowed since the last verification
+(2026-10-13T13:00 UTC, cycle 5 pass 2). Method: GitHub REST API
+(`api.github.com/repos/<owner>/<repo>`, unauthenticated, probed 2026-10-14
+~10:30 UTC) for stars/push-date/licence, `/releases/latest` for release
+versions, plus raw-README fetches for the two tools closest to the gap
+(purgedcv, ml4t-diagnostic) to check for a newly added verdict/gate API.
+No citations from memory; every number below is today's probe output.
+
+### 20.1 Live metadata (probed 2026-10-14)
+
+| Tool | Version / release | Stars (today) | Stars (2026-10-13) | Last push | Licence |
+|------|-------------------|---------------|---------------------|-----------|---------|
+| MlFinLab (hudson-and-thames/mlfinlab) | no releases published (None) | 4,941 | 4,939 | 2023-10-02 | NOASSERTION (proprietary) |
+| alphalens (Quantopian/alphalens) | archival-era, no releases | 4,468 | (not re-taken) | 2024-02-12 | Apache-2.0 |
+| pyfolio (Quantopian/pyfolio) | archival-era, no releases | 6,428 | (not re-taken) | 2023-12-23 | Apache-2.0 |
+| empyrical (Quantopian/empyrical) | archival-era, no releases | 1,514 | (not re-taken) | 2024-07-26 | Apache-2.0 |
+| qlib (microsoft/qlib) | **v0.9.8** (published 2026-10-08) | 49,354 | 49,336 (+18/1d) | 2026-10-08 | MIT |
+| purgedcv (eslazarev/purged-cross-validation) | v0.1.10 (PyPI, current) | 57 | 57 | 2026-10-01 | MIT |
+| ml4t-diagnostic (ml4t/diagnostic) | v0.1.8 (published 2026-09-24) | 34 | 34 | 2026-10-13T16:39Z | MIT |
+| pyanomaly (chulwoohan/pyanomaly) | no releases published (None) | 133 | 133 | 2024-03-13 | MIT |
+| alphalens-reloaded (stefan-jansen) | fork, rolling | 671 | 670 (+1) | 2026-10-13T19:15Z | Apache-2.0 |
+| pyfolio-reloaded (stefan-jansen) | fork, rolling | 616 | 617 (-1, count jitter) | 2026-10-13T18:43Z | Apache-2.0 |
+| empyrical-reloaded (stefan-jansen) | fork, rolling | 124 | 125 (-1, count jitter) | 2026-10-13T16:33Z | Apache-2.0 |
+
+Links: https://github.com/hudson-and-thames/mlfinlab ·
+https://github.com/Quantopian/alphalens · https://github.com/Quantopian/pyfolio ·
+https://github.com/Quantopian/empyrical · https://github.com/microsoft/qlib ·
+https://github.com/eslazarev/purged-cross-validation ·
+https://github.com/ml4t/diagnostic · https://github.com/chulwoohan/pyanomaly ·
+https://github.com/stefan-jansen/alphalens-reloaded
+
+Notable movement in the last 24h: qlib shipped **v0.9.8** (2026-10-08 push,
+latest release) and gained 18 stars; the reloaded forks all pushed on
+2026-10-13 (maintenance churn, confirmed no new overfitting-control
+features per the 2026-10-13 source re-check); ml4t-diagnostic pushed twice
+on 2026-10-13 (v0.1.8 remains the latest release). MlFinLab: still no code
+push since 2023-10-02 (+2 stars in two days — marketing-page traffic, not
+development).
+
+### 20.2 Comparison table (standing + today's delta)
+
+| Tool | Approach | What it does well | Gap it leaves | What we do differently |
+|------|----------|-------------------|---------------|------------------------|
+| MlFinLab | Proprietary quant-ML library (AFML ch.7 CV, BHY, haircut/DSR, PBO, profit hurdles) | Breadth: bars, labelling, meta-labels, ensembles, ONC, notebooks; production users | Licence (£100/mo/user, no derivatives); no binary accept/reject verdict API in public source (`unverified` for paid package) | MIT, offline, inspectable; the four controls + an explicit gate, none of the breadth |
+| Quantopian stack (alphalens/pyfolio/empyrical) | Tear-sheet factor/portfolio analytics, 2018-era | Mental model of the field; familiar IC/quantile tear sheets | No purged CV, no FDR, no DSR, no gate; unmaintained (last pushes 2023–2024 are branch-tip churn, not development) | Same IC/quantile vocabulary, but every number passes through purge + FDR + gate |
+| qlib (Microsoft, v0.9.8) | End-to-end ML research platform (data, models, experiments) | Scale: 49k stars, data pipelines, model zoo, active releases | No purged/embargo CV, no multiple-testing correction, plain Sharpe only, no verdict (re-confirmed against v0.9.8 tree scope: no new stats module in release notes path) | Narrow statistics layer qlib lacks; complementary, not competing |
+| purgedcv (v0.1.10) | sklearn-compatible CV/statistics library (PurgedKFold, CPCV, DSR, PSR) | Correct time-series splits + JOSS paper; fastest-growing star count in set (0→57 since May 2026) | No factor computation, no IC, no family-wise correction, **no gate** — today's README check: the only "gate" hits are dev-process gates (`ruff`/`mypy`/prose-quality in CONTRIBUTING), not a promotion verdict | We consume its problem space (purged CV) and add the screen → correct → verdict chain on top |
+| ml4t-diagnostic (v0.1.8) | 7-library ML4T ecosystem signal diagnostics (HAC-IC, FDR, DSR, PBO, White RC) | Closest feature overlap: HAC-adjusted IC t-stat, FDR control, quantile profiles | **No binary accept/reject verdict**: today's README check confirms `analyze_signal` returns a result object (IC/spread/turnover diagnostics) with no verdict API, no exit code, no reject path; Polars-required input; 7-library ecosystem overhead | The gate itself: 10 ordered checks, exit 1 on reject, `--force` forbidden by design |
+| pyanomaly | Academic anomaly replication on WRDS/CRSP | Real-data academic scope (316-factor literature replication) | WRDS subscription required (no offline path); no purged CV, no FDR, no verdict | Offline synthetic-first; controls that prove the gate rejects |
+| stefan-jansen reloaded forks | Community maintenance of the Quantopian stack | Installable on modern Python (670/616/124 stars) | Same feature gaps as upstream (confirmed 2026-10-13 source re-check: none of the four controls) | See Quantopian row |
+
+### 20.3 The gap we claim (unchanged, re-evidenced today)
+
+There is still no live, permissively-licensed tool that packages **purged
+walk-forward CV + multiple-testing correction + deflated Sharpe + an
+explicit binary promotion gate** together. MlFinLab has the statistics but
+not the licence; purgedcv has the CV but not the gate; ml4t-diagnostic has
+the diagnostics but not the verdict; qlib has the platform but not the
+statistics.
+
+How a user notices it (concrete, runnable today):
+
+    factor-lab promote noise_control --data synthetic   # exits 1, prints the failing reasons
+    factor-lab promote mom_20 --data synthetic          # exits 0 on planted-signal data
+
+No tool in §20.2 offers that second line's counterpart — a command whose
+exit code IS the research decision, with the full reason table on stdout
+and no override flag. That is the observable difference, not a feature
+list.
+
+Positioning per MARKET-VERDICTS.md stands: "the overfitting controls that
+quant research actually needs, without a £100/month licence" — with the
+explicit honesty clause that MlFinLab is more complete (COMPARISONS.md "Where
+MlFinLab wins", unchanged).
+
+### 20.4 Alternatives considered (this pass)
+
+(i) qlib v0.9.8 as a new threat — checked the release (2026-10-08): a
+platform release, no overfitting-statistics module added; not a gap
+closure. (ii) ml4t-diagnostic's 2026-10-13 pushes as a possible verdict
+addition — README re-fetched today: `analyze_signal` still returns
+diagnostics only; no verdict API. (iii) Collapsing the table to "MlFinLab
+vs us" — rejected: the verdicts file names the Quantopian stack and qlib
+explicitly, and purgedcv/ml4t are the closest live alternatives; dropping
+them would weaken, not strengthen, the claim.
+
+### 20.5 Falsification — what would prove this pass wrong
+
+F-R39 (gap closure): any §20.2 tool shipping, under a permissive licence,
+the full chain screen → family-wise correction → binary verdict with a
+reject path. Concretely: ml4t-diagnostic adding a verdict API to
+`analyze_signal`, purgedcv adding a gate module, or qlib adding FDR +
+verdict. Standing check today: none observed (two README-level checks +
+release scan, §20.1/§20.2). The next ecosystem pass re-runs exactly these
+checks; the first failure flips this finding to blocking.
+
+F-R40 (this pass's own numbers): star counts are GitHub-API values at probe
+time and jitter (±1 observed on the reloaded forks overnight); push dates
+are branch-tip stamps, not development proof (cf. Quantopian 2023–2024
+tip churn). If the adversarial audit re-probes and finds a count off by
+more than jitter, the table cell — not the gap claim — is corrected.
+
+### 20.6 Loop-status notes (observed today — NOT fixed here)
+
+1. No code changed in this pass. Only `docs/RESEARCH.md` (this section)
+   and `COMPARISONS.md` (star-count/date refresh) are touched.
+2. `reports/mutants-survived-c5.txt` is 0 lines; `reports/mutation-c5.json`
+   untracked — nothing to disposition; authoritative kill score remains
+   cycle-1 44.4% per §19.10.
+3. Branch note: `feat/v0.1` is checked out in a sibling worktree, so this
+   pass commits on the current branch for the orchestrator to merge —
+   content-complete, ref-neutral, as c6-p01 did.
