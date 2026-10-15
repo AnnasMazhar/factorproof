@@ -6617,3 +6617,426 @@ re-check.
 - F-R34: a screened set other than 13 real + 10 noise — not observed.
 - F-R1…F-R31: dispositions in §8.9/§9.8/§11/§14/§15.8/§18 stand; nothing
   re-run (proof artifact one day old, dataset delta +12 bars).
+
+---
+
+## 22. Cycle 7 pass 1 — family-scope ground truth: who is the "family" in BH-FDR (added 2026-10-15, pass c7-p01)
+
+Scope of this pass: ground truth for the v0.2 MANDATE only — the
+real-data proof the spec names (F2/F3/F4), i.e. which numbers
+`scripts/check_real_data_proof.py` must reject and why. The open
+question this pass answers: **the BH-FDR leg corrects for "the family
+actually tested", but the repo tests a factor x horizon grid, and no
+section to date derives which scope — pooled, per-horizon, or
+hierarchical — the gate and the checker must use.** This is the root
+cause behind carried finding F-D1 (multi-horizon FDR at m=3 rejects
+mom_20 on planted synthetic at BH p=0.1065 vs q=0.10 while the demo
+expects promotion): the verdict is scope-determined and the scope rule
+is unpinned. 11 new sources below, every link probed today (2026-10-15)
+with `curl -L`, statuses recorded verbatim in §22.8. Five drive the
+design (§22.1–§22.5, full method/equations/assumptions/failure modes);
+six are context (§22.6). No code changed. No MARKET-VERDICTS position
+touched.
+
+Standing numbers this research is written against
+(`reports/real-data-proof.md` + `.json`, generated 2026-10-14, read
+today): 14 coins, 21,332 daily bars, 2021-04-29 → 2026-10-14; 13
+best-horizon p-values (sorted): 0.0000 (lookahead_control),
+0.0003 (rev_5), 0.0191 (volume_z_20), 0.0508, 0.1035, 0.1096, 0.1523,
+0.2042, 0.2157, 0.3053, 0.3310, 0.3765, 0.6351. Pooled BH at q=0.15,
+m=13: thresholds (i/13)·0.15 = 0.01154, 0.02308, 0.03462, 0.04615, …;
+p_(1..3) pass, p_(4)=0.0508 > 0.04615 stops the step-up → k=3
+discoveries (lookahead, rev_5, volume_z_20), matching the report's
+BH-FDR column exactly. All three are then rejected by other gates
+(leakage / turnover / consistency). The hand-arithmetic below re-uses
+these 13 values.
+
+### 22.1 Selective inference on multiple families — BB2014 (DRIVES DESIGN)
+
+**Benjamini, Y. & Bogomolov, M. (2014)**
+"Selective Inference on Multiple Families of Hypotheses"
+*Journal of the Royal Statistical Society, Series B* 76(1):297–318
+DOI: https://doi.org/10.1111/rssb.12028
+[Verified URL: https://ideas.repec.org/a/bla/jorssb/v76y2014i1p297-318.html
+— HTTP 200 confirmed 2026-10-15; DOI link retained as canonical]
+
+Method extracted: when hypotheses arrive in m families and the analyst
+first *selects* families on the data, then tests *within* the selected
+families, neither per-family BH nor pooled BH controls the error that
+matters — the average error over the *selected* families. BB2014's
+procedure (Theorem 1):
+
+1. Combine each family i into one family-level p-value P_i (Simes
+   combination of the family's elementary p-values).
+2. Apply BH at level q to (P_1, …, P_m). Let S be the selected set,
+   R = |S|.
+3. Test within each selected family with BH at the *adjusted* level
+
+       q_S = q · (R / m)
+
+   i.e. the nominal q scaled by the selected fraction.
+
+Error controlled: E[ average FDR over the R selected families ] ≤ q,
+for any selection rule and a wide class of error rates (the paper's
+generality claim, §1).
+
+Notation: m = number of families (here: 3 horizons, or 13 factors —
+the scope choice this section pins down); R = number selected;
+q_S = within-family testing level after selection adjustment.
+
+Repo mapping: families = horizons {H=1, H=5, H=20}, each containing
+13 factor p-values. If all three horizons select (R=3), q_S = q and
+the rule reduces to per-horizon BH at m=13 — 3x more permissive than
+the pooled m=39 thresholds ((i/13)·q vs (i/39)·q) while keeping the
+selected-family guarantee. If only one horizon selects (R=1),
+q_S = q/3 — stricter than per-horizon BH. BB is therefore never
+looser than per-family BH, and can be up to (m/R)x looser than pooled
+BH when the signal spans families.
+
+Assumptions: BH within families requires independence or PRDS (§2.3);
+the family-level Simes combination requires the same. Selection rule
+itself is unrestricted.
+
+Known failure modes per the paper: when R << m (sparse selection) the
+within-family level collapses toward zero and pooled BH is more
+powerful — hierarchy helps concentrated signal, hurts diffuse signal.
+The adjustment is on the *level*, not the p-values: a researcher who
+reports selected-family discoveries at unadjusted q is overstating by
+up to m/R.
+
+Design consequence: the checker must pin one of three scope rules —
+pooled (m=39), per-horizon (3 × m=13), or BB-hierarchical
+(select-then-adjust). Until it does, any `survives_fdr` claim is
+scope-ambiguous, and F-D1 (m=3 multi-horizon rejection at p=0.1065 vs
+q=0.10) is unresolvable in principle, not just untuned.
+
+### 22.2 FDR trees — Yekutieli 2008 (DRIVES DESIGN)
+
+**Yekutieli, D. (2008)**
+"Hierarchical False Discovery Rate–Controlling Methodology"
+*Journal of the American Statistical Association* 103(481):309–316
+DOI: https://doi.org/10.1198/016214507000001373
+[Verified URL: https://www.math.tau.ac.il/~yekutiel/papers/JASA%20FDR%20trees.pdf
+— author-hosted PDF, HTTP 200 confirmed 2026-10-15]
+
+Method extracted: arrange hypotheses as a tree of disjoint subfamilies
+(root = global null → level 1 = families → level 2 = elementary
+hypotheses). Test level by level with BH at q; test a family's
+children only if the family itself rejected. Three discovery types:
+full-tree, level-restricted, outer-nodes FDR.
+
+Results transcribed from the abstract (p.309):
+
+    Approximation (independent test statistics):
+        FDR ≈ q · (#families tested + #discoveries) / (#discoveries + 1)
+
+    Universal bound (any FDR tree, concave-CDF condition §2.1):
+        FDR ≤ 2 · 1.44 · q
+
+Demonstration (microarray, §1.1): 25,600 genes at level .05 → 957
+strain-effect discoveries; BH within each of the 957 follow-up
+interaction families → 170 further discoveries where pooled testing of
+1.2M interactions found zero. Hierarchy recovers power exactly when
+the signal has tree structure.
+
+Repo mapping: root = "any factor predicts at any horizon" →
+level 1 = per-horizon families → level 2 = factor × horizon.
+The approximation with today's numbers (pooled k=3 discoveries,
+3 families tested): FDR ≈ q·(3+3)/(3+1) = 1.5q — the hierarchy's
+overhead factor is visible even before any new test runs.
+
+Assumptions: the approximation needs independent test statistics; the
+bound needs the concave-CDF condition (holds under monotone likelihood
+ratio — approximately true for HAC t-stats at n≈2000, fails for
+heavy-tailed IC at short panels).
+
+Known failure modes: the 2.88q universal bound is loose (a worst case,
+not an operating point); under diffuse signal with no tree structure
+the simulations show pooled BH wins — same directional lesson as
+BB2014 §22.1, derived independently.
+
+### 22.3 Resampling-based family control — Westfall & Young 1993 (DRIVES DESIGN)
+
+**Westfall, P.H. & Young, S.S. (1993)**
+"Resampling-Based Multiple Testing: Examples and Methods for p-Value
+Adjustment", Wiley. ISBN: 978-0-471-55761-6
+[Verified URL: https://www.wiley.com/en-us/Resampling-Based+Multiple+Testing%3A+Examples+and+Methods+for+p-Value+Adjustment-p-9780471557616
+— HTTP 200 confirmed 2026-10-15. Review: Chaubey (1993),
+Technometrics, https://www.jstor.org/stable/1270279 — HTTP 200
+confirmed 2026-10-15]
+
+Method extracted: joint-null resampling (permutation/bootstrap)
+stepdown adjusted p-values — the construction that respects
+dependence instead of assuming PRDS. Single-step minP form (Ch.2):
+
+    p̃_i = P( min_{1≤j≤m} P*_j ≤ p_i | H_0^C )
+
+estimated by B resamples from the complete-null distribution.
+Stepdown (free combinations, §2.6): order p_(1) ≤ … ≤ p_(m), then
+take successive stage-wise minima over j≥i with monotonicity
+enforced (p̃_(i) = max(p̃_(i), p̃_(i-1))). The maxT variant works on
+test statistics directly. Adjusted p-values are reported like
+ordinary p-values — no table look-ups.
+
+Assumptions: *subset pivotality* — the resampled joint null must be
+valid for every subset of true nulls, not just the complete null.
+Exchangeability of the resampled units.
+
+Known failure modes per Ch.2–4: (a) time-series dependence breaks
+plain permutation — the resample must preserve autocorrelation
+(block/stationary bootstrap, §8.4/§12.5 — same dependency the repo
+already carries for `bootstrap_ci`); (b) B must be large for small
+adjusted p-values (B ≥ 10,000 to resolve p̃ ≈ 1e-4; the repo's
+n_boot=2000 cannot resolve the lookahead row's p≈0.0000).
+
+Design consequence: the repo's permutation null (§7.4) calibrates a
+*single* threshold, not joint adjusted p-values — it is WY with the
+dependence modelling removed. If F-R43 fires (permutation threshold
+vs maxT disagree on the real panel), WY-stepdown with block resampling
+is the named upgrade; until then the single threshold stands, with
+this section recording what it is not.
+
+### 22.4 The finance anchor — Harvey 2017 (DRIVES DESIGN)
+
+**Harvey, C.R. (2017)**
+"Presidential Address: The Scientific Outlook in Financial Economics"
+*Journal of Finance* 72(4):1393–1427
+DOI: https://doi.org/10.1111/jofi.12530
+[Verified URL: https://people.duke.edu/~charvey/Research/Published_Papers/P131_The_scientific_outlook.pdf
+— author-hosted PDF, HTTP 200 confirmed 2026-10-15]
+
+Method extracted: the minimum-Bayes-factor calibration of a p-value
+(Sellke–Bayarri–Berger bound) plus prior odds. For p < 1/e:
+
+    minBF(p) = -e · p · ln(p)
+
+the strongest evidence against the null any alternative consistent
+with the p-value can claim. Posterior odds = prior odds × minBF.
+Headline consequences (Abstract + §IV): with unreported tests, no
+multiple-testing adjustment, and p-hacking, most published
+"significant" results fail out of sample; if the effect is rare, even
+t > 3 produces mostly false positives; the required t-threshold for a
+5% false-discovery probability *depends on the prior odds* — there is
+no universal t.
+
+Arithmetic on today's proof (computed in this pass, checkable):
+rev_5, the best real factor, p_raw = 0.0003.
+ln(0.0003) = -8.1117; minBF = 2.71828 × 0.0003 × 8.1117 ≈ 0.0066,
+i.e. at best ~151:1 against the null. At generous prior odds of 1:9
+(10% of tried factors real), posterior P(H0|data) ≈ 1/(1+151/9) ≈
+5.6% — borderline even for the strongest row, and it is still
+rejected by the turnover/consistency gates. The calibration and the
+gate agree: a small p is necessary, not sufficient.
+
+Assumptions: the p-value is valid (uniform under H0 — HAC-corrected,
+§2.10); prior odds stated explicitly rather than smuggled in.
+
+Known failure modes Harvey names: minBF is a *bound* (best case for
+the alternative; the true Bayes factor is larger, i.e. weaker
+evidence); raising thresholds without fixing the research culture
+increases data mining (publication-bias response); t > 3 alone is not
+sufficient (§IV, HLZ-2016 p-curve evidence).
+
+Design consequence: justifies the F-R37 t > 3 floor *and* the
+report's zero-promotion stance jointly — the floor screens the
+p-value, FDR screens the family, the remaining gates screen
+tradability. A checker leg that dropped either screen would contradict
+this source. F-R44 below makes the bound a standing tripwire.
+
+### 22.5 BH adapted to asset pricing — Giglio, Liao & Xiu 2021 (DRIVES DESIGN)
+
+**Giglio, S., Liao, Y. & Xiu, D. (2021)**
+"Thousands of Alpha Tests"
+*Review of Financial Studies* 34(7):3456–3496
+DOI: https://doi.org/10.1093/rfs/hhaa111
+[Verified URL: https://dachxiu.chicagobooth.edu/download/Alpha.pdf
+— author-hosted PDF, HTTP 200 confirmed 2026-10-15]
+
+Method extracted: BH false-discovery control rebuilt for the asset
+pricing context, where test statistics are alphas with omitted
+factors and missing data. Three ingredients (§1): (1) factor analysis
+(PCA / matrix completion) on residuals to absorb omitted factors;
+(2) debiased Fama–MacBeth cross-sectional regressions for alphas;
+(3) BH applied to the resulting t-statistics. Proves asymptotic
+validity when the number of tests is large relative to the sample,
+plus a wild-bootstrap procedure for finite-sample inference.
+
+Assumptions: linear factor structure; sparsity (few true alphas —
+the two-groups view, cf. Efron §22.6); large N and T for the PCA
+step; wild-bootstrap validity is asymptotic.
+
+Known failure modes: omitted *nonlinear* factors are not absorbed;
+with small N the PCA step is noise (the paper's empirics use
+thousands of funds); the debiasing step assumes correctly measured
+betas.
+
+Design consequence (a negative one, stated plainly): the proof panel
+(N=14 coins) violates the large-N requirement outright — GLX
+asymptotics must never be cited to justify the proof's BH leg, and
+F-R45 forbids it. What the repo *does* inherit is the pipeline shape:
+decontaminate (HAC, §2.10) → debias-aware statistics → BH last.
+GLX endorses BH-as-final-screen in finance; it does not license it
+at N=14.
+
+### 22.6 Context
+
+**Goeman, J.J. & Solari, A. (2012)**
+"Multiple Testing for Exploratory Research"
+*Statistical Science* 26(4):584–597. DOI: https://doi.org/10.1214/11-STS356
+[Verified URL: https://arxiv.org/abs/1208.2841 — HTTP 200 confirmed
+2026-10-15]. Closed testing (Marcus–Peritz–Gabriel, below) yields
+*simultaneous* (1−α) confidence sets for τ(R), the number of false
+rejections incurred by *any* freely chosen rejection set R — valid
+under post-hoc selection ("choose the rejections, the procedure
+returns the error rate"). The repo's fixed checker legs are the
+opposite design point (fix the rule ex ante); Goeman–Solari is what
+an exploratory `screen --play` mode would cite, and why the proof
+report must never be that mode.
+
+**Marcus, R., Peritz, E. & Gabriel, K.R. (1976)**
+"On Closed Testing Procedures with Special Reference to Ordered
+Analysis of Variance", *Biometrika* 63(3):655–660
+[Verified URL: https://www.jstor.org/stable/2335748 — HTTP 200
+confirmed 2026-10-15; identity confirmed against the Biometrika
+63(3) table of contents]. The closed-testing principle: with a family
+closed under intersection, reject an elementary H_i at level α only
+if *every* intersection containing it rejects at α — strong FWER
+control for any stepwise construction. BH, BB2014's Simes step, and
+Yekutieli's tree levels are all closed-testing descendants; cited so
+the design's ancestry is on record, not as a procedure the repo runs.
+
+**Benjamin, D.J. et al. (2018)**
+"Redefine Statistical Significance"
+*Nature Human Behaviour* 2:6–10. DOI: https://doi.org/10.1038/s41562-017-0189-z
+[Verified URL — HTTP 200 confirmed 2026-10-15]. Seventy-two authors
+propose p < 0.005 (two-sided |t| ≈ 2.81) as the new "significant" and
+p < 0.05 as "suggestive", calibrated by Bayes factors 14–26 against
+the null at p=0.005. Independent convergence with F-R37's t > 3 floor
+(HXZ §19.6): two literatures, one number. The repo's floor (t=3.0) is
+the stricter of the two — noted so a future "lower to 2.8" proposal
+must argue against both.
+
+**Lehmann, E.L. & Romano, J.P. (2005)**
+"Testing Statistical Hypotheses", 3rd ed., Springer, Ch. 9
+(Multiple Hypothesis Testing)
+[Verified URL: https://link.springer.com/book/10.1007/0-387-27605-X
+— HTTP 200 confirmed 2026-10-15]. The theory reference behind the
+FWER/FDR/stepdown-stepup taxonomy used across §§2.3/8.3/22.1–22.3:
+error-rate definitions, adjusted-p-value constructions, stepwise
+proofs. Cited as the textbook of record; no equation transcribed
+(the procedures above are the working copies).
+
+**Dickhaus, T. (2014)**
+"Simultaneous Statistical Inference", Springer
+[Verified URL: https://link.springer.com/book/10.1007/978-3-642-45182-9
+— HTTP 200 confirmed 2026-10-15]. Graphical and gatekeeping
+procedures — the literature's "gate" terminology for ordered,
+all-must-pass hypothesis families, the formal cousin of the repo's
+promotion gate (10 checks, all must pass). Cited for the parallel
+and its lesson: gatekeeping procedures pre-register the gate order,
+which is what the checker's fixed-leg order (§F4) implements.
+
+**Efron, B. (2010)**
+"Large-Scale Inference", Cambridge University Press (IMS Monographs)
+DOI: https://doi.org/10.1017/CBO9780511761362
+[Verified URL — HTTP 200 confirmed 2026-10-15]. The two-groups model
+f(z) = π0·f0(z) + π1·f1(z); local fdr(z) = π0·f0(z)/f(z); Tweedie's
+formula for the posterior mean. The empirical-Bayes alternative the
+design rejects: at m=13 there is no mixture to fit (Storey π0 faces
+the same floor, §2.3) — local fdr becomes viable only if the family
+grows past ~50 (cf. F-R4's 53-factor arithmetic, §8.9). Recorded so
+a future large-family pass has its citation ready, not as a live
+option.
+
+### 22.7 Deliberately NOT verified (boundary for later passes)
+
+Per the §8.7 convention — publisher bot-wall, NOT claimed, no gate
+may cite them: Harvey & Liu (2020) "False (and Missed) Discoveries",
+J. Finance, https://doi.org/10.1111/jofi.12951 (403 today; the
+missed-discovery half of the FDR tradeoff — directly relevant to
+F-D1's sensitivity side once readable); Chordia, Goyal & Saretto
+(2020) "Anomalies and False Rejections", RFS,
+https://doi.org/10.1093/rfs/hhaa018 (403 today; 2M random-strategy
+calibration of the anomaly universe). Künsch (1989) block bootstrap
+(§8.4) plus the stationary bootstrap (§12.5) already cover the
+resampling dependency WY needs, so nothing structural is blocked.
+
+### 22.8 Falsification — what would prove this pass wrong
+
+F-R41 (scope moot at this scale): a BB-hierarchical re-analysis of
+the proof's full 13×3 p-value grid changes zero verdicts versus
+pooled BH (k=3 discoveries either way) AND versus per-horizon BH.
+Then the scope choice is decorative at m≤39 and the checker need not
+pin it until the family grows. Observable: pass-3 re-run with the
+39 grid values; verdict-set equality required, not just k equality.
+
+F-R42 (scope determinative): per-horizon BH (m=13) promotes — or
+would promote absent other gates — a factor that pooled BH (m=39)
+rejects, or vice versa. Then `survives_fdr` is scope-ambiguous and
+the checker MUST pin the scope rule (pooled / per-horizon / BB) as a
+named leg before any further PROOF_COMPLETE counts. This is F-D1's
+general form (there: m=3 multi-horizon vs demo expectation).
+
+F-R43 (single-threshold insufficient): the §7.4 permutation-null
+threshold and WY-maxT adjusted p-values (§22.3) disagree on the real
+panel — i.e. a factor clears the permutation floor but its maxT
+adjusted p exceeds q, or vice versa. Then the dependence-blind
+threshold is the wrong primitive and the WY-with-blocks upgrade is
+mandatory, not optional.
+
+F-R44 (Harvey tripwire): minBF at the proof's best *real* raw p
+(rev_5, p=0.0003 → minBF≈0.0066, §22.4) combined with stated prior
+odds worse than 1:99 leaves posterior P(H0|data) above 40% —
+1/(1+151/99) ≈ 39.6%. If the checker ever promotes on a raw p whose
+minBF-implied posterior null probability exceeds 40% at 1:99 priors,
+the t-floor leg has been softened past what §22.4 licenses. Standing
+value today: no promotion exists, tripwire untriggered.
+
+F-R45 (GLX misuse): any threshold, gate note, or report prose citing
+GLX asymptotics (§22.5) as justification for BH on the 14-coin panel.
+The paper requires large N; N=14 violates it. Observable: grep for
+the citation outside this section. (This section itself cites it
+only for pipeline shape, explicitly disclaimed.)
+
+F-R46 (this pass's own transcriptions): the adversarial citation
+audit must open every §22.8-table link and check each transcription.
+Pre-flagged, most-likely-to-need-correction first: (1) the BB
+q·R/m adjustment direction (stricter-vs-looser claims in §22.1
+invert if the rule is mis-stated — blocking if wrong); (2) the
+Yekutieli 2·1.44·q bound vs the approximation (conflating them
+understates the guarantee — major if wrong); (3) WY stepdown
+monotonicity enforcement (§22.3 — minor if wrong, the single-step
+form stands alone); (4) Harvey minBF arithmetic (§22.4 — recompute
+from the stated p; minor); (5) Benjamin et al. author count and
+|t|≈2.81 mapping (§22.6 — cosmetic).
+
+### Link-verification table (all probed 2026-10-15, curl -L, UA Mozilla/5.0)
+
+| Source | URL | HTTP status |
+|--------|-----|-------------|
+| Benjamini & Bogomolov 2014 (IDEAS) | https://ideas.repec.org/a/bla/jorssb/v76y2014i1p297-318.html | 200 |
+| Yekutieli 2008 (TAU author PDF) | https://www.math.tau.ac.il/~yekutiel/papers/JASA%20FDR%20trees.pdf | 200 |
+| Westfall & Young 1993 (Wiley) | https://www.wiley.com/en-us/Resampling-Based+Multiple+Testing%3A+Examples+and+Methods+for+p-Value+Adjustment-p-9780471557616 | 200 |
+| Westfall & Young 1993 (Technometrics review, JSTOR) | https://www.jstor.org/stable/1270279 | 200 |
+| Harvey 2017 (Duke author PDF) | https://people.duke.edu/~charvey/Research/Published_Papers/P131_The_scientific_outlook.pdf | 200 |
+| Giglio, Liao & Xiu 2021 (Booth author PDF) | https://dachxiu.chicagobooth.edu/download/Alpha.pdf | 200 |
+| Goeman & Solari 2012 (arXiv) | https://arxiv.org/abs/1208.2841 | 200 |
+| Marcus, Peritz & Gabriel 1976 (JSTOR) | https://www.jstor.org/stable/2335748 | 200 |
+| Benjamin et al. 2018 (Nature DOI) | https://doi.org/10.1038/s41562-017-0189-z | 200 |
+| Lehmann & Romano 2005 (Springer) | https://link.springer.com/book/10.1007/0-387-27605-X | 200 |
+| Dickhaus 2014 (Springer) | https://link.springer.com/book/10.1007/978-3-642-45182-9 | 200 |
+| Efron 2010 (Cambridge DOI) | https://doi.org/10.1017/CBO9780511761362 | 200 |
+| Harvey & Liu 2020 (Wiley DOI, bot-block) | https://doi.org/10.1111/jofi.12951 | 403 — NOT claimed |
+| Chordia, Goyal & Saretto 2020 (OUP DOI, bot-block) | https://doi.org/10.1093/rfs/hhaa018 | 403 — NOT claimed |
+
+### 22.9 Standing of earlier items (nothing re-run)
+
+F-R1…F-R40 dispositions stand as filed (§§8.9/9.8/11/14/15.8/18/21);
+F-R38's transcription audit stays transferred; F-D1 stays carried
+open — this pass gives the orchestrator the literature frame for
+resolving it (pin the family scope: pooled / per-horizon / BB) but a
+research pass cannot rule on spec criteria per QUALITY-CONTRACT §0.
+The §8.7 boundary shrinks by zero today (Harvey-Liu 2020 and CGS 2020
+join it) and the snooping-canon slots closed in c5 stay closed.
+Proof artifact one day old (2026-10-14, 21,332 bars); dataset delta
+since c6-p03 negligible for literature purposes.
