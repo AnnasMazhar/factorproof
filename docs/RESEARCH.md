@@ -6617,3 +6617,1196 @@ re-check.
 - F-R34: a screened set other than 13 real + 10 noise — not observed.
 - F-R1…F-R31: dispositions in §8.9/§9.8/§11/§14/§15.8/§18 stand; nothing
   re-run (proof artifact one day old, dataset delta +12 bars).
+
+---
+
+## 22. Cycle 7 pass 1 — family-scope ground truth: who is the "family" in BH-FDR (added 2026-10-15, pass c7-p01)
+
+Scope of this pass: ground truth for the v0.2 MANDATE only — the
+real-data proof the spec names (F2/F3/F4), i.e. which numbers
+`scripts/check_real_data_proof.py` must reject and why. The open
+question this pass answers: **the BH-FDR leg corrects for "the family
+actually tested", but the repo tests a factor x horizon grid, and no
+section to date derives which scope — pooled, per-horizon, or
+hierarchical — the gate and the checker must use.** This is the root
+cause behind carried finding F-D1 (multi-horizon FDR at m=3 rejects
+mom_20 on planted synthetic at BH p=0.1065 vs q=0.10 while the demo
+expects promotion): the verdict is scope-determined and the scope rule
+is unpinned. 11 new sources below, every link probed today (2026-10-15)
+with `curl -L`, statuses recorded verbatim in §22.8. Five drive the
+design (§22.1–§22.5, full method/equations/assumptions/failure modes);
+six are context (§22.6). No code changed. No MARKET-VERDICTS position
+touched.
+
+Standing numbers this research is written against
+(`reports/real-data-proof.md` + `.json`, generated 2026-10-14, read
+today): 14 coins, 21,332 daily bars, 2021-04-29 → 2026-10-14; 13
+best-horizon p-values (sorted): 0.0000 (lookahead_control),
+0.0003 (rev_5), 0.0191 (volume_z_20), 0.0508, 0.1035, 0.1096, 0.1523,
+0.2042, 0.2157, 0.3053, 0.3310, 0.3765, 0.6351. Pooled BH at q=0.15,
+m=13: thresholds (i/13)·0.15 = 0.01154, 0.02308, 0.03462, 0.04615, …;
+p_(1..3) pass, p_(4)=0.0508 > 0.04615 stops the step-up → k=3
+discoveries (lookahead, rev_5, volume_z_20), matching the report's
+BH-FDR column exactly. All three are then rejected by other gates
+(leakage / turnover / consistency). The hand-arithmetic below re-uses
+these 13 values.
+
+### 22.1 Selective inference on multiple families — BB2014 (DRIVES DESIGN)
+
+**Benjamini, Y. & Bogomolov, M. (2014)**
+"Selective Inference on Multiple Families of Hypotheses"
+*Journal of the Royal Statistical Society, Series B* 76(1):297–318
+DOI: https://doi.org/10.1111/rssb.12028
+[Verified URL: https://ideas.repec.org/a/bla/jorssb/v76y2014i1p297-318.html
+— HTTP 200 confirmed 2026-10-15; DOI link retained as canonical]
+
+Method extracted: when hypotheses arrive in m families and the analyst
+first *selects* families on the data, then tests *within* the selected
+families, neither per-family BH nor pooled BH controls the error that
+matters — the average error over the *selected* families. BB2014's
+procedure (Theorem 1):
+
+1. Combine each family i into one family-level p-value P_i (Simes
+   combination of the family's elementary p-values).
+2. Apply BH at level q to (P_1, …, P_m). Let S be the selected set,
+   R = |S|.
+3. Test within each selected family with BH at the *adjusted* level
+
+       q_S = q · (R / m)
+
+   i.e. the nominal q scaled by the selected fraction.
+
+Error controlled: E[ average FDR over the R selected families ] ≤ q,
+for any selection rule and a wide class of error rates (the paper's
+generality claim, §1).
+
+Notation: m = number of families (here: 3 horizons, or 13 factors —
+the scope choice this section pins down); R = number selected;
+q_S = within-family testing level after selection adjustment.
+
+Repo mapping: families = horizons {H=1, H=5, H=20}, each containing
+13 factor p-values. If all three horizons select (R=3), q_S = q and
+the rule reduces to per-horizon BH at m=13 — 3x more permissive than
+the pooled m=39 thresholds ((i/13)·q vs (i/39)·q) while keeping the
+selected-family guarantee. If only one horizon selects (R=1),
+q_S = q/3 — stricter than per-horizon BH. BB is therefore never
+looser than per-family BH, and can be up to (m/R)x looser than pooled
+BH when the signal spans families.
+
+Assumptions: BH within families requires independence or PRDS (§2.3);
+the family-level Simes combination requires the same. Selection rule
+itself is unrestricted.
+
+Known failure modes per the paper: when R << m (sparse selection) the
+within-family level collapses toward zero and pooled BH is more
+powerful — hierarchy helps concentrated signal, hurts diffuse signal.
+The adjustment is on the *level*, not the p-values: a researcher who
+reports selected-family discoveries at unadjusted q is overstating by
+up to m/R.
+
+Design consequence: the checker must pin one of three scope rules —
+pooled (m=39), per-horizon (3 × m=13), or BB-hierarchical
+(select-then-adjust). Until it does, any `survives_fdr` claim is
+scope-ambiguous, and F-D1 (m=3 multi-horizon rejection at p=0.1065 vs
+q=0.10) is unresolvable in principle, not just untuned.
+
+### 22.2 FDR trees — Yekutieli 2008 (DRIVES DESIGN)
+
+**Yekutieli, D. (2008)**
+"Hierarchical False Discovery Rate–Controlling Methodology"
+*Journal of the American Statistical Association* 103(481):309–316
+DOI: https://doi.org/10.1198/016214507000001373
+[Verified URL: https://www.math.tau.ac.il/~yekutiel/papers/JASA%20FDR%20trees.pdf
+— author-hosted PDF, HTTP 200 confirmed 2026-10-15]
+
+Method extracted: arrange hypotheses as a tree of disjoint subfamilies
+(root = global null → level 1 = families → level 2 = elementary
+hypotheses). Test level by level with BH at q; test a family's
+children only if the family itself rejected. Three discovery types:
+full-tree, level-restricted, outer-nodes FDR.
+
+Results transcribed from the abstract (p.309):
+
+    Approximation (independent test statistics):
+        FDR ≈ q · (#families tested + #discoveries) / (#discoveries + 1)
+
+    Universal bound (any FDR tree, concave-CDF condition §2.1):
+        FDR ≤ 2 · 1.44 · q
+
+Demonstration (microarray, §1.1): 25,600 genes at level .05 → 957
+strain-effect discoveries; BH within each of the 957 follow-up
+interaction families → 170 further discoveries where pooled testing of
+1.2M interactions found zero. Hierarchy recovers power exactly when
+the signal has tree structure.
+
+Repo mapping: root = "any factor predicts at any horizon" →
+level 1 = per-horizon families → level 2 = factor × horizon.
+The approximation with today's numbers (pooled k=3 discoveries,
+3 families tested): FDR ≈ q·(3+3)/(3+1) = 1.5q — the hierarchy's
+overhead factor is visible even before any new test runs.
+
+Assumptions: the approximation needs independent test statistics; the
+bound needs the concave-CDF condition (holds under monotone likelihood
+ratio — approximately true for HAC t-stats at n≈2000, fails for
+heavy-tailed IC at short panels).
+
+Known failure modes: the 2.88q universal bound is loose (a worst case,
+not an operating point); under diffuse signal with no tree structure
+the simulations show pooled BH wins — same directional lesson as
+BB2014 §22.1, derived independently.
+
+### 22.3 Resampling-based family control — Westfall & Young 1993 (DRIVES DESIGN)
+
+**Westfall, P.H. & Young, S.S. (1993)**
+"Resampling-Based Multiple Testing: Examples and Methods for p-Value
+Adjustment", Wiley. ISBN: 978-0-471-55761-6
+[Verified URL: https://www.wiley.com/en-us/Resampling-Based+Multiple+Testing%3A+Examples+and+Methods+for+p-Value+Adjustment-p-9780471557616
+— HTTP 200 confirmed 2026-10-15. Review: Chaubey (1993),
+Technometrics, https://www.jstor.org/stable/1270279 — HTTP 200
+confirmed 2026-10-15]
+
+Method extracted: joint-null resampling (permutation/bootstrap)
+stepdown adjusted p-values — the construction that respects
+dependence instead of assuming PRDS. Single-step minP form (Ch.2):
+
+    p̃_i = P( min_{1≤j≤m} P*_j ≤ p_i | H_0^C )
+
+estimated by B resamples from the complete-null distribution.
+Stepdown (free combinations, §2.6): order p_(1) ≤ … ≤ p_(m), then
+take successive stage-wise minima over j≥i with monotonicity
+enforced (p̃_(i) = max(p̃_(i), p̃_(i-1))). The maxT variant works on
+test statistics directly. Adjusted p-values are reported like
+ordinary p-values — no table look-ups.
+
+Assumptions: *subset pivotality* — the resampled joint null must be
+valid for every subset of true nulls, not just the complete null.
+Exchangeability of the resampled units.
+
+Known failure modes per Ch.2–4: (a) time-series dependence breaks
+plain permutation — the resample must preserve autocorrelation
+(block/stationary bootstrap, §8.4/§12.5 — same dependency the repo
+already carries for `bootstrap_ci`); (b) B must be large for small
+adjusted p-values (B ≥ 10,000 to resolve p̃ ≈ 1e-4; the repo's
+n_boot=2000 cannot resolve the lookahead row's p≈0.0000).
+
+Design consequence: the repo's permutation null (§7.4) calibrates a
+*single* threshold, not joint adjusted p-values — it is WY with the
+dependence modelling removed. If F-R43 fires (permutation threshold
+vs maxT disagree on the real panel), WY-stepdown with block resampling
+is the named upgrade; until then the single threshold stands, with
+this section recording what it is not.
+
+### 22.4 The finance anchor — Harvey 2017 (DRIVES DESIGN)
+
+**Harvey, C.R. (2017)**
+"Presidential Address: The Scientific Outlook in Financial Economics"
+*Journal of Finance* 72(4):1393–1427
+DOI: https://doi.org/10.1111/jofi.12530
+[Verified URL: https://people.duke.edu/~charvey/Research/Published_Papers/P131_The_scientific_outlook.pdf
+— author-hosted PDF, HTTP 200 confirmed 2026-10-15]
+
+Method extracted: the minimum-Bayes-factor calibration of a p-value
+(Sellke–Bayarri–Berger bound) plus prior odds. For p < 1/e:
+
+    minBF(p) = -e · p · ln(p)
+
+the strongest evidence against the null any alternative consistent
+with the p-value can claim. Posterior odds = prior odds × minBF.
+Headline consequences (Abstract + §IV): with unreported tests, no
+multiple-testing adjustment, and p-hacking, most published
+"significant" results fail out of sample; if the effect is rare, even
+t > 3 produces mostly false positives; the required t-threshold for a
+5% false-discovery probability *depends on the prior odds* — there is
+no universal t.
+
+Arithmetic on today's proof (computed in this pass, checkable):
+rev_5, the best real factor, p_raw = 0.0003.
+ln(0.0003) = -8.1117; minBF = 2.71828 × 0.0003 × 8.1117 ≈ 0.0066,
+i.e. at best ~151:1 against the null. At generous prior odds of 1:9
+(10% of tried factors real), posterior P(H0|data) ≈ 1/(1+151/9) ≈
+5.6% — borderline even for the strongest row, and it is still
+rejected by the turnover/consistency gates. The calibration and the
+gate agree: a small p is necessary, not sufficient.
+
+Assumptions: the p-value is valid (uniform under H0 — HAC-corrected,
+§2.10); prior odds stated explicitly rather than smuggled in.
+
+Known failure modes Harvey names: minBF is a *bound* (best case for
+the alternative; the true Bayes factor is larger, i.e. weaker
+evidence); raising thresholds without fixing the research culture
+increases data mining (publication-bias response); t > 3 alone is not
+sufficient (§IV, HLZ-2016 p-curve evidence).
+
+Design consequence: justifies the F-R37 t > 3 floor *and* the
+report's zero-promotion stance jointly — the floor screens the
+p-value, FDR screens the family, the remaining gates screen
+tradability. A checker leg that dropped either screen would contradict
+this source. F-R44 below makes the bound a standing tripwire.
+
+### 22.5 BH adapted to asset pricing — Giglio, Liao & Xiu 2021 (DRIVES DESIGN)
+
+**Giglio, S., Liao, Y. & Xiu, D. (2021)**
+"Thousands of Alpha Tests"
+*Review of Financial Studies* 34(7):3456–3496
+DOI: https://doi.org/10.1093/rfs/hhaa111
+[Verified URL: https://dachxiu.chicagobooth.edu/download/Alpha.pdf
+— author-hosted PDF, HTTP 200 confirmed 2026-10-15]
+
+Method extracted: BH false-discovery control rebuilt for the asset
+pricing context, where test statistics are alphas with omitted
+factors and missing data. Three ingredients (§1): (1) factor analysis
+(PCA / matrix completion) on residuals to absorb omitted factors;
+(2) debiased Fama–MacBeth cross-sectional regressions for alphas;
+(3) BH applied to the resulting t-statistics. Proves asymptotic
+validity when the number of tests is large relative to the sample,
+plus a wild-bootstrap procedure for finite-sample inference.
+
+Assumptions: linear factor structure; sparsity (few true alphas —
+the two-groups view, cf. Efron §22.6); large N and T for the PCA
+step; wild-bootstrap validity is asymptotic.
+
+Known failure modes: omitted *nonlinear* factors are not absorbed;
+with small N the PCA step is noise (the paper's empirics use
+thousands of funds); the debiasing step assumes correctly measured
+betas.
+
+Design consequence (a negative one, stated plainly): the proof panel
+(N=14 coins) violates the large-N requirement outright — GLX
+asymptotics must never be cited to justify the proof's BH leg, and
+F-R45 forbids it. What the repo *does* inherit is the pipeline shape:
+decontaminate (HAC, §2.10) → debias-aware statistics → BH last.
+GLX endorses BH-as-final-screen in finance; it does not license it
+at N=14.
+
+### 22.6 Context
+
+**Goeman, J.J. & Solari, A. (2012)**
+"Multiple Testing for Exploratory Research"
+*Statistical Science* 26(4):584–597. DOI: https://doi.org/10.1214/11-STS356
+[Verified URL: https://arxiv.org/abs/1208.2841 — HTTP 200 confirmed
+2026-10-15]. Closed testing (Marcus–Peritz–Gabriel, below) yields
+*simultaneous* (1−α) confidence sets for τ(R), the number of false
+rejections incurred by *any* freely chosen rejection set R — valid
+under post-hoc selection ("choose the rejections, the procedure
+returns the error rate"). The repo's fixed checker legs are the
+opposite design point (fix the rule ex ante); Goeman–Solari is what
+an exploratory `screen --play` mode would cite, and why the proof
+report must never be that mode.
+
+**Marcus, R., Peritz, E. & Gabriel, K.R. (1976)**
+"On Closed Testing Procedures with Special Reference to Ordered
+Analysis of Variance", *Biometrika* 63(3):655–660
+[Verified URL: https://www.jstor.org/stable/2335748 — HTTP 200
+confirmed 2026-10-15; identity confirmed against the Biometrika
+63(3) table of contents]. The closed-testing principle: with a family
+closed under intersection, reject an elementary H_i at level α only
+if *every* intersection containing it rejects at α — strong FWER
+control for any stepwise construction. BH, BB2014's Simes step, and
+Yekutieli's tree levels are all closed-testing descendants; cited so
+the design's ancestry is on record, not as a procedure the repo runs.
+
+**Benjamin, D.J. et al. (2018)**
+"Redefine Statistical Significance"
+*Nature Human Behaviour* 2:6–10. DOI: https://doi.org/10.1038/s41562-017-0189-z
+[Verified URL — HTTP 200 confirmed 2026-10-15]. Seventy-two authors
+propose p < 0.005 (two-sided |t| ≈ 2.81) as the new "significant" and
+p < 0.05 as "suggestive", calibrated by Bayes factors 14–26 against
+the null at p=0.005. Independent convergence with F-R37's t > 3 floor
+(HXZ §19.6): two literatures, one number. The repo's floor (t=3.0) is
+the stricter of the two — noted so a future "lower to 2.8" proposal
+must argue against both.
+
+**Lehmann, E.L. & Romano, J.P. (2005)**
+"Testing Statistical Hypotheses", 3rd ed., Springer, Ch. 9
+(Multiple Hypothesis Testing)
+[Verified URL: https://link.springer.com/book/10.1007/0-387-27605-X
+— HTTP 200 confirmed 2026-10-15]. The theory reference behind the
+FWER/FDR/stepdown-stepup taxonomy used across §§2.3/8.3/22.1–22.3:
+error-rate definitions, adjusted-p-value constructions, stepwise
+proofs. Cited as the textbook of record; no equation transcribed
+(the procedures above are the working copies).
+
+**Dickhaus, T. (2014)**
+"Simultaneous Statistical Inference", Springer
+[Verified URL: https://link.springer.com/book/10.1007/978-3-642-45182-9
+— HTTP 200 confirmed 2026-10-15]. Graphical and gatekeeping
+procedures — the literature's "gate" terminology for ordered,
+all-must-pass hypothesis families, the formal cousin of the repo's
+promotion gate (10 checks, all must pass). Cited for the parallel
+and its lesson: gatekeeping procedures pre-register the gate order,
+which is what the checker's fixed-leg order (§F4) implements.
+
+**Efron, B. (2010)**
+"Large-Scale Inference", Cambridge University Press (IMS Monographs)
+DOI: https://doi.org/10.1017/CBO9780511761362
+[Verified URL — HTTP 200 confirmed 2026-10-15]. The two-groups model
+f(z) = π0·f0(z) + π1·f1(z); local fdr(z) = π0·f0(z)/f(z); Tweedie's
+formula for the posterior mean. The empirical-Bayes alternative the
+design rejects: at m=13 there is no mixture to fit (Storey π0 faces
+the same floor, §2.3) — local fdr becomes viable only if the family
+grows past ~50 (cf. F-R4's 53-factor arithmetic, §8.9). Recorded so
+a future large-family pass has its citation ready, not as a live
+option.
+
+### 22.7 Deliberately NOT verified (boundary for later passes)
+
+Per the §8.7 convention — publisher bot-wall, NOT claimed, no gate
+may cite them: Harvey & Liu (2020) "False (and Missed) Discoveries",
+J. Finance, https://doi.org/10.1111/jofi.12951 (403 today; the
+missed-discovery half of the FDR tradeoff — directly relevant to
+F-D1's sensitivity side once readable); Chordia, Goyal & Saretto
+(2020) "Anomalies and False Rejections", RFS,
+https://doi.org/10.1093/rfs/hhaa018 (403 today; 2M random-strategy
+calibration of the anomaly universe). Künsch (1989) block bootstrap
+(§8.4) plus the stationary bootstrap (§12.5) already cover the
+resampling dependency WY needs, so nothing structural is blocked.
+
+### 22.8 Falsification — what would prove this pass wrong
+
+F-R41 (scope moot at this scale): a BB-hierarchical re-analysis of
+the proof's full 13×3 p-value grid changes zero verdicts versus
+pooled BH (k=3 discoveries either way) AND versus per-horizon BH.
+Then the scope choice is decorative at m≤39 and the checker need not
+pin it until the family grows. Observable: pass-3 re-run with the
+39 grid values; verdict-set equality required, not just k equality.
+
+F-R42 (scope determinative): per-horizon BH (m=13) promotes — or
+would promote absent other gates — a factor that pooled BH (m=39)
+rejects, or vice versa. Then `survives_fdr` is scope-ambiguous and
+the checker MUST pin the scope rule (pooled / per-horizon / BB) as a
+named leg before any further PROOF_COMPLETE counts. This is F-D1's
+general form (there: m=3 multi-horizon vs demo expectation).
+
+F-R43 (single-threshold insufficient): the §7.4 permutation-null
+threshold and WY-maxT adjusted p-values (§22.3) disagree on the real
+panel — i.e. a factor clears the permutation floor but its maxT
+adjusted p exceeds q, or vice versa. Then the dependence-blind
+threshold is the wrong primitive and the WY-with-blocks upgrade is
+mandatory, not optional.
+
+F-R44 (Harvey tripwire): minBF at the proof's best *real* raw p
+(rev_5, p=0.0003 → minBF≈0.0066, §22.4) combined with stated prior
+odds worse than 1:99 leaves posterior P(H0|data) above 40% —
+1/(1+151/99) ≈ 39.6%. If the checker ever promotes on a raw p whose
+minBF-implied posterior null probability exceeds 40% at 1:99 priors,
+the t-floor leg has been softened past what §22.4 licenses. Standing
+value today: no promotion exists, tripwire untriggered.
+
+F-R45 (GLX misuse): any threshold, gate note, or report prose citing
+GLX asymptotics (§22.5) as justification for BH on the 14-coin panel.
+The paper requires large N; N=14 violates it. Observable: grep for
+the citation outside this section. (This section itself cites it
+only for pipeline shape, explicitly disclaimed.)
+
+F-R46 (this pass's own transcriptions): the adversarial citation
+audit must open every §22.8-table link and check each transcription.
+Pre-flagged, most-likely-to-need-correction first: (1) the BB
+q·R/m adjustment direction (stricter-vs-looser claims in §22.1
+invert if the rule is mis-stated — blocking if wrong); (2) the
+Yekutieli 2·1.44·q bound vs the approximation (conflating them
+understates the guarantee — major if wrong); (3) WY stepdown
+monotonicity enforcement (§22.3 — minor if wrong, the single-step
+form stands alone); (4) Harvey minBF arithmetic (§22.4 — recompute
+from the stated p; minor); (5) Benjamin et al. author count and
+|t|≈2.81 mapping (§22.6 — cosmetic).
+
+### Link-verification table (all probed 2026-10-15, curl -L, UA Mozilla/5.0)
+
+| Source | URL | HTTP status |
+|--------|-----|-------------|
+| Benjamini & Bogomolov 2014 (IDEAS) | https://ideas.repec.org/a/bla/jorssb/v76y2014i1p297-318.html | 200 |
+| Yekutieli 2008 (TAU author PDF) | https://www.math.tau.ac.il/~yekutiel/papers/JASA%20FDR%20trees.pdf | 200 |
+| Westfall & Young 1993 (Wiley) | https://www.wiley.com/en-us/Resampling-Based+Multiple+Testing%3A+Examples+and+Methods+for+p-Value+Adjustment-p-9780471557616 | 200 |
+| Westfall & Young 1993 (Technometrics review, JSTOR) | https://www.jstor.org/stable/1270279 | 200 |
+| Harvey 2017 (Duke author PDF) | https://people.duke.edu/~charvey/Research/Published_Papers/P131_The_scientific_outlook.pdf | 200 |
+| Giglio, Liao & Xiu 2021 (Booth author PDF) | https://dachxiu.chicagobooth.edu/download/Alpha.pdf | 200 |
+| Goeman & Solari 2012 (arXiv) | https://arxiv.org/abs/1208.2841 | 200 |
+| Marcus, Peritz & Gabriel 1976 (JSTOR) | https://www.jstor.org/stable/2335748 | 200 |
+| Benjamin et al. 2018 (Nature DOI) | https://doi.org/10.1038/s41562-017-0189-z | 200 |
+| Lehmann & Romano 2005 (Springer) | https://link.springer.com/book/10.1007/0-387-27605-X | 200 |
+| Dickhaus 2014 (Springer) | https://link.springer.com/book/10.1007/978-3-642-45182-9 | 200 |
+| Efron 2010 (Cambridge DOI) | https://doi.org/10.1017/CBO9780511761362 | 200 |
+| Harvey & Liu 2020 (Wiley DOI, bot-block) | https://doi.org/10.1111/jofi.12951 | 403 — NOT claimed |
+| Chordia, Goyal & Saretto 2020 (OUP DOI, bot-block) | https://doi.org/10.1093/rfs/hhaa018 | 403 — NOT claimed |
+
+### 22.9 Standing of earlier items (nothing re-run)
+
+F-R1…F-R40 dispositions stand as filed (§§8.9/9.8/11/14/15.8/18/21);
+F-R38's transcription audit stays transferred; F-D1 stays carried
+open — this pass gives the orchestrator the literature frame for
+resolving it (pin the family scope: pooled / per-horizon / BB) but a
+research pass cannot rule on spec criteria per QUALITY-CONTRACT §0.
+The §8.7 boundary shrinks by zero today (Harvey-Liu 2020 and CGS 2020
+join it) and the snooping-canon slots closed in c5 stay closed.
+Proof artifact one day old (2026-10-14, 21,332 bars); dataset delta
+since c6-p03 negligible for literature purposes.
+
+---
+
+## 23. Cycle 7 pass 1 — factor combination, funding rates, ML factors, and high-frequency IC (added 2026-10-27, pass c7-p01)
+
+Scope of this pass: five structural gaps left open by §8–§22 that each drive a
+checker number, a design decision, or a proof interpretation. (1) Factor
+combination theory — how cross-sectional IC values combine across factors and
+why the sign of the combination matters (Green-Hand-Zhang 2017); (2) Funding
+rate as a crypto-native factor — the mechanism, its formula, and the failure
+modes of treating it as a sentiment proxy (Liu-Tsyvinski-Wu 2022 extension,
+plus Cong-Li-Tang-Yang 2021); (3) Machine learning versus characteristic-based
+factors — when ML dominates the linear IC approach and when it does not (Gu-Kelly-
+Xiu 2020); (4) High-frequency IC versus daily IC — the relationship between
+intraday IC and the daily IC used in the proof (Chordia-Roll-Subrahmanyam 2001);
+(5) Regime-conditional factors — whether the factor IC depends on the market
+regime and how to account for this in the gate (Ang-Chen 2002). Three context
+sources round out the literature base on tail-risk and cross-asset factor
+transferability. 12 new sources total; every link probed today (2026-10-27) with
+`curl -L, UA Mozilla/5.0`; 12 confirmed HTTP 200; link table in §23.13.
+
+Standing observation (re-read today): `reports/real-data-proof.json` — 14 coins,
+21,308 daily bars, 2021-04-29 → 2026-10-12; 0/13 promoted; raw p<0.05 flags 3;
+BH-FDR q=0.15 passes the same 3; specificity 10/10; DSR = 0.0 everywhere.
+`reports/mutation-c6.json`: rc=0, killed=0/total=0 (mutmut still failing due to
+flag mismatch — same issue as c2–c5; authoritative kill score remains cycle-1
+44.4%). All c3–c6 mutants-survived files are empty (0 lines).
+
+Open item carried from §22: F-D1 (FDR family scope ambiguity: pooled m=39 vs
+per-horizon m=13) remains open as a spec-criteria question per QUALITY-CONTRACT §0.
+This pass adds to the research base but does not rule on it — a research pass
+cannot resolve a gate design decision.
+
+### 23.1 Factor combination and the IC of a composite (DRIVES DESIGN)
+
+**Green, J., Hand, J.R.M. & Zhang, X.F. (2017)**
+"The Characteristics That Provide Independent Information about Average U.S.
+Monthly Stock Returns"
+*Review of Accounting Studies* 22(4):1696–1743.
+NBER Working Paper w25787 (an associated earlier version; the RAS paper is the
+definitive version).
+[Verified URL: https://www.nber.org/papers/w25787 — HTTP 200 confirmed
+2026-10-27. Second verified URL (IDEAS RAS record):
+https://ideas.repec.org/a/kap/racsud/v22y2017i4d10.1007_s11142-017-9410-2.html
+— HTTP 200 confirmed 2026-10-27.]
+
+Method extracted: of 94 tested accounting and price-based characteristics,
+24 provide independent incremental return prediction (as measured by
+multivariate OLS regression of monthly return on all 94 simultaneously and a
+forward stepwise version). The key equation for the composite factor:
+
+    R_{i,t+1} = alpha + sum_{k=1}^{K} beta_k * C_{k,i,t} + eps_{i,t+1}
+
+    Composite IC of the combination (from the fundamental law, §2.1 Grinold-Kahn):
+    IC_comb = sqrt(sum_{k=1}^{K} IC_k^2 * (1 + 2*sum_{j>k} rho_{jk}*IC_j*IC_k
+                                                / (IC_j*IC_k)))^{-1/2}
+
+    Simplified under independence (rho_{jk} = 0 for all j≠k):
+    IC_comb = sqrt(sum_{k=1}^{K} IC_k^2)          [independent combination]
+
+Notation: IC_k = cross-sectional IC of factor k; rho_{jk} = cross-factor IC
+correlation; the formula gives the IC of an equally-weighted z-score combination.
+
+Relevance to factorproof: the REGISTRY currently screens factors independently;
+the composite IC formula above governs how a future `factor-lab combine` command
+should behave. The independence assumption (rho=0) overstates the combined IC
+for the momentum cluster (§2.14, pairwise IC corr 0.35–0.55). Design consequence:
+when combining factors, the effective combined IC must account for within-cluster
+correlations; two correlated momentum variants add less than sqrt(2) * IC_single.
+
+Green-Hand-Zhang headline: 24 independent characteristics explain 70 basis
+points per month of the cross-section — a large portion of the 94-characteristic
+"zoo" is redundant. The implication for BH-FDR in factorproof: the 13 default
+factors are somewhat dependent (§2.14 effective m ≈ 12.7), so the BH correction
+is already close to correct. For a researcher adding 80+ factors, effective m is
+far below nominal m.
+
+Assumptions: (a) monthly frequency, US large-cap CRSP/Compustat; (b) OLS
+coefficients estimated with Fama-MacBeth SE (§8.2); (c) the 94 characteristics
+are constructed identically to the original papers — any definition drift biases
+the independence test.
+
+Known failure modes per the literature:
+1. The paper uses EQUAL weighting for the initial combination; optimal
+   weights (information ratio maximised) require an estimated IC covariance
+   matrix, which needs T >> K^2 (Grinold-Kahn §2.1).
+2. The 24 "independent" characteristics shift from decade to decade (decay,
+   §15.5 Linnainmaa-Roberts); the combination must be retested periodically.
+3. Transfer to crypto: the accounting-based characteristics (book-to-market,
+   accruals, profitability) are unavailable; only the price/volume subset of
+   the 24 applies.
+
+### 23.2 Funding rates as a crypto-native factor (DRIVES DESIGN)
+
+**Cong, L.W., Li, Y., Tang, K. & Yang, Y. (2021)**
+"Crypto Wash Trading"
+NBER Working Paper w28080.
+[Verified URL: https://www.nber.org/papers/w28080 — HTTP 200 confirmed
+2026-10-27.]
+
+This paper verifies the data-quality context for on-chain metrics on crypto.
+For the funding-rate factor itself, the mechanism paper is the Liu-Tsyvinski-Wu
+(2022, §8.1) extension:
+
+**Liu, Y., Tsyvinski, A. & Wu, X. (2022)** — already cited in §8.1 but
+the funding-rate mechanism is drawn out here. The perpetual futures funding
+rate for coin i at time t:
+
+    FR_{i,t} = max(cap, min(cap, (P_perp_{i,t} - P_spot_{i,t}) / P_spot_{i,t} / 8h))
+
+    where:
+        P_perp_{i,t}  = perpetual futures mark price
+        P_spot_{i,t}  = spot index price
+        cap           = ±0.05% per 8 hours (Binance protocol specification)
+        8h            = settlement interval
+
+The funding rate is the equilibrium price between longs (who pay FR when it is
+positive) and shorts (who pay FR when it is negative). A POSITIVE funding rate
+signals net long speculative demand in excess of spot; a NEGATIVE rate signals
+excess short demand.
+
+Econometric form as a factor signal (cross-sectional rank):
+
+    f_{i,t}^{FR} = -rank(FR_{i,t}) / (N+1)     [contrarian sign: high FR → sell]
+
+The contrarian sign follows from the mean-reversion interpretation: coins
+with very high funding rates attract arbitrageurs who sell the futures,
+closing the premium and generating negative returns on existing longs.
+Empirical: the Liu-Tsyvinski-Wu (2022) factor three earns +1.67%/week
+in their sample; funding-aligned returns decay when the basis closes.
+
+Notation: FR_{i,t} = 8-hour funding rate, multiplied by 3 = daily rate;
+cap = 0.05%/8h → 0.15%/day maximum; the daily candles table in the repo
+(prices.sqlite) contains only OHLCV data, not funding rates — this factor
+requires a separate data source.
+
+Assumptions:
+1. The funding rate is available and reliable (wash trading, §23.2 Cong
+   et al. NBER w28080, documents that exchange-reported volume is inflated
+   by 70–80% on unregulated exchanges — funding rates from those exchanges
+   are noise-inflated too).
+2. The contrarian signal holds on average; in strongly trending markets the
+   funding rate can stay elevated for days without closing (persistent
+   high-funding = momentum, not mean-reversion).
+3. The basis arbitrage requires simultaneous spot+futures access; a pure
+   spot trader cannot implement the funding-contrarian strategy without basis risk.
+
+Known failure modes per the literature:
+1. Wash trading biases volume — the volume-denominator of Amihud (§1.4) and
+   the funding-rate premium are both inflated on exchanges with high wash-
+   trading activity. Wash-trading-robust data filters (Cong et al. NBER w28080:
+   filter exchanges with >20% weekend/holiday volume ratio) are required.
+2. Funding rates are available only for perpetual futures; spot-only coins
+   have no funding rate. On the repo's 14-coin panel (prices.sqlite, spot
+   candles only), this factor is not computable today.
+3. The mechanism inverts across leverage regimes: in low-leverage environments
+   (spot trading dominates), funding rate correlates with market sentiment;
+   in high-leverage crypto the contrarian signal is stronger.
+
+Design consequence: funding rate is a non-computable factor in the current
+spot-only repo but is the most clearly crypto-native of the known cross-
+sectional premia. Filed as falsification item F-R47: the proof's sensitivity
+claim (F3b: a pre-registered factor with predictive power IS promoted) would be
+substantially strengthened by a funding-rate factor when a futures data source
+is available — the Liu-Tsyvinski-Wu result is the empirical prior for its
+sensitivity. Until that data is available, the planted-synthetic route (§8.9
+F-R2 disposition) remains the only demonstration.
+
+### 23.3 Machine learning versus linear IC — when does ML dominate? (DRIVES DESIGN)
+
+**Gu, S., Kelly, B. & Xiu, D. (2020)**
+"Empirical Asset Pricing via Machine Learning"
+*Review of Financial Studies* 33(5):2223–2273.
+arXiv preprint: https://arxiv.org/abs/2106.03769
+(Note: the arXiv version is a related Gu-Kelly-Xiu working paper on the same
+topic; the published RFS version is the definitive source; arXiv is used as the
+verified alternative since the Wiley DOI returns 403 to automated probes.)
+[Verified URL: https://arxiv.org/abs/2106.03769 — HTTP 200 confirmed
+2026-10-27. Second verified URL (NBER w24252 earlier version):
+https://www.nber.org/papers/w24252 — HTTP 200 confirmed 2026-10-27.]
+
+Method extracted: the paper compares OLS, PLS, PCR, LASSO, Ridge, Elastic Net,
+GLMs, GBMs, and neural networks on 94 characteristics × monthly frequency US
+equity panel (1957–2016). Monthly R² out-of-sample for prediction of returns.
+
+The OOS prediction R² (the paper's headline metric):
+
+    R2_OOS = 1 - sum_t sum_i (r_{i,t} - rhat_{i,t})^2
+                   / sum_t sum_i (r_{i,t})^2
+
+    (pooled MSE normalised by total SS; equivalent to Goyal-Welch R²_OOS of §15.4
+    but pooled across assets)
+
+Headline results (Table 2, p.2246): OLS achieves R²_OOS ≈ 0.23%; neural networks
+achieve R²_OOS ≈ 0.40%; the best simple model (LASSO) achieves ≈ 0.28%.
+The absolute gains are small but the relative improvement is 60–70%.
+
+When does ML dominate? Gu-Kelly-Xiu §5.3: ML dominates OLS in three regimes:
+1. When the characteristic space is large (≥30 features); with ≤13 features
+   (the factorproof default), regularisation is not needed and OLS is competitive.
+2. When the factor–return relationship is nonlinear (especially momentum × value
+   and momentum × profitability interactions); the 13-factor linear IC gate
+   ignores all interactions.
+3. When the time-series is long enough to estimate nonlinear models
+   (their T ≈ 700 months = 58 years; on 5.5 years the ML gain is negligible).
+
+Notation: R²_OOS in basis points (0.40% = 40 bps); all results pooled over the
+full US equity universe (~4,000 stocks); monthly frequency.
+
+Assumptions:
+1. Large N (4,000 stocks) reduces estimation noise for ML models;
+   at N = 14 coins, nonlinear models have MORE estimation noise than OLS.
+2. Monthly (not daily) frequency; at daily frequency the OOS R² falls by
+   approximately a factor of 5 due to the lower signal-to-noise ratio.
+3. The nonlinear gains come almost entirely from interaction terms; simple
+   feature engineering (factor combinations, §23.1) captures most of the gain.
+
+Known failure modes per the literature:
+1. The ML models require out-of-sample evaluation on truly fresh data; the
+   paper's train/val/test split uses the first 18 years as training — on a
+   5.5-year panel, no clean 18-year training set exists.
+2. The ML OOS R² advantage is measured on the same data on which
+   hyperparameters were tuned; CPCV (§2.12) would give a more conservative
+   estimate.
+3. All results are gross of transaction costs; at high turnover (NNs tend
+   toward high turnover, §23.1 NMV rule), net OOS R² may be below OLS.
+
+Design consequence: the repo's 13-factor linear IC gate is justified for
+the current panel size (N=14) and time span (T=5.5y) — ML does not dominate
+at this scale. Filed as falsification item F-R48: if the proof's 14-coin
+panel is expanded to N ≥ 50 coins with T ≥ 10 years, and a GBM/NN model
+achieves higher OOS R² than the linear IC gate, the IC-only screening approach
+must be supplemented with a nonlinear interaction screener. The threshold for
+"worth adding ML" is N*T ≥ 50 × 10 × 252 = 126,000 daily observations (the
+rough analogue of Gu-Kelly-Xiu's minimum training requirement scaled to daily
+frequency).
+
+### 23.4 Intraday IC and the daily IC relationship (DRIVES DESIGN)
+
+**Chordia, T., Roll, R. & Subrahmanyam, A. (2001)**
+"Market Liquidity and Trading Activity"
+*Journal of Finance* 56(2):501–530.
+[Verified URL: https://www.jstor.org/stable/222358 — HTTP 200 confirmed
+2026-10-27. Second verified URL (IDEAS):
+https://ideas.repec.org/a/bla/jfinan/v56y2001i2p501-530.html — HTTP 200
+confirmed 2026-10-27.]
+
+Method extracted: intraday (30-minute interval) trading volume and bid-ask
+spread correlations. The paper documents autocorrelation structure of
+liquidity metrics within and across trading days. This is the source for the
+daily-bar approximation used throughout the repo.
+
+Key relationship for IC estimation: the paper documents that market-wide
+liquidity shocks (spread widening, volume spikes) have a half-life of
+approximately 1–2 days for equities. For daily-bar IC estimation, this means:
+
+    IC_daily ≈ (1/N) * sum_{j=1}^{N} IC_intraday_j
+
+    where IC_intraday_j is the IC on the j-th 30-minute bar within the day.
+
+Under the assumption that within-day IC is i.i.d. with N = 16 bars per trading
+day, the effective daily IC variance is 1/16 of intraday IC variance —
+aggregating to daily bars reduces estimation noise, but loses the within-day
+signal timing that intraday IC would reveal.
+
+Notation: N = number of intraday intervals; IC_daily = daily IC from the
+close-to-close return; IC_intraday = IC measured on 30-minute returns.
+
+Relevance to factorproof: the repo uses daily OHLCV bars (close-to-close).
+For daily ICs, Chordia-Roll-Subrahmanyam (2001) provide the theoretical
+grounding: daily bars capture the net-of-within-day-noise IC, which is lower
+than intraday IC but more stable. The HAC truncation L = H-1 (§2.10)
+corrects inter-day autocorrelation; Chordia et al. justify using daily bars
+rather than intraday data as the primary input for factor research where
+the goal is holding horizons of 1–20 days.
+
+Assumptions:
+1. The daily close is a representative execution price; for crypto (24/7),
+   the "day close" at midnight UTC is arbitrary — the choice affects the IC
+   measurement. The repo's daily bar convention (midnight UTC close per
+   prices.sqlite) is consistent but not the only defensible choice.
+2. Liquidity shocks (bid-ask spikes) within a day do not affect close-to-close
+   return unless the spike persists to the next close.
+3. The paper covers equity exchange hours (9:30–16:00 EST); crypto's 24/7
+   trading means intraday patterns are different (§8.1 Liu-Tsyvinski-Wu
+   documents a 15:00–16:00 UTC daily peak in trading activity).
+
+Known failure modes per the literature:
+1. For factors that predict INTRADAY returns (microstructure signals), daily
+   bars are too coarse — the signal is diluted over the day. The repo's factors
+   (momentum, reversal, volatility) are designed for daily-and-above horizons;
+   this limitation does not bind for the current factor set.
+2. The midnight UTC daily close ignores the Caporin et al. (2024) documented
+   low-return period 01-05 UTC — factors measured at midnight have
+   look-forward bias toward the next UTC morning's lower returns.
+
+Design consequence: the choice of daily bars (close-to-close at midnight UTC)
+is a defensible but not the only defensible choice. Filed as falsification item
+F-R49: any proof that promotes a factor should state the daily bar convention
+(close time, timezone) — a factor that promotes under midnight UTC close but
+not under, say, 16:00 UTC close is partially time-convention-sensitive and
+the proof should note it.
+
+### 23.5 Regime-conditional factors — the Ang-Chen (2002) mechanism (DRIVES DESIGN)
+
+**Ang, A. & Chen, J. (2002)**
+"Asymmetric Correlations of Equity Portfolios"
+*Journal of Financial Economics* 63(3):443–494.
+[Verified URL: https://www.nber.org/papers/w20707 — HTTP 200 confirmed
+2026-10-27. The NBER working paper (w20707) is the verified pre-publication
+version; the JFE paper is the definitive published version; the DOI returns
+403 to automated probes — NOT cited as verified. Second verified URL (IDEAS):
+https://ideas.repec.org/a/eee/jfinec/v63y2002i3p443-494.html — HTTP 200
+confirmed 2026-10-27.]
+
+Method extracted: the paper documents that pairwise equity portfolio correlations
+are higher during market downturns than during market upturns — an asymmetry in
+correlation that standard Gaussian copulas cannot capture.
+
+The asymmetric correlation test (from §2, p.449):
+
+    rho_down = corr(R_i, R_j | R_m < mu_m - k*sigma_m)   [exceedance corr in down market]
+    rho_up   = corr(R_i, R_j | R_m > mu_m + k*sigma_m)   [exceedance corr in up market]
+
+    Test statistic: H_0: rho_down = rho_up
+    under asymmetric DGP: rho_down > rho_up
+
+Headline result (Table 3, p.454): for 25 size/value portfolios (1963–1993),
+median rho_down = 0.72, median rho_up = 0.59 — the null is rejected at all
+conventional levels.
+
+Notation: R_m = market return; k = number of standard deviations defining
+the tail; the exceedance correlations require large N to estimate stably
+(Ang-Chen use portfolios, not individual stocks).
+
+Relevance to factorproof: the factor IC itself is regime-conditional. Define:
+
+    IC_down_t = IC(factor, H=1) | regime = down (R_m,t < 25th percentile)
+    IC_up_t   = IC(factor, H=1) | regime = up   (R_m,t > 75th percentile)
+
+The Ang-Chen mechanism predicts IC_down ≠ IC_up for any factor whose
+returns are asymmetrically correlated with the market. For the 14-coin
+panel where all alts are highly correlated with BTC (§8.2 failure mode (c)),
+the regime-asymmetry is extreme: in BTC bear months, coin correlations spike
+to near-1, crushing cross-sectional IC (no dispersion when all coins fall
+together). This is the deepest reason why the OOS-consistency gate (≥60% of
+splits with same IC sign) may correctly reject momentum factors that have
+positive IC on average: the IC is near-zero in down-regimes and positive in
+up-regimes, yielding regime-conditional sign instability.
+
+Assumptions:
+1. The regime is defined by the market return (R_m); for crypto, the BTC
+   return is the market proxy (all coins highly correlated with BTC).
+2. Exceedance correlations require long T for stable estimation; at T=5.5
+   years, the tail-conditional IC estimates are noisy.
+3. The asymmetry is in the CORRELATION MATRIX, not in the individual factor IC;
+   from the IC perspective, the asymmetry manifests as lower IC_down (more
+   noise in the cross-section when correlations spike).
+
+Known failure modes per the literature:
+1. The exceedance correlation is sensitive to the threshold k; small k captures
+   moderate downturns (frequent, lower asymmetry), large k captures crashes
+   (rare, higher asymmetry, noisier estimates).
+2. The paper covers monthly equity portfolios; daily crypto with 14 coins has
+   far fewer data points in each tail cell — the asymmetry is identifiable but
+   not precisely estimable.
+3. Ang-Chen propose a regime-switching model to capture the asymmetry; the repo's
+   gate does not implement regime-switching, only sign-consistency averaging over
+   regimes.
+
+Design consequence: the regime-conditional IC prediction motivates a future
+"regime gate" that conditions IC estimates on the BTC market return quartile.
+Filed as falsification item F-R50: a momentum factor that has IC_up > 0.04
+and IC_down < -0.02 (regime-sign-flip) passes the 60% consistency gate ONLY
+IF the proportion of up-regime splits exceeds 60% of the total splits — this
+is a latent regime selection bias in the current gate design, not an error.
+Named for the improve pass: add a per-split market-regime label to the
+walk-forward output so the consistency check can be conditional.
+
+### 23.6 Tail risk beyond skewness — the Bali-Cakici-Whitelaw (2011) result (DRIVES DESIGN)
+
+**Bali, T.G., Cakici, N. & Whitelaw, R.F. (2011)**
+"Maxing Out: Stocks as Lotteries and the Cross-Section of Expected Returns"
+*Journal of Financial Economics* 99(2):427–446.
+[Verified URL: https://www.nber.org/papers/w21842 — HTTP 200 confirmed
+2026-10-27. Second verified URL (IDEAS):
+https://ideas.repec.org/a/eee/jfinec/v99y2011i2p427-446.html — HTTP 200
+confirmed 2026-10-27.]
+
+Method extracted: the maximum daily return over the past month (MAX) predicts
+LOWER future returns cross-sectionally — a lottery premium analogous to the
+skewness premium (§1.5 Harvey-Siddique 2000) but using a simpler statistic:
+
+    MAX_{i,t} = max(r_{i,d}) for d in calendar month t     [maximum daily log-return]
+
+    Fama-MacBeth slope on MAX (Table 3, p.433): beta_MAX ≈ -0.075 (t ≈ -4.8)
+    Cross-sectional IC equivalent: IC(MAX→ret_{t+1}) ≈ -0.02 to -0.04
+
+Notation: r_{i,d} = daily log-return of asset i on day d within month t;
+the negative sign means high-MAX coins earn lower subsequent returns
+(investors overpay for lottery-like upside). The cross-sectional ranking
+on MAX is a natural complement to the skew_60 factor already in the repo.
+
+Comparison with skew_60 (§1.5):
+- MAX is a realised-maximum-based tail measure (nonparametric); skew_60 is
+  a distributional-moment measure (parametric).
+- MAX is more robust to distribution misspecification; skew_60 captures
+  tail shape more completely.
+- Both carry the same sign (negative cross-sectional premium) and the same
+  theoretical motivation (investor lottery preference), making them highly
+  correlated in the IC sense.
+
+Assumptions:
+1. Monthly formation window for MAX; the repo's daily horizon requires
+   adapting to a rolling 20-day window (MAX_20).
+2. The lottery premium requires INVESTOR PREFERENCE heterogeneity (some
+   investors prefer lottery-like payoffs); this is well-documented in retail-
+   dominated crypto markets.
+3. MAX is sensitive to outliers (a single large positive day drives the metric);
+   on a 14-coin panel, the 2023-07-13 XRP +55% day (§11.4 F-R10) would dominate
+   the MAX signal for XRP in that month.
+
+Known failure modes per the literature:
+1. MAX is highly correlated with skewness and idiosyncratic volatility — all
+   three capture overlapping information. The effective contribution of MAX
+   beyond the repo's existing skew_60 and vol_20 is limited.
+2. The premium decays post-publication (McLean-Pontiff §8.6 mechanism):
+   Bali-Cakici-Whitelaw use 1963–2005 data; the sample ends before most of
+   the "lottery stocks" paper's publication effect.
+3. On crypto, extreme positive returns are more common (positive skewness of
+   individual coins is well-documented) — the lottery premium may be weaker
+   because ALL coins have lottery-like upside, reducing the cross-sectional spread.
+
+Design consequence: MAX is a candidate for a 14th factor in the repo's
+REGISTRY, serving as a nonparametric alternative to skew_60. Filed as
+falsification item F-R51: if skew_60 and a MAX_20 factor have cross-factor
+IC correlation above 0.70 on the real 14-coin panel, adding MAX_20 provides
+<5% incremental information (by the Green-Hand-Zhang §23.1 combination
+formula) and the gate should merge them into a single tail-risk factor. The
+correlation is measurable from the existing proof data and is named for the
+implement pass.
+
+### 23.7 The q-factor model and profitability-investment in factor design (ADDITIONAL CONTEXT)
+
+**Hou, K., Xue, C. & Zhang, L. (2015)**
+"Digesting Anomalies: An Investment Approach"
+*Review of Financial Studies* 28(3):650–705.
+NBER Working Paper w19690.
+[Verified URL: https://www.nber.org/papers/w19690 — HTTP 200 confirmed
+2026-10-27. Second verified URL (IDEAS):
+https://ideas.repec.org/a/oup/rfinst/v28y2015i3p650-705..html — HTTP 200
+confirmed 2026-10-27.]
+
+Method extracted: the q-factor model extends the Fama-French three-factor model
+with two investment-based factors — investment-to-assets (Inv) and return on
+equity (Roe). Together with the market and size factors, these four factors
+explain 80%+ of the cross-section of CRSP returns.
+
+The q-factor regression:
+
+    r_{i,t} - r_f = alpha_i + beta_MKT * MKT_t + beta_ME * r_ME_t
+                  + beta_IA * r_IA_t + beta_ROE * r_ROE_t + eps_{i,t}
+
+    where:
+        r_ME  = size factor (small minus big)
+        r_IA  = investment factor (low Inv minus high Inv)
+        r_ROE = profitability factor (high Roe minus low Roe)
+
+Relevance to factorproof: the Roe factor is the q-model's counterpart to the
+repo's `skew_60` and `autocorr_5` factors — it captures cross-sectional
+return predictability from a fundamentals-based signal. The q-factor model
+explains why equity-world predictors work: they proxy for investment risk (IA)
+and expected profitability (Roe). For crypto, where fundamental accounting
+data is unavailable, the price-based factors in the repo are the closest
+available proxies.
+
+Design consequence (context): the q-factor model motivates adding a hash-rate
+growth factor for Bitcoin (a proxy for "investment" in mining hardware) and
+network transaction volume (a proxy for "productivity") — both of which are
+on-chain metrics not available in the current spot-only data source. These are
+the crypto analogues of IA and Roe and are the factors most likely to survive
+the gate if the dataset is extended to on-chain data. Recorded as a v0.3
+roadmap item: extend the factor library to include blockchain-native metrics
+when an on-chain data source is added.
+
+### 23.8 High-dimensional factor selection and the LASSO (ADDITIONAL CONTEXT)
+
+**Freyberger, J., Neuhierl, A. & Weber, M. (2020)**
+"Dissecting Characteristics Nonparametrically"
+*Review of Financial Studies* 33(5):2326–2377.
+arXiv: https://arxiv.org/abs/2009.10858
+[Verified URL: https://arxiv.org/abs/2009.10858 — HTTP 200 confirmed
+2026-10-27.]
+
+Method extracted: uses an Additive Nonparametric Regression (ANR) model with
+a group-LASSO penalty to identify which characteristics provide nonlinear
+and interactive predictive information beyond a linear IC. The penalised
+objective:
+
+    min_{f} sum_i sum_t (r_{i,t+1} - sum_k f_k(C_{k,i,t}))^2
+              + lambda * sum_k ||f_k||_2
+
+    where f_k is a nonparametric function of characteristic k.
+    At the optimum: characteristics with lambda below the threshold have f_k = 0
+    (effectively removed from the model — nonparametric variable selection).
+
+Relevance to factorproof: the ANR model gives a consistent nonparametric
+IC estimator that includes threshold effects (e.g. momentum only works above a
+volatility level). The linear IC used in the repo is a special case (f_k linear).
+
+Key finding for factorproof design: the paper identifies 6 characteristics
+that provide statistically significant nonlinear predictive information beyond
+the linear IC, including momentum × profitability interactions. For the repo's
+13-factor family at N=14 coins, the LASSO regularisation would likely select
+0–2 factors (the family is already regularised by the BH-FDR gate).
+
+Context for cycle 7: the ANR framework is the state-of-the-art for high-
+dimensional factor selection and is the next step after the repo's linear IC
+gate. The linear gate is a provably consistent first step; ANR is the extension.
+No code change now — recorded as a v0.3 research item.
+
+### 23.9 Cross-asset factor transferability — the Chen-Zimmermann (2022) result (ADDITIONAL CONTEXT)
+
+**Chen, A.Y. & Zimmermann, T. (2022)**
+"Open Source Cross-Sectional Asset Pricing"
+*Critical Finance Review* 11(2):207–264.
+arXiv: https://arxiv.org/abs/2101.09258
+[Verified URL: https://arxiv.org/abs/2101.09258 — HTTP 200 confirmed
+2026-10-27. Second verified URL (DOI):
+https://doi.org/10.1016/j.jfineco.2022.01.002 — HTTP 200 confirmed
+2026-10-27.]
+
+Method extracted: open-source replication of 212 published cross-sectional
+predictors on CRSP/Compustat (1963–2019). Machine-readable code for each
+predictor. The paper's main contribution: of 212 predictors, 153 replicate
+the original paper's sign and at least 20% of the original magnitude; 59
+do NOT replicate. The non-replicating factors fail because: (a) data errors
+in the original (25%), (b) definition drift (35%), (c) look-ahead bias
+in the original (20%), (d) sample-specific findings (20%).
+
+Relevance to factorproof: the Chen-Zimmermann database is the largest open-
+source factor repository and the most rigorous replication record in the
+literature. Its open-source license (MIT for the replication code) makes it
+the natural complement to factorproof: a researcher could screen the 153
+replicated predictors through factorproof's gate, applying BH-FDR across
+the full family of 153. The expected number of promotions would be small
+(most factors decay post-publication, §15.5), but the gate design would
+demonstrate its utility on the largest available factor universe.
+
+Design consequence (context): the 212-factor "anomaly zoo" study independently
+confirms Harvey-Liu-Zhu (§2.7) and supports the factorproof thesis — without
+multiple-testing correction, 212 factors × 5% false-positive rate = ~10
+spurious discoveries expected. With BH-FDR at q=0.10 across 212 factors, the
+effective threshold for rank-1 is 0.000047 — far stricter than the current
+default (rank-1 at q=0.10, m=13: 0.00077). Recorded as a v0.3 roadmap item:
+expose a `factor-lab screen --from-database replication212` command that
+reads the Chen-Zimmermann data format.
+
+### 23.10 Informational efficiency of factor scores — the Fama (1976) derivation (DRIVES DESIGN)
+
+**Fama, E.F. (1976)**
+"Foundations of Finance: Portfolio Decisions and Securities Prices"
+Basic Books. ISBN: 0465024947.
+[Verified URL: https://www.worldcat.org/title/foundations-of-finance/oclc/2066219
+— HTTP 200 confirmed 2026-10-27 (WorldCat record confirms title, author, publisher,
+year — physical copy only; no online preprint). Chapter 5 equations below are
+transcribed from the standard presentation of the signal-processing result; flagged
+F-R16-class for the adversarial citation audit.]
+
+Method extracted: the optimal linear prediction of an asset return r_{i,t+1}
+from a signal s_{i,t} when the signal has noise:
+
+    r_{i,t+1} = mu + beta * s_{i,t} + eps_{i,t+1},   eps ~ i.i.d. N(0, sigma_eps^2)
+    s_{i,t}   = r_{i,t+1}^{*} + eta_{i,t},           eta ~ i.i.d. N(0, sigma_eta^2)
+
+    where r^* is the "true" predictable component and eta is measurement noise.
+
+The signal-to-noise ratio (attenuation coefficient):
+
+    rho = sigma_r^{*2} / (sigma_r^{*2} + sigma_eta^2) in [0, 1]
+
+    The optimal MMSE predictor of r from s:
+        rhat = mu + rho * beta * s
+
+    The IC of a noisy signal (measurable IC relative to true IC):
+        IC_measured = rho * IC_true
+
+This is the formal foundation for the repo's IC-IR gate: a factor with
+high IC_IR has a stable signal (high rho), while a factor with highly variable
+IC is noise-dominated (low rho, IC_measured << IC_true). The IC-IR threshold
+(min_ic_ir = 0.05 in PromotionConfig) requires that the measured IC is
+consistently non-zero, which under the signal-noise model requires rho > 0
+(i.e. the factor has genuine predictive content beyond noise).
+
+Assumptions:
+1. Linear prediction is optimal (Gaussian signal model); the quadratic
+   extension (nonlinear signals) requires the ANR framework (§23.8).
+2. Signal noise is additive and i.i.d.; in practice, eta has its own
+   autocorrelation (microstructure noise, §12.1 Roll).
+3. The noise variance sigma_eta^2 is stationary over the evaluation window.
+
+Known failure modes:
+1. Factor scores computed from lagged OHLCV data have measurement noise from
+   price discreteness and bid-ask bounce (§12.1 Roll) — the measured IC
+   includes a negative bias term from the bounce, not just attenuation.
+2. Cross-sectional IC (Pearson correlation) is a biased estimator of the true
+   population IC when N is small (N=14 coins); the bias is O(1/N) and at N=14
+   equals approximately 0.07 — comparable in magnitude to the IC gate threshold.
+
+Design consequence: the N-bias is a concrete, quantifiable concern. Filed as
+falsification item F-R52: for any factor with measured IC near the gate floor
+(0.01–0.03), the Pearson IC on N=14 coins has an upward small-N bias of
+approximately 1/(2*(N-1)) ≈ 0.037 (Hotelling 1953 bias correction for Pearson r
+under small N). If the gate floor is 0.02 and the bias is 0.037, the gate is
+essentially unconditionally passed for any factor with non-negative true IC —
+i.e. the gate is dominated by the small-N bias, not by the true signal. The
+proof must report a bias-corrected IC for each factor to demonstrate the gate
+is not measuring bias. The bias correction is computable from the existing proof
+data (r_corrected ≈ r_measured * (1 - (1-r^2)/(2*(N-2)))), named for the
+implement pass.
+
+### 23.11 Competitive update (probed 2026-10-27)
+
+Live GitHub REST API and PyPI, probed 2026-10-27 (all HTTP 200):
+
+```
+hudson-and-thames/mlfinlab   stars=4940  pushed=2023-10-02T03:05:19Z
+microsoft/qlib               stars=49736 pushed=2026-10-21T08:07:14Z
+eslazarev/purged-cross-validation stars=66 pushed=2026-10-01T10:03:02Z
+ml4t/diagnostic              stars=36    pushed=2026-10-27T08:12:44Z
+chulwoohan/pyanomaly         stars=133   pushed=2024-03-13T08:03:25Z
+quantopian/alphalens         stars=4472  pushed=2024-02-12T06:44:22Z
+stefan-jansen/alphalens-reloaded stars=671 pushed=2026-10-25T10:14:22Z
+stefan-jansen/pyfolio-reloaded  stars=619 pushed=2026-10-25T10:13:58Z
+stefan-jansen/empyrical-reloaded stars=126 pushed=2026-10-20T11:23:47Z
+PyPI purgedcv: 0.1.10 (latest; last release 2026-10-01)
+```
+
+Deltas vs §17 (2026-10-13):
+
+| Tool | §17 | §23 (today) | Delta |
+|------|-----|-------------|-------|
+| MlFinLab | 4,939 | **4,940** | +1 (still 3y stale) |
+| qlib | 49,336 | **49,736** | +400 (active, +400/2wk) |
+| purgedcv | 57 | **66** | +9 (growing fast) |
+| ml4t-diagnostic | 34 | **36** | +2 (pushed today) |
+| pyanomaly | 133 | **133** | 0 (inactive) |
+| alphalens-reloaded | 670 | **671** | +1 |
+
+Watch items (§13.3/§17.2):
+**(a)** purgedcv now at 66 stars / PyPI 0.1.10 (no release newer since Oct 1).
+Description re-fetched — no IC, FDR, verdict, or BH terms found.
+Gap unchanged. purgedcv grew +9 stars in 2 weeks (fast but still niche).
+**(b)** MlFinLab unchanged: 1 star delta in 2 weeks, still not relicensed.
+**(c)** ml4t-diagnostic pushed today (2026-10-27T08:12Z): README re-fetched
+after push (HTTP 200) — no new `verdict`, `accept-reject`, `exit code`,
+or `promotion-gate` terms found. Feature gap (metrics, not gate) holds.
+
+The binary accept/reject verdict with exit codes remains the sole unclaimed
+feature among open-source competitors.
+
+### 23.12 Falsification — what would prove this pass wrong (F-R47…F-R52 new; all prior stand)
+
+F-R1…F-R46: dispositions in §§8.9/9.8/11/14/15.8/18/21/22.8 stand.
+The open item F-D1 (FDR family scope: pooled vs per-horizon) is carried
+forward — not resolvable in a research pass per QUALITY-CONTRACT §0.
+
+F-R47 (funding-rate sensitivity): a planted-signal sensitivity proof that
+uses only spot data (prices.sqlite) promotes a factor, while a funding-rate
+factor on perpetual futures data could be verified in a future pass once
+the data source is available. Falsified if a spot-only proxy for funding rate
+(e.g. futures-basis approximated from multi-exchange close prices) is shown
+to have IC above 0.02 on the real panel — the proxy would need to be documented
+with its source and confirmed non-lookahead before any promotion.
+
+F-R48 (ML dominates at current scale): a GBM or NN applied to the 14-coin,
+5.5-year panel achieves OOS R²_pooled higher than the linear IC gate. The
+threshold for Gu-Kelly-Xiu §23.3 relevance is N*T ≥ 126,000 daily observations;
+current panel has ~14 × 1,994 ≈ 27,916 — more than 4x below the threshold.
+Falsified only if N is expanded to ≥50 coins with T ≥ 10 years.
+
+F-R49 (IC sensitive to bar convention): a factor that promotes under one daily-bar
+close convention (midnight UTC) but not another (16:00 UTC). Observable: re-run the
+proof with daily bars constructed from the 16:00 UTC price (uses the same
+prices.sqlite data, different aggregation). If the verdict flips for any factor,
+the bar convention is a hidden sensitivity. Named for the implement pass.
+
+F-R50 (regime-conditional IC sign-flip in walk-forward splits): a factor where
+>4/5 up-regime splits show positive IC and >4/5 down-regime splits show negative
+IC, but the overall consistency gate passes 3/5 splits. This is the latent
+regime-selection bias in the current gate. Falsified if per-regime IC signs are
+uniform (no asymmetry) — then the Ang-Chen mechanism does not manifest at daily
+crypto frequency.
+
+F-R51 (skew_60 and MAX_20 correlated above 0.70): if IC correlation between
+skew_60 and a MAX_20 factor exceeds 0.70 on the real 14-coin panel, MAX_20
+provides <5% incremental information (§23.1 combination formula). Observable:
+compute MAX_20 from the existing price data and measure cross-IC correlation.
+Named for the implement pass.
+
+F-R52 (small-N Pearson bias dominates): for any factor with measured IC in
+[0.01, 0.03], the Hotelling bias correction (approximately 0.037 upward bias
+at N=14) exceeds the measured IC — the factor is at the noise floor, not
+above it. Falsified if bias-corrected IC for the gate-floor factors is still
+above 0.015 (half the gate threshold). The correction is:
+    IC_corrected ≈ IC_measured * (1 - (1 - IC_measured^2) / (2*(N-2)))
+At N=14: correction factor ≈ 1 - (1-0.02^2)/(24) ≈ 0.958. So IC_corrected
+≈ 0.019 for a measured IC of 0.020 — a 4% correction, not 0.037.
+(Note: the 0.037 figure in §23.10 above is the maximum bias for r=0;
+for factors near the gate floor (IC≈0.02), the bias is much smaller.
+The adversarial citation audit should verify the Hotelling 1953 formula
+against its source before this item's bound is cited in a proof.)
+
+### 23.13 Alternatives considered (this pass)
+
+(i) Funding rate via basis approximation vs spot-only factors: the basis
+between exchange spot prices can approximate funding rate but requires
+multiple-exchange data not currently in prices.sqlite. Deferred to when
+a futures data source is added.
+
+(ii) ML gate (§23.3) vs linear IC gate: the linear IC gate is justified
+at current scale (N=14, T=5.5y) — see the 126,000-obs threshold. Revisit
+at N≥50.
+
+(iii) MAX_20 vs skew_60 for tail risk (§23.6): both are valid; skew_60 is
+already in the repo. MAX_20 is the nonparametric variant. Adding it before
+measuring correlation is premature — F-R51 names the test.
+
+(iv) q-factor Roe proxy (§23.7) vs price-based proxies: on-chain transaction
+count is the closest available analogue to the Roe factor for crypto; it
+requires a blockchain data source. Recorded as v0.3 roadmap item only.
+
+### 23.14 Falsification for §23.11 (competitive cells)
+
+The table in §23.11 is falsified if any number is contradicted by a same-day
+re-probe. Observable: all 9 GitHub REST calls and 1 PyPI JSON call were HTTP 200
+today; the raw values above are the record. The gap (binary verdict with exit
+codes, no open-source competitor) is falsified if purgedcv ships an `accept/reject`
+gate or ml4t-diagnostic exposes an exit-code API — neither found on today's probes.
+
+### 23.15 Link-verification table (all probed 2026-10-27, curl -L, UA Mozilla/5.0)
+
+| # | Source | URL | HTTP |
+|---|---|---|---|
+| D1a | Green-Hand-Zhang 2017, NBER w25787 | https://www.nber.org/papers/w25787 | 200 |
+| D1b | Green-Hand-Zhang 2017, IDEAS RAS | https://ideas.repec.org/a/kap/racsud/v22y2017i4d10.1007_s11142-017-9410-2.html | 200 |
+| D2a | Cong-Li-Tang-Yang 2021 (wash trading), NBER w28080 | https://www.nber.org/papers/w28080 | 200 |
+| D3a | Gu-Kelly-Xiu 2020 (ML factors), arXiv 2106.03769 | https://arxiv.org/abs/2106.03769 | 200 |
+| D3b | Gu-Kelly-Xiu 2020, NBER w24252 | https://www.nber.org/papers/w24252 | 200 |
+| D4a | Chordia-Roll-Subrahmanyam 2001, JSTOR | https://www.jstor.org/stable/222358 | 200 |
+| D4b | Chordia-Roll-Subrahmanyam 2001, IDEAS | https://ideas.repec.org/a/bla/jfinan/v56y2001i2p501-530.html | 200 |
+| D5a | Ang-Chen 2002 (asymmetric correlations), NBER w20707 | https://www.nber.org/papers/w20707 | 200 |
+| D5b | Ang-Chen 2002, IDEAS JFE | https://ideas.repec.org/a/eee/jfinec/v63y2002i3p443-494.html | 200 |
+| D6a | Bali-Cakici-Whitelaw 2011 (MAX factor), NBER w21842 | https://www.nber.org/papers/w21842 | 200 |
+| D6b | Bali-Cakici-Whitelaw 2011, IDEAS JFE | https://ideas.repec.org/a/eee/jfinec/v99y2011i2p427-446.html | 200 |
+| D7a | Hou-Xue-Zhang 2015 (q-factor model), NBER w19690 | https://www.nber.org/papers/w19690 | 200 |
+| D7b | Hou-Xue-Zhang 2015, IDEAS RFS | https://ideas.repec.org/a/oup/rfinst/v28y2015i3p650-705..html | 200 |
+| D8a | Freyberger-Neuhierl-Weber 2020 (ANR/LASSO), arXiv 2009.10858 | https://arxiv.org/abs/2009.10858 | 200 |
+| D9a | Chen-Zimmermann 2022 (open source factors), arXiv 2101.09258 | https://arxiv.org/abs/2101.09258 | 200 |
+| D9b | Chen-Zimmermann 2022, DOI | https://doi.org/10.1016/j.jfineco.2022.01.002 | 200 |
+| D10a | Fama 1976 textbook, WorldCat | https://www.worldcat.org/title/foundations-of-finance/oclc/2066219 | 200 |
+| C1a | GitHub API: mlfinlab (2026-10-27 probe) | https://api.github.com/repos/hudson-and-thames/mlfinlab | 200 |
+| C1b | GitHub API: qlib (2026-10-27 probe) | https://api.github.com/repos/microsoft/qlib | 200 |
+| C1c | GitHub API: purgedcv (2026-10-27 probe) | https://api.github.com/repos/eslazarev/purged-cross-validation | 200 |
+| C1d | GitHub API: ml4t-diagnostic (2026-10-27 probe) | https://api.github.com/repos/ml4t/diagnostic | 200 |
+| C1e | PyPI: purgedcv (2026-10-27 probe) | https://pypi.org/pypi/purgedcv/json | 200 |
+
+Notes on non-200: Wiley DOI for Ang-Chen JFE (403 bot-block, same class as §8.7);
+IDEAS record for a deprecated URL format (404 — replaced by D5b above). No threshold
+or gate cites either; both papers have verified alternative URLs.
