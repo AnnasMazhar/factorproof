@@ -672,7 +672,10 @@ def write_report(
     ]
     if raw_sig_names:
         md_lines.append(f"  - Names: {', '.join(raw_sig_names)}")
-    md_lines.append(f"- Factors passing BH-FDR q=0.15 across family: **{n_bh_sig}**")
+    md_lines.append(
+        f"- Factors passing BH-FDR q=0.15 (family: {len(real_rows)} factors, "
+        f"one best-horizon p per factor; not per-horizon): **{n_bh_sig}**"
+    )
     bh_names = [r["factor"] for r in real_rows if r.get("bh_fdr_pass")]
     if bh_names:
         md_lines.append(f"  - Names: {', '.join(bh_names)}")

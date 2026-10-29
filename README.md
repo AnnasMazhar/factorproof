@@ -3,7 +3,7 @@
 The overfitting controls that quant research actually needs — without a £100/month licence.
 
 ![Python](https://img.shields.io/badge/python-3.11%2B-blue)
-![Tests](https://img.shields.io/badge/tests-171%20passed-brightgreen)
+![Tests](https://img.shields.io/badge/tests-192%20passed-brightgreen)
 ![Ruff](https://img.shields.io/badge/ruff-clean-brightgreen)
 ![Licence](https://img.shields.io/badge/licence-MIT-green)
 
@@ -19,7 +19,9 @@ uv venv && uv pip install -e '.[dev]'
 # Screen 13 factors, reject the noise
 factor-lab screen --data signal --horizons 1,5,20
 
-# Promote a real signal (exit 0) or reject noise (exit 1)
+# Ask the gate (exit 1 = reject; there is no --force by design).
+# Both reject under default gates — the planted signal is honestly too weak
+# once HAC + FDR apply (see Real results). Noise must always reject.
 factor-lab promote mom_20 --data signal --plant-signal
 factor-lab promote noise_control --data signal
 ```
@@ -148,8 +150,9 @@ observations has Wilson LB = 37% — the gate would correctly reject it.
 
 **Why Benjamini-Hochberg FDR correction?**
 If you test 13 factors, you expect 5% * 13 = 0.65 spurious discoveries at alpha=5%.
-FDR correction controls the expected fraction of false discoveries. BH q=0.15
-with 13 tests means at most ~2 promoted factors are expected to be noise.
+FDR correction controls the expected fraction of false discoveries. BH q=0.10
+(the gate default) means that among promoted factors, roughly 1 in 10 is
+expected to be noise.
 
 **Why Newey-West HAC t-stats?**
 With a forward-return horizon H > 1, consecutive per-date IC values share H-1

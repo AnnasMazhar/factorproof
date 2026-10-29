@@ -144,7 +144,7 @@ Mean IC and HAC t-stat per calendar year at each factor's best horizon. A factor
 
 - Factors with raw p < 0.05 (naive threshold): **3** out of 13
   - Names: rev_5, volume_z_20, lookahead_control
-- Factors passing BH-FDR q=0.15 across family: **3**
+- Factors passing BH-FDR q=0.15 (family: 13 factors, one best-horizon p per factor; not per-horizon): **3**
   - Names: rev_5, volume_z_20, lookahead_control
 - Factors promoted by the full gate (all 10 criteria): **0**
 
