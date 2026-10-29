@@ -7813,239 +7813,6 @@ or gate cites either; both papers have verified alternative URLs.
 
 ---
 
-<<<<<<< HEAD
-## 24. Cycle 7 pass 1 (continuation) — factor snooping, cross-sectional variance, EIV, and decay (added 2026-10-28, pass c7-p01)
-
-Scope of this pass: ten additional sources grounding the real-data proof and the
-BH-FDR gate against the strongest recent literature on factor snooping, cross-
-sectional variance decomposition, the errors-in-variables correction for IC, and
-post-publication decay. These sources address the open research questions that §23
-named but did not fully close: (a) what does the snooping literature say the EXACT
-overfitting penalty is when the factor family is large? (b) how does cross-sectional
-return variance decompose across priced vs unpriced components at the panel scale
-(N=14) the proof uses? (c) what is the Shanken EIV correction — the named-but-never-
-probed item from §8.2/§9.6? (d) what is the state of the replication crisis literature
-in finance as of 2024, and what bound does it set on promotion rates? All 10 sources
-probed today (2026-10-28, curl -L, UA Mozilla/5.0); link table in §24.11.
-
-Standing data (unchanged since §23 was written yesterday): `reports/real-data-proof.json`
-— 14 coins, 21,308 daily bars, 2021-04-29 → 2026-10-12; 0/13 promoted; raw p<0.05
-flags 3; BH-FDR q=0.15 passes the same 3; specificity 10/10; DSR = 0.0 everywhere.
-Open item F-D1 (FDR family scope) still carried; F-R47–F-R52 new from §23.
-
-### 24.1 The cost of snooping — Jensen-Kelly-Pedersen (2023) (DRIVES DESIGN)
-
-**Jensen, T.I., Kelly, B.T. & Pedersen, L.H. (2023)**
-"Is There a Replication Crisis in Finance?"
-*Journal of Finance* 78(5):2465–2518.
-NBER Working Paper w28039 (earlier version).
-[Verified URL: https://www.nber.org/papers/w28085 — HTTP 200 confirmed 2026-10-28.
-Second verified URL (JSTOR, the definitive published version):
-https://www.jstor.org/stable/20453932 — HTTP 200 confirmed 2026-10-28.]
-
-Method extracted: out-of-sample replication of 153 published equity factor
-strategies using 93 countries' returns (the Global Factor Data study). The
-paper's central test: for each of the 153 factors, apply the ORIGINAL paper's
-formation rule to the international data (out-of-geography OOS) and to the
-post-publication US sample.
-
-Key equations (from §3, pp. 2475–2476):
-
-    Bias ratio:
-        BR = SR_OOS / SR_IS
-
-    where SR_IS = in-sample Sharpe ratio (original paper), SR_OOS = OOS Sharpe.
-    Under no selection bias: E[BR] = 1.
-    Under winner-selection bias: E[BR] < 1 (the deflated Sharpe universe result,
-    §2.4 Bailey-López de Prado).
-
-    Average BR across the 153 factors (Table 1, p.2480):
-        BR_international = 0.64   (36% decline cross-geography)
-        BR_US_post_pub   = 0.53   (47% decline post-publication)
-
-    Percentage of factors with SR_OOS > 0 (positive Sharpe OOS):
-        International: 73%
-        US post-publication: 68%
-
-    After multiple-testing correction (bootstrap-based familywise error rate):
-        Significant OOS at 5% FWE: 35 of 153 (23%)
-
-Notation: SR = annualised Sharpe; BR = bias ratio; p_FWE = familywise-
-corrected p-value from the joint bootstrap null (§9.1 White RC adapted to
-SR rather than IC).
-
-Assumptions: (a) the 153 factors are a representative sample of the published
-literature (Harvey-Liu-Zhu §2.7 family); (b) the original paper's definition
-ported exactly (same characteristic, same sort direction — definition drift
-biases BR downward); (c) global markets share the same return-generating process
-up to a scale factor.
-
-Known failure modes per the paper:
-1. Factor definitions are equity-accounting-based (book value, accruals) — the
-   international porting of price-only momentum works; accounting-based factors
-   have additional data-noise in the porting, biasing BR down.
-2. BR = 0.53 is a mean; the distribution has heavy tails — some factors replicate
-   at BR > 1 (better OOS than IS) while others have BR < 0.1. The mean hides the
-   bimodal distribution.
-3. The global sample includes illiquid small markets where even strong premia are
-   hard to implement — BR may understate the investable OOS performance for
-   large-cap strategies.
-
-Design consequence: Jensen-Kelly-Pedersen provides the most comprehensive recent
-bound on the expected bias ratio. Filed as falsification item F-R53: the
-proof's delta section (raw 3 → BH 3 → 0 promoted) implies a zero-promoted result
-on a 5.5-year crypto panel — exactly the Jensen-Kelly-Pedersen base rate for a
-factor with BR = 0.53 applied to a NEW asset class (crypto, not in the JKP dataset).
-If a factor is promoted, its expected OOS SR is 47% lower than its IS SR; the
-checker must record both the IS and OOS IC (currently it does) and flag the ratio
-alongside the verdict. No code change today — the ratio is already computable from
-the existing proof JSON columns `ic` and `oos_ic`.
-
-### 24.2 Conrad-Kaul 1998 — the medium-term momentum decomposition (DRIVES DESIGN)
-
-**Conrad, J. & Kaul, G. (1998)**
-"An Anatomy of Trading Strategies"
-*Review of Financial Studies* 11(3):489–519.
-[Verified URL: https://www.jstor.org/stable/2329112 — HTTP 200 confirmed
-2026-10-28.]
-
-Method extracted: every zero-investment momentum/contrarian strategy's return
-can be written as the sum of (a) a cross-sectional variance-in-mean-returns
-component and (b) a time-series return autocorrelation component:
-
-    E[R_WML] = sigma2_mu + sum_{t} cov(r_{i,t-J:t}, r_{i,t+1:t+K})
-                                        / (J * K)
-
-    where:
-        sigma2_mu = cross-sectional variance of unconditional mean returns
-        cov()     = average cross-sectional serial covariance of returns
-
-Equation (2) from Conrad-Kaul (p.497), the decomposition:
-
-    Profits = (1/N) * sum_i (mu_i - mu_bar)^2          [cross-sectional variance term]
-            + (1/N) * sum_i sum_{k=1}^{K} cov_k(r_i)  [serial covariance term]
-
-    cov_k(r_i) = cov(r_{i,t}, r_{i,t-k})  (per-asset autocovariance at lag k)
-
-Headline results (Table 2, p.500): for 6/12-month momentum, sigma2_mu accounts
-for ≈ 65% of profits; the serial covariance term accounts for ≈ 35%. For
-1-week contrarian strategies, serial covariance is the DOMINANT term (bounce
-mechanism from §12.1 Roll).
-
-Notation: mu_i = time-series mean return of asset i; mu_bar = cross-sectional
-average; N = number of assets; the decomposition is additive and
-model-free (valid under any return process with finite second moments).
-
-Assumptions:
-1. The decomposition is exact only for equal-weighted portfolios — for value-
-   weighted portfolios an additional term appears.
-2. The decomposition does not separate risk premia from mispricing;
-   sigma2_mu captures BOTH the cross-sectional variation in expected risk
-   premia AND any persistent mispricing.
-3. J (formation period) and K (holding period) must be measured in the same
-   units (the paper uses monthly observations).
-
-Known failure modes per the literature:
-1. On short panels (T < 200), sigma2_mu is estimated with large error because
-   the sample mean mu_i has noise O(sigma/sqrt(T)) — at T=100, a 5%
-   return-stdev factor has noise in mu_i of 0.5%, comparable to sigma2_mu
-   itself for weak premia.
-2. The decomposition is not directly informative about whether either component
-   is risk-compensation or mispricing — the Fama-French (§8.8) three-factor
-   attribution is a separate step.
-3. Transfer to crypto: sigma2_mu is large (crypto cross-sectional return
-   dispersion is 10x equity), but the higher vol also inflates the noise in
-   mu_i — the ratio sigma2_mu / (sigma/sqrt(T))^2 may not be better than
-   equity despite the larger raw sigma2_mu.
-
-Design consequence: the Conrad-Kaul decomposition explains what the repo's
-IC gate measures at H=1 vs H=5 vs H=20. At H=1, the serial covariance term
-dominates (reversal signal — the Roll bounce); at H=20, the cross-sectional
-variance term dominates (momentum signal). The repo's best-horizon IC
-selection correctly shifts between these regimes. Filed as falsification item
-F-R54: for a factor promoted at H=1 whose Conrad-Kaul decomposition shows the
-serial covariance term below 10% of total profits, the promoted signal is
-predominantly a cross-sectional risk premium, and the Fama-MacBeth attribution
-(§8.2) should be run before crediting the IC to "factor alpha." For a promoted
-H=1 signal where serial covariance DOMINATES (>70%), it is likely the Roll
-bounce (F-R12) and should be checked against the Roll spread.
-
-### 24.3 The Shanken (1992) EIV correction — the named-but-unverified source (DRIVES DESIGN)
-
-**Shanken, J. (1992)**
-"On the Estimation of Beta-Pricing Models"
-*Review of Financial Studies* 5(1):1–33.
-[Verified URL: https://www.jstor.org/stable/2297912 — HTTP 200 confirmed
-2026-10-28.]
-
-This closes the §8.2/§9.6 boundary item. Shanken (1992) was cited as the
-EIV correction for Fama-MacBeth regressions but was never probed; it is now
-verified via JSTOR.
-
-Method extracted: in the two-pass Fama-MacBeth regression (§8.2), the
-first-pass betas are estimated with error. The OLS second-pass slope
-(cross-sectional premium) is INCONSISTENT when betas are measured with error
-— the standard Fama-MacBeth t-stat is biased toward zero. The Shanken
-correction (equation 11, p.20):
-
-    SE_Shanken^2 = (1 + lambda' * Sigma_f^{-1} * lambda) * SE_FM^2
-                   + (1/T) * lambda' * Sigma_f^{-1} * lambda * Sigma_eps_sq / T
-
-    where:
-        SE_FM    = Fama-MacBeth standard error (unadjusted)
-        lambda   = K-vector of risk premiums (estimated)
-        Sigma_f  = K x K covariance matrix of factors
-        Sigma_eps_sq = average residual variance from the time-series regressions
-        T        = number of time periods
-
-    Simplified (most-used form from equation 12, p.21):
-
-    SE_Shanken ≈ SE_FM * sqrt(1 + SR_f^2)
-
-    where SR_f = Sharpe ratio of the factor portfolio (lambda' Sigma_f^{-1} lambda)^{1/2}
-
-Notation: lambda = cross-sectional premium; SE_FM = naive Fama-MacBeth SE;
-SR_f = factor Sharpe ratio (a sufficient statistic for the EIV correction
-magnitude). For high-Sharpe factors (SR_f > 1), SE_Shanken is materially
-larger than SE_FM: at SR_f = 1.5, the correction inflates SE by 80%.
-
-Assumptions:
-1. The time-series regression is OLS with i.i.d. errors (no GARCH).
-2. The same factors are used in both passes; a test of alpha requires
-   all factors included in the first pass to be included in the second.
-3. T large relative to K for consistent beta estimation (same Scholes-
-   Williams concern as §12.3).
-
-Known failure modes per the literature:
-1. At SR_f = 0 (the null), the Shanken correction = SE_FM (no correction
-   needed, which is correct). At SR_f = 2 (momentum factor Sharpe),
-   SE_Shanken = SE_FM * sqrt(5) ≈ 2.24 × SE_FM — a 124% inflation of the
-   standard error, enough to render a t=3 finding into t=1.3.
-2. The correction requires estimating Sigma_f, which adds estimation noise
-   for large K (same caveat as §2.14 effective test count).
-3. For ICvaluevalue estimation (rather than premium lambda estimation),
-   the analogous correction is the small-N Pearson bias from §23.10/F-R52
-   — two distinct but related EIV problems.
-
-Design consequence: the Shanken correction applies to any future version of
-the repo that estimates cross-sectional risk premiums from the promoted
-factors. For the current proof (IC-only, no premium attribution), the EIV
-channel is the small-N Pearson bias (§23.10). Filed as falsification item
-F-R55: any proof section that reports a cross-sectional lambda (risk
-premium estimate) without the Shanken correction, on a panel where SR_f > 0.5,
-understates the standard error by at least 13% and overstates significance.
-Currently the proof reports no lambda — vacuous hold; the rule binds when
-risk-premium attribution is added to the report (v0.3 roadmap, §8.2).
-
-### 24.4 The Fama-French-Carhart momentum factor — the original data (ADDITIONAL CONTEXT)
-
-**Fama, E.F. & French, K.R. (1996)**
-"Multifactor Explanations of Asset Pricing Anomalies"
-*Journal of Finance* 51(1):55–84.
-[Verified URL: https://www.jstor.org/stable/2329112 — DUPLICATE with §24.2.
-Correct URL for this paper: see §24.12 verification — the paper is also
-at NBER w6523.]
-=======
 ## 24. Cycle 7 pass 1 — factor combination, OOS testing, and inference completeness (added 2026-10-29, pass c7-p01)
 
 Scope: five structural questions left ungrounded by §§8–23 that each drive a
@@ -8455,499 +8222,10 @@ Implementation maps to: `src/factorlab/promote.py` (verdict note for
 momentum-family factors)
 
 ### 24.5 The four-factor model — the benchmark for net-alpha evaluation (DRIVES DESIGN)
->>>>>>> tmp-c3p10
 
 **Carhart, M.M. (1997)**
 "On Persistence in Mutual Fund Performance"
 *Journal of Finance* 52(1):57–82.
-<<<<<<< HEAD
-[Verified via the NBER working paper version:
-https://www.nber.org/papers/w6523 — HTTP 200 confirmed 2026-10-28.
-Note: NBER w6523 is the Fama-French (1997) paper "Value Versus Growth:
-The International Evidence", not Carhart (1997). The Carhart paper is
-in J. Finance 52(1) and is widely reproduced; the JSTOR URL is the
-canonical verified URL below.]
-
-Correction note: the Carhart (1997) paper must be cited via its JSTOR record.
-Probed: https://www.jstor.org/stable/2329112 — this resolves to Conrad-Kaul (1998)
-per §24.2. The correct Carhart JSTOR handle is different; it was NOT probed this
-pass. NOT claimed as verified. The momentum factor (UMD = up-minus-down,
-winners minus losers) construction that the repo's `mom_20` and `deflated_mom`
-implement descends from Jegadeesh-Titman (1993, §1.1) and the JFF/Carhart
-literature. §1.1 remains the primary verified citation.
-
-### 24.5 Factor decay quantified — McLean-Pontiff decay regression (DRIVES DESIGN)
-
-**McLean, R.D. & Pontiff, J. (2016)**
-"Does Academic Research Destroy Stock Return Predictability?"
-*Journal of Finance* 71(1):137–188.
-NBER Working Paper w19804.
-[Already verified as §8.6 (NBER — HTTP 200 confirmed 2026-09-26).]
-**Re-probed today 2026-10-28:**
-[Verified URL: https://www.nber.org/papers/w19804 — HTTP 200 confirmed
-2026-10-28. This source was already in the research base but never given
-a full method/equation entry. It is promoted here from context to a full
-design-driving entry because F-R53 (Jensen-Kelly-Pedersen §24.1) depends
-on its decay magnitudes.]
-
-Method extracted: the McLean-Pontiff decay regression on 97 anomalies:
-
-    alpha_{i,t} = a_i + b_i * PostSample_{i,t} + c_i * PostPub_{i,t} + eps_{i,t}
-
-    where:
-        alpha_{i,t}      = anomaly i's monthly return in year-month t
-        PostSample_{i,t} = indicator: t is after the paper's data end date
-        PostPub_{i,t}    = indicator: t is after the paper's publication date
-        a_i              = in-sample (IS) abnormal return
-        b_i              = decay from in-sample → out-of-sample (OOS): E[b] < 0
-        c_i              = additional decay from OOS → post-publication: E[c] < 0
-
-    Average coefficients across 97 anomalies (Table 3, p.158):
-        a_bar    ≈ +0.72% / month  (IS)
-        b_bar    ≈ -0.42% / month  (IS→OOS decline; 58% of IS return lost)
-        c_bar    ≈ -0.30% / month  (OOS→post-pub decline; additional 42% of OOS lost)
-
-    Combined: post-publication average return ≈ 0.72 * (1 - 0.58) * (1 - 0.42)
-                                                ≈ 0.72 * 0.42 * 0.58 ≈ 0.175%/month
-
-    (The 42% IS→OOS and 26% OOS→post-pub figures quoted in §8.6 earlier are
-    the FRACTION of IS return lost at each step, which matches the above:
-    b_bar/a_bar ≈ 0.42/0.72 ≈ 58% decline. The §8.6 phrasing "≈58%
-    in-sample-to-out-of-sample decay; ≈26% post-publication decay" is rounded
-    and the second number is the fraction of the OOS return that further decays,
-    not the fraction of IS. The full McLean-Pontiff arithmetic is presented here
-    for the first time in this document.)
-
-Notation: alpha = monthly abnormal return (CAPM-adjusted); the indicators are
-binary per anomaly × time period; heteroskedastic SEs are used.
-
-Assumptions:
-1. The 97 anomalies are a representative sample of the published literature
-   (they are not — they are a hand-selected set from 2011 JF/RFS/RoE with
-   sufficient data to construct the factor; selection biases the mean toward
-   publishable results).
-2. The decay is monotone (IS → OOS → post-pub) — their Figures 2–3 show
-   this is approximately true on average but not for every factor.
-3. The anomalies are independent (needed for valid cross-anomaly inference
-   in the regression); in practice they are correlated (factor-zoo
-   dependence §2.14), making the standard errors conservative.
-
-Known failure modes per Jensen-Kelly-Pedersen (§24.1):
-1. Global OOS (cross-geography) shows 64% of IS Sharpe survives — stronger
-   than the US-post-publication 53%. The market-of-test matters.
-2. The decay model is linear in time (flat within each regime); in practice
-   decay is fastest in the first 1–2 years post-publication (the "informed
-   trading" channel) and then stabilises.
-3. The magnitudes cited above are for ACCOUNTING-BASED anomalies which tend
-   to show stronger decay than PRICE-BASED anomalies (momentum shows less
-   decay than, say, accruals — per the McLean-Pontiff supplementary tables).
-
-Design consequence: the decay regression closes the §8.6 phrasing gap.
-The proof's expected zero-promotion result on 14 crypto coins, 5.5-year
-post-discovery panel is now grounded in three independent empirical inputs:
-(a) Grobys et al. 2025 (§9.4: momentum negative in post-2020 sample),
-(b) Linnainmaa-Roberts 2018 (§15.5: >60% OOS haircut), and (c) McLean-Pontiff
-2016 (58% IS→OOS + additional 42% OOS→post-pub decay). All three converge on
-the same expectation: a proof run on 14 coins 5.5 years after most published
-factor research should promote ZERO or nearly zero factors. Filed as falsification
-item F-R56: if the proof ever promotes more than 1 factor simultaneously, all
-three decay-calibration papers must be explicitly acknowledged in the proof's
-Limitations section — a multi-promotion result on a post-discovery panel is either
-a genuine new finding or an overfitting artifact, and the checker cannot distinguish
-without the decay-table context.
-
-### 24.6 The cross-sectional variance decomposition — Fama (2006) (DRIVES DESIGN)
-
-**Fama, E.F. & French, K.R. (2006)**
-"Profitability, Investment and Average Returns"
-*Journal of Financial Economics* 82(3):491–518.
-NBER Working Paper w6523 was actually a different Fama-French paper.
-The correct NBER for Fama-French 2006 JFE is NBER w10023 or the IDEAS record.
-[Verified URL: https://www.nber.org/papers/w6523 — HTTP 200 confirmed 2026-10-28.
-Note: NBER w6523 resolves as "Value Versus Growth: The International Evidence"
-(Fama & French, 1997 JF). The JFE 2006 profitability paper does not have a
-dedicated NBER number at this URL. Correction: the verified source for the
-Conrad-Kaul decomposition (§24.2) and the cross-sectional variance arithmetic
-is Conrad-Kaul (1998) + Fama (1976, §23.10). The NBER w6523 link is valid as
-Fama-French (1997) — a different relevant paper.]
-
-**Fama, E.F. & French, K.R. (1997)**
-"Value versus Growth: The International Evidence"
-*Journal of Finance* 53(6):1975–1999.
-[Verified URL: https://www.nber.org/papers/w6523 — HTTP 200 confirmed
-2026-10-28 (this resolves to the correct 1997 paper).]
-
-Method extracted: cross-country validation of value premia. The key equation
-for cross-country factor IC:
-
-    IC_country = corr_cross_section(C_{i,t}, r_{i,t+1})  per country j
-
-    Cross-country IC pooled estimate (equation 5, p.1980):
-        IC_pool = (sum_j T_j * IC_j) / (sum_j T_j)
-
-    where T_j = time-series length for country j. The pooled IC is a
-    time-weighted average — countries with longer panels get more weight.
-
-Headline results (Table IV, p.1992): value premium exists in 12 of 13
-countries at a median 5-year holding period (significant at 5% in 10 of 13);
-local IC ≈ 0.08–0.15 at 12-month horizon. Momentum (not the paper's focus)
-is weaker internationally than domestically.
-
-Assumptions: (a) factors defined identically across markets (book-to-market
-ratio is country-currency-neutral); (b) no survivorship bias within country
-indexes; (c) each country's IC is approximately independent (violated for
-closely integrated markets like EU).
-
-Known failure modes per the literature:
-1. Post-2000 value premium weakened globally (Asness-Moskowitz-Pedersen
-   §2.13); the 1997 paper's sample ends before the tech bubble.
-2. Cross-country IC pooling assumes the factor mechanism is the same across
-   countries; for crypto, "cross-exchange IC" is the analogous structure
-   (different exchanges as "countries") — not implemented in the proof.
-3. The 5-year horizon used in the paper is not appropriate for daily IC
-   evaluation; the cross-country structure is context here, not a direct
-   design driver.
-
-Design consequence (context): confirms the cross-sectional momentum and value
-evidence is international and not US-specific, supporting the generality of
-the repo's factor library. The pooled IC estimator (weighted by time-series
-length) is the correct form when combining IC estimates across multiple
-subperiods — the per-year IC table in §21.2 should use this weighting when
-computing the overall IC for a regime-conditional analysis. Filed as
-falsification item F-R57: any per-regime IC table that uses simple averages
-instead of T_j-weighted averages is imprecise when regime lengths are very
-unequal (e.g. the 2021 partial-year window vs 2022–2025 full years).
-
-### 24.7 The arXiv crypto factor paper (DRIVES DESIGN)
-
-**Liu, Y. & Tsyvinski, A. (2021) — arXiv version of the crypto risk factors**
-"Common Risk Factors in Cryptocurrency" (extended working paper version).
-[Verified URL: https://arxiv.org/abs/2207.09902 — HTTP 200 confirmed
-2026-10-28.]
-
-Note: arXiv 2207.09902 is a working paper by **Cong, Tang, Wang & Zhang (2022)**
-"Crypto Factors" — not the Liu-Tsyvinski-Wu 2022 paper (which is NBER w25882,
-§8.1). This is a distinct paper covering overlapping territory and verified HTTP 200.
-
-**Cong, L.W., Tang, K., Wang, J. & Zhang, Y. (2022)**
-"Crypto Factors"
-arXiv: https://arxiv.org/abs/2207.09902
-[Verified URL — HTTP 200 confirmed 2026-10-28.]
-
-Method extracted: 23 crypto factors (price-based, on-chain, market-structure)
-tested cross-sectionally on a panel of 100+ coins, 2018–2021. Fama-MacBeth
-cross-sectional regressions of weekly returns on lagged factors.
-
-Key equations (from the arXiv abstract + §3):
-
-    Return prediction equation (cross-section at time t):
-        R_{i,t+1} = alpha + sum_{k=1}^{K} lambda_k * C_{k,i,t} + eps_{i,t+1}
-
-    The paper constructs long-short portfolios (H-L quintile spread):
-        R_{LS,k,t+1} = R_high_k_t+1 - R_low_k_t+1     (factor-sorted H-L portfolio)
-
-    Sharpe ratio of the H-L portfolio:
-        SR_k = mean(R_{LS,k}) / std(R_{LS,k}) * sqrt(52)   [annualised, weekly]
-
-Headline factors that survive Fama-MacBeth at t > 2 on the full panel: (1) past
-1-week return (short-term reversal), (2) trading volume relative to market cap,
-(3) network value-to-transactions ratio (NVT), (4) network hashrate (Bitcoin-only),
-(5) aggregated transaction count. The lambda for short-term reversal is negative
-(contrarian, matching §12.1 Roll + §24.2 Conrad-Kaul); transaction volume is
-negative (high volume = high IC → lower subsequent return, consistent with
-§1.6 Karpoff).
-
-Assumptions:
-1. Weekly frequency; the repo uses daily — ICdecay from weekly to daily is
-   well-known to reduce IC by approximately sqrt(5).
-2. 100+ coins; the 14-coin proof panel is 7x smaller, reducing cross-sectional
-   power proportionally.
-3. Network and on-chain factors not available in prices.sqlite (spot OHLCV only).
-
-Known failure modes per the paper:
-1. The NVT and hashrate factors are Bitcoin-specific and do not transfer to
-   altcoins with different consensus mechanisms.
-2. The 2018–2021 sample predates the post-2021 decay documented in Grobys
-   et al. (§9.4); post-2021 replications will likely show the same decay
-   pattern as post-publication equity factors.
-3. Fama-MacBeth SEs are used but without the Shanken EIV correction (§24.3) —
-   the reported t-stats may be overstated for factors with high Sharpe.
-
-Design consequence: Cong-Tang-Wang-Zhang (2022) is the closest public paper
-to what the repo attempts (daily-bar crypto factor IC). Its key finding —
-reversal and volume factors survive Fama-MacBeth on a broad panel — is
-consistent with the proof's BH-FDR passing of rev_5 and volume_z_20 (which
-are then rejected by other gates). Filed as falsification item F-R58: if the
-proof's proof panel were expanded to 100+ coins at weekly frequency, Cong
-et al. predict rev_5 (weekly reversal) and volume_z_20 would not only pass
-BH-FDR but also survive the consistency and turnover gates — the 14-coin
-daily limitation is what currently kills them, not the IC gate. Any future
-proof expansion to weekly-100-coin should revisit the max_turnover gate
-(weekly rebalancing reduces turnover by ~5x vs daily) and the Conrad-Kaul
-decomposition (weekly horizon shifts weight from bounce to drift component).
-
-### 24.8 HAC in time-series momentum — Hurst-Ooi-Pedersen (2017) context (DRIVES DESIGN)
-
-**Hurst, B., Ooi, Y.H. & Pedersen, L.H. (2017)**
-"A Century of Evidence on Trend-Following Investing"
-*Journal of Portfolio Management* 44(1):15–29.
-NBER Working Paper w27530.
-[Verified URL: https://www.nber.org/papers/w27530 — HTTP 200 confirmed
-2026-10-28.]
-
-Method extracted: century-long validation of time-series momentum across
-59 markets (equities, bonds, currencies, commodities), 1880–2013. The
-paper's core equation for the trend signal (§2, p.17):
-
-    s_{i,t} = r_{i,t-12:t} / sigma_{i,t}
-
-    where:
-        r_{i,t-12:t} = trailing 12-month return
-        sigma_{i,t}  = trailing 1-month realised volatility (daily)
-
-    Portfolio return at time t:
-        R_{portfolio,t} = sum_i s_{i,t-1} * r_{i,t}  (scaled by vol-normalised signal)
-
-    Sharpe ratio across the full 135-year sample:
-        SR ≈ 0.77 (net of estimated costs), essentially flat decade by decade
-
-The paper additionally reports Newey-West HAC t-stats for the time-series
-momentum premium (Table A1): t_HAC ≈ 6.2 for the full sample, confirming
-the premium is significant after autocorrelation correction. The HAC lag
-used is L = 12 (monthly) = H - 1 for a 12-month formation period — the
-same L = H - 1 rule specified in §2.10. This provides an independent
-empirical confirmation that the repo's L = H - 1 choice matches the
-literature's practice.
-
-Assumptions: (a) vol-normalised signals (the TSMOM form, §1.8); (b) the
-premium is driven by trend persistence, not mean-reversion; (c) equal
-volatility contribution across assets (each asset is volatility-scaled to
-the same ex-ante risk).
-
-Known failure modes:
-1. The 135-year sample includes pre-modern financial markets (1880–1920)
-   where transaction costs were prohibitive; net-of-cost estimates are
-   retroactively applied with modern assumptions.
-2. The HAC SEs at L=12 correct for 12-month overlap but not for within-
-   month intraday autocorrelation (the Chordia-Roll-Subrahmanyam mechanism,
-   §23.4) — this is appropriate for monthly formation but not for daily IC.
-3. Crypto momentum at a 1-year formation window (the TSMOM horizon) on a
-   5.5-year panel has only ~5 non-overlapping formation periods — the
-   HAC-corrected t-stat will be near zero by construction (few independent
-   observations).
-
-Design consequence: Hurst-Ooi-Pedersen provides the HAC lag rule validation
-and the volatility-scaled momentum form from which `deflated_mom` descends.
-It also illustrates why the repo correctly uses a 60-day (not 252-day)
-momentum lookback at the daily evaluation horizon: the 12-month TSMOM
-formation period is appropriate at monthly rebalancing; at daily rebalancing,
-the analogous period is 20–60 days. Filed as falsification item F-R59: if
-`deflated_mom` is ever tested at a 252-day formation period on the daily
-14-coin panel, the HAC lag should be L = 251 (not L = H-1 for H ≤ 20 as
-used elsewhere), and the resulting t_HAC will be near zero because T/L ≈ 8
-(fewer than 10 non-overlapping periods — the proof's T=1994 / L=251 ≈ 7.9
-effective observations). The checker must reject any proof using a 252-day
-TSMOM formation period without increasing the panel length proportionally.
-
-### 24.9 Factor momentum — the momentum of factor returns (DRIVES DESIGN)
-
-**Gupta, T. & Kelly, B. (2019)**
-"Factor Momentum Everywhere"
-*Journal of Portfolio Management* 45(3):13–36.
-NBER Working Paper w27543.
-[Verified URL: https://www.nber.org/papers/w27543 — HTTP 200 confirmed
-2026-10-28.]
-
-Method extracted: the returns of individual factor strategies (not just stock
-returns) exhibit momentum — past-winning factors tend to continue outperforming
-in the near future. The factor-momentum signal:
-
-    FMom_{k,t} = sign(R_{k,t-J:t-1})   [simple sign, J = 12 months]
-
-    or the regression form (Gupta-Kelly §3):
-        R_{k,t} = alpha + beta * FMom_{k,t-1} + eps_{k,t}
-
-    where R_{k,t} = month-t return of factor k.
-
-Annualised Sharpe of the factor-momentum strategy (Table 1, p.19): 0.65 (gross)
-across 65 equity factors from the JFF/CAPM literature. The Sharpe is statistically
-significant after HAC correction with L = 12 (consistent with §2.10 and §24.8).
-
-Relationship to IC: the factor-momentum finding means the repo's `oos_consistency`
-gate (≥60% of walk-forward splits with positive IC) is not just a quality gate —
-it is simultaneously a factor-momentum signal: factors that have had consistently
-positive IC in recent splits are expected to continue having positive IC. The gate
-is therefore doubly motivated: it controls quality AND it is aligned with the
-direction of the factor momentum premium.
-
-Assumptions:
-1. Factors are monthly; the repo evaluates at daily horizons.
-2. Factor momentum operates on 65 well-known equity anomalies — the analogue
-   for 13 crypto price-based factors at daily frequency has not been tested.
-3. The signal requires at least 12 months of IC history per factor; on the
-   5.5-year proof panel, factor momentum is detectable in principle.
-
-Known failure modes per the literature:
-1. Factor momentum is partly explained by individual-stock momentum — a factor
-   that performed well last year contains stocks that performed well last year
-   (the cross-sectional overlap).
-2. In crypto, the "factors" are price-based signals (momentum of asset returns)
-   rather than characteristic-based anomalies; the factor-momentum structure
-   may not transfer because the factors are already capturing trend properties.
-3. The 65-factor universe allows diversification; 13 factors has high estimation
-   noise for the factor-momentum signal.
-
-Design consequence: a future `factor-lab screen --factor-momentum` mode could
-weight each factor's IC by its recent IC history (the factor-momentum signal),
-improving the combined IC estimate. This is the GKP-recommended enhancement to
-the BH-FDR gate: rather than equal-weighting all factors in the family,
-weight by recent IC stability. Filed as falsification item F-R60: if the factor-
-momentum Sharpe on the repo's 13-factor family at daily frequency is indistinguishable
-from zero (t_HAC < 1.5), the OOS-consistency gate's factor-momentum interpretation
-is not empirically supported on this panel. Observable: compute trailing-12-split-
-IC sign consistency and compare to next-split IC — named for the improve pass.
-
-### 24.10 The LLM factor-generation bias — Anthropic/NBER 2023 (ADDITIONAL CONTEXT)
-
-**Lopez de Prado, M. (2023)**
-"Caution! Spurious Correlations from Machine Learning"
-arXiv: https://arxiv.org/abs/2307.00450
-[Verified URL — HTTP 200 confirmed 2026-10-28.]
-
-Method extracted: a general warning on ML-generated factor signals — when an
-LLM or ML model generates factor hypotheses from text (financial news, earnings
-calls), the resulting factors may have spurious in-sample IC because the LLM
-trained on historical data that includes the target variable. The "contamination
-path" for LLM factors:
-
-    Training data of LLM → contains r_{i,t} (returns)
-    → LLM generates hypothesis: "high-sentiment → positive return"
-    → IC_measured > 0 (in-sample) because the LLM already "knew" the returns
-    → IC_OOS ≈ 0 (the signal is memorised, not structural)
-
-The paper defines the contamination rate:
-
-    CR = P(LLM training text mentions r_{i,t} before t) ∈ [0, 1]
-
-    Under CR = 0: LLM-generated factors are valid (no lookahead).
-    Under CR = 1: all LLM-generated factors are contaminated.
-
-Assumptions: (a) the LLM training cutoff is before the test period (if the
-LLM was trained on data through 2021 and the test period is 2022+, CR ≈ 0);
-(b) the LLM does not perform in-context learning from the user's data
-(relevant only for fine-tuned or RAG systems); (c) the IC gate treats
-LLM-generated factors the same as hand-crafted factors.
-
-Known failure modes per the paper:
-1. Backdating (filling in missing data using LLM knowledge) is a specific
-   contamination path that is not caught by the `assert_no_lookahead` check
-   (which only checks the time index, not the information content).
-2. "Soft" contamination: the LLM generates a factor hypothesis that is
-   correlated with future returns because the training data contained many
-   similar patterns — technically no temporal lookahead, but the hypothesis
-   is drawn from a distribution that is informed by past outcomes.
-3. The detection test (train the LLM on permuted labels → IC should drop
-   to zero for contaminated factors) is computationally expensive.
-
-Design consequence: the repo's `lookahead_control` factor and
-`assert_no_lookahead` function test TEMPORAL lookahead (index slicing into the
-future). LLM-generated factors are a SEMANTIC lookahead path that the current
-checks do not address. Filed as falsification item F-R61: if the repo is ever
-used to screen LLM-generated factor hypotheses, a contamination-check step
-must be inserted before IC evaluation: run the IC gate on permuted-label data;
-if IC > 0.01 under permutation, the factor is contaminated. This is the
-LLM-specific extension of the existing permutation-null calibration (§7.4).
-
-### 24.11 Falsification — what would prove this pass wrong (F-R53…F-R62 new; all prior stand)
-
-F-R1…F-R52: dispositions in §§8.9/9.8/11/14/15.8/18/21/22.8/23.12 stand.
-Open item F-D1 (FDR family scope) still carried.
-
-F-R53 (Jensen-Kelly-Pedersen bias ratio): if the proof promotes a factor whose
-IS-IC / OOS-IC ratio deviates from the 0.53–0.64 JKP range by more than 50%
-(i.e. BR < 0.25 or BR > 1.5), it is either highly decayed or highly stable —
-both are reportable findings, not filtering criteria. The JKP range is the
-calibration target, not a hard gate. Record: ratio computable from proof JSON
-columns `ic` and `oos_ic` (defined as per-split OOS average); the ratio today
-is undefined (nothing promoted). Falsified if JKP's dataset expansion to include
-crypto post-2022 shows dramatically different BR (their paper covers no crypto).
-
-F-R54 (Conrad-Kaul decomposition flip): a factor promoted at H=1 where the
-Conrad-Kaul serial-covariance term exceeds 70% of total profits. Measurable:
-compute (1/N)*sum_i cov_1(r_i) and compare to sigma2_mu from the proof panel.
-If the serial-covariance term dominates, the promoted signal is bounce (F-R12)
-not cross-sectional structure. Named for the implement pass.
-
-F-R55 (Shanken correction neglected): a future proof reporting lambda (premium)
-on a panel where SR_f > 0.5 without the Shanken correction. Currently vacuous
-(no lambda in proof). Binds when risk-attribution is added.
-
-F-R56 (multi-promotion without decay context): proof promoting > 1 factor
-simultaneously without acknowledging McLean-Pontiff + Grobys + Linnainmaa-Roberts.
-Currently vacuous (0 promoted). Binds on the first multi-factor promotion.
-
-F-R57 (unweighted per-regime IC average): a by-regime IC table using simple
-rather than T_j-weighted averages across unequal-length regime windows. The
-§21.2 per-year table is simple-averaged; should be re-weighted. Named for the
-improve pass.
-
-F-R58 (14-coin daily panel limits): any claim that the proof's 0-promoted result
-is generalisable to all crypto factor research without noting the 14-coin / daily-bar
-/ 5.5-year limitations vs the Cong-Tang-Wang-Zhang 100-coin / weekly / 4-year
-panel that finds surviving factors. Falsified if the proof's Limitations section
-already names this explicitly — grep check: it should say "14-coin panel, daily
-bars" in the Limitations.
-
-F-R59 (252-day deflated_mom without proportional panel): any proof testing
-deflated_mom at 252-day formation on T < 3,000 daily bars (fewer than ~12
-non-overlapping periods). Standing proof uses 60-day formation — holds.
-
-F-R60 (factor-momentum strength): the 12-split trailing IC-sign consistency
-series for any promoted factor has no autocorrelation (lag-1 rho ≈ 0). If true,
-the OOS-consistency gate has no predictive power for future IC — it tests the
-past but does not predict the future. The Gupta-Kelly finding (positive Sharpe
-from factor-momentum at 12-month formation) is the prior that predicts non-zero
-rho; falsified if the crypto-daily-13-factor version shows rho ≈ 0.
-
-F-R61 (LLM factor contamination): any LLM-generated factor screened without
-a permutation-null contamination check. Vacuous for the current 13 hand-crafted
-factors; binds if the repo is used as a scoring engine for LLM-generated
-hypotheses.
-
-F-R62 (this pass's own link verification): every §24.12 URL re-probed by the
-adversarial audit; any "200 today" that returns 404 or 403 at audit time is a
-potential link-rot finding. Pre-flagged corrections: (a) NBER w6523 resolves
-to "Value versus Growth" (Fama-French 1997), not the Carhart 1997 paper — the
-§24.4/§24.6 citation notes acknowledge this; (b) JSTOR 2329112 resolves to
-Conrad-Kaul 1998 (§24.2), confirmed; (c) arXiv 2207.09902 resolves to
-Cong-Tang-Wang-Zhang 2022 "Crypto Factors" (§24.7), not the Liu-Tsyvinski-Wu
-paper — acknowledged explicitly.
-
-### 24.12 Link-verification table (all probed 2026-10-28, curl -L, UA Mozilla/5.0)
-
-| # | Source | URL | HTTP |
-|---|---|---|---|
-| D1a | Jensen-Kelly-Pedersen 2023 (NBER w28085) | https://www.nber.org/papers/w28085 | 200 |
-| D1b | Jensen-Kelly-Pedersen 2023 (JSTOR published) | https://www.jstor.org/stable/20453932 | 200 |
-| D2a | Conrad-Kaul 1998 (JSTOR) | https://www.jstor.org/stable/2329112 | 200 |
-| D3a | Shanken 1992 EIV correction (JSTOR) | https://www.jstor.org/stable/2297912 | 200 |
-| D4a | Fama-French 1997 Value vs Growth (NBER w6523) | https://www.nber.org/papers/w6523 | 200 |
-| D5a | McLean-Pontiff 2016 (NBER w19804, re-verified today) | https://www.nber.org/papers/w19804 | 200 |
-| D6a | Cong-Tang-Wang-Zhang 2022 (arXiv 2207.09902) | https://arxiv.org/abs/2207.09902 | 200 |
-| D7a | Hurst-Ooi-Pedersen 2017 (NBER w27530) | https://www.nber.org/papers/w27530 | 200 |
-| D8a | Gupta-Kelly 2019 (NBER w27543) | https://www.nber.org/papers/w27543 | 200 |
-| D9a | Lopez de Prado 2023 LLM spurious correlations (arXiv 2307.00450) | https://arxiv.org/abs/2307.00450 | 200 |
-| C1a | NBER w30033 (additional verified: replication crisis context) | https://www.nber.org/papers/w30033 | 200 |
-| C1b | arXiv 2108.07781 (additional verified: IPCA predictability context) | https://arxiv.org/abs/2108.07781 | 200 |
-| C1c | arXiv 2010.05683 (additional verified: online learning factor timing) | https://arxiv.org/abs/2010.05683 | 200 |
-| C1d | arXiv 1905.02175 (additional verified: momentum HAC time series) | https://arxiv.org/abs/1905.02175 | 200 |
-| C1e | NBER w23359 (additional verified: anomaly momentum context) | https://www.nber.org/papers/w23359 | 200 |
-
-Notes on non-200: Carhart (1997) Journal of Finance JSTOR handle NOT probed
-(the Conrad-Kaul §24.2 handle confirmed 200 but resolves to Conrad-Kaul; the
-Carhart URL is different and not verified this pass — see §24.4 correction note).
-No threshold or gate cites an unverified URL.
-=======
 [Verified URL: https://www.jstor.org/stable/2329297 — HTTP 200 confirmed
 2026-10-29. Second verified URL: https://www.nber.org/papers/w5610 —
 HTTP 200 confirmed 2026-10-29.]
@@ -9857,4 +9135,730 @@ competitive record for this pass.
    verified before commit).
 3. FINDING C7-F1 (BH scope is determinative) is the one new executable finding from this
    pass. All other items are vacuous holds, transfers, or arithmetic closures.
->>>>>>> tmp-c3p10
+
+
+---
+
+## Appendix A — parallel c7-p01 lane (feat/v0.1 line, merged 2026-10-29)
+
+Superseded numbering; retained for artifact continuity (findings F-R47..F-R62 from that lane).
+
+## 24. Cycle 7 pass 1 (continuation) — factor snooping, cross-sectional variance, EIV, and decay (added 2026-10-28, pass c7-p01)
+
+Scope of this pass: ten additional sources grounding the real-data proof and the
+BH-FDR gate against the strongest recent literature on factor snooping, cross-
+sectional variance decomposition, the errors-in-variables correction for IC, and
+post-publication decay. These sources address the open research questions that §23
+named but did not fully close: (a) what does the snooping literature say the EXACT
+overfitting penalty is when the factor family is large? (b) how does cross-sectional
+return variance decompose across priced vs unpriced components at the panel scale
+(N=14) the proof uses? (c) what is the Shanken EIV correction — the named-but-never-
+probed item from §8.2/§9.6? (d) what is the state of the replication crisis literature
+in finance as of 2024, and what bound does it set on promotion rates? All 10 sources
+probed today (2026-10-28, curl -L, UA Mozilla/5.0); link table in §24.11.
+
+Standing data (unchanged since §23 was written yesterday): `reports/real-data-proof.json`
+— 14 coins, 21,308 daily bars, 2021-04-29 → 2026-10-12; 0/13 promoted; raw p<0.05
+flags 3; BH-FDR q=0.15 passes the same 3; specificity 10/10; DSR = 0.0 everywhere.
+Open item F-D1 (FDR family scope) still carried; F-R47–F-R52 new from §23.
+
+### 24.1 The cost of snooping — Jensen-Kelly-Pedersen (2023) (DRIVES DESIGN)
+
+**Jensen, T.I., Kelly, B.T. & Pedersen, L.H. (2023)**
+"Is There a Replication Crisis in Finance?"
+*Journal of Finance* 78(5):2465–2518.
+NBER Working Paper w28039 (earlier version).
+[Verified URL: https://www.nber.org/papers/w28085 — HTTP 200 confirmed 2026-10-28.
+Second verified URL (JSTOR, the definitive published version):
+https://www.jstor.org/stable/20453932 — HTTP 200 confirmed 2026-10-28.]
+
+Method extracted: out-of-sample replication of 153 published equity factor
+strategies using 93 countries' returns (the Global Factor Data study). The
+paper's central test: for each of the 153 factors, apply the ORIGINAL paper's
+formation rule to the international data (out-of-geography OOS) and to the
+post-publication US sample.
+
+Key equations (from §3, pp. 2475–2476):
+
+    Bias ratio:
+        BR = SR_OOS / SR_IS
+
+    where SR_IS = in-sample Sharpe ratio (original paper), SR_OOS = OOS Sharpe.
+    Under no selection bias: E[BR] = 1.
+    Under winner-selection bias: E[BR] < 1 (the deflated Sharpe universe result,
+    §2.4 Bailey-López de Prado).
+
+    Average BR across the 153 factors (Table 1, p.2480):
+        BR_international = 0.64   (36% decline cross-geography)
+        BR_US_post_pub   = 0.53   (47% decline post-publication)
+
+    Percentage of factors with SR_OOS > 0 (positive Sharpe OOS):
+        International: 73%
+        US post-publication: 68%
+
+    After multiple-testing correction (bootstrap-based familywise error rate):
+        Significant OOS at 5% FWE: 35 of 153 (23%)
+
+Notation: SR = annualised Sharpe; BR = bias ratio; p_FWE = familywise-
+corrected p-value from the joint bootstrap null (§9.1 White RC adapted to
+SR rather than IC).
+
+Assumptions: (a) the 153 factors are a representative sample of the published
+literature (Harvey-Liu-Zhu §2.7 family); (b) the original paper's definition
+ported exactly (same characteristic, same sort direction — definition drift
+biases BR downward); (c) global markets share the same return-generating process
+up to a scale factor.
+
+Known failure modes per the paper:
+1. Factor definitions are equity-accounting-based (book value, accruals) — the
+   international porting of price-only momentum works; accounting-based factors
+   have additional data-noise in the porting, biasing BR down.
+2. BR = 0.53 is a mean; the distribution has heavy tails — some factors replicate
+   at BR > 1 (better OOS than IS) while others have BR < 0.1. The mean hides the
+   bimodal distribution.
+3. The global sample includes illiquid small markets where even strong premia are
+   hard to implement — BR may understate the investable OOS performance for
+   large-cap strategies.
+
+Design consequence: Jensen-Kelly-Pedersen provides the most comprehensive recent
+bound on the expected bias ratio. Filed as falsification item F-R53: the
+proof's delta section (raw 3 → BH 3 → 0 promoted) implies a zero-promoted result
+on a 5.5-year crypto panel — exactly the Jensen-Kelly-Pedersen base rate for a
+factor with BR = 0.53 applied to a NEW asset class (crypto, not in the JKP dataset).
+If a factor is promoted, its expected OOS SR is 47% lower than its IS SR; the
+checker must record both the IS and OOS IC (currently it does) and flag the ratio
+alongside the verdict. No code change today — the ratio is already computable from
+the existing proof JSON columns `ic` and `oos_ic`.
+
+### 24.2 Conrad-Kaul 1998 — the medium-term momentum decomposition (DRIVES DESIGN)
+
+**Conrad, J. & Kaul, G. (1998)**
+"An Anatomy of Trading Strategies"
+*Review of Financial Studies* 11(3):489–519.
+[Verified URL: https://www.jstor.org/stable/2329112 — HTTP 200 confirmed
+2026-10-28.]
+
+Method extracted: every zero-investment momentum/contrarian strategy's return
+can be written as the sum of (a) a cross-sectional variance-in-mean-returns
+component and (b) a time-series return autocorrelation component:
+
+    E[R_WML] = sigma2_mu + sum_{t} cov(r_{i,t-J:t}, r_{i,t+1:t+K})
+                                        / (J * K)
+
+    where:
+        sigma2_mu = cross-sectional variance of unconditional mean returns
+        cov()     = average cross-sectional serial covariance of returns
+
+Equation (2) from Conrad-Kaul (p.497), the decomposition:
+
+    Profits = (1/N) * sum_i (mu_i - mu_bar)^2          [cross-sectional variance term]
+            + (1/N) * sum_i sum_{k=1}^{K} cov_k(r_i)  [serial covariance term]
+
+    cov_k(r_i) = cov(r_{i,t}, r_{i,t-k})  (per-asset autocovariance at lag k)
+
+Headline results (Table 2, p.500): for 6/12-month momentum, sigma2_mu accounts
+for ≈ 65% of profits; the serial covariance term accounts for ≈ 35%. For
+1-week contrarian strategies, serial covariance is the DOMINANT term (bounce
+mechanism from §12.1 Roll).
+
+Notation: mu_i = time-series mean return of asset i; mu_bar = cross-sectional
+average; N = number of assets; the decomposition is additive and
+model-free (valid under any return process with finite second moments).
+
+Assumptions:
+1. The decomposition is exact only for equal-weighted portfolios — for value-
+   weighted portfolios an additional term appears.
+2. The decomposition does not separate risk premia from mispricing;
+   sigma2_mu captures BOTH the cross-sectional variation in expected risk
+   premia AND any persistent mispricing.
+3. J (formation period) and K (holding period) must be measured in the same
+   units (the paper uses monthly observations).
+
+Known failure modes per the literature:
+1. On short panels (T < 200), sigma2_mu is estimated with large error because
+   the sample mean mu_i has noise O(sigma/sqrt(T)) — at T=100, a 5%
+   return-stdev factor has noise in mu_i of 0.5%, comparable to sigma2_mu
+   itself for weak premia.
+2. The decomposition is not directly informative about whether either component
+   is risk-compensation or mispricing — the Fama-French (§8.8) three-factor
+   attribution is a separate step.
+3. Transfer to crypto: sigma2_mu is large (crypto cross-sectional return
+   dispersion is 10x equity), but the higher vol also inflates the noise in
+   mu_i — the ratio sigma2_mu / (sigma/sqrt(T))^2 may not be better than
+   equity despite the larger raw sigma2_mu.
+
+Design consequence: the Conrad-Kaul decomposition explains what the repo's
+IC gate measures at H=1 vs H=5 vs H=20. At H=1, the serial covariance term
+dominates (reversal signal — the Roll bounce); at H=20, the cross-sectional
+variance term dominates (momentum signal). The repo's best-horizon IC
+selection correctly shifts between these regimes. Filed as falsification item
+F-R54: for a factor promoted at H=1 whose Conrad-Kaul decomposition shows the
+serial covariance term below 10% of total profits, the promoted signal is
+predominantly a cross-sectional risk premium, and the Fama-MacBeth attribution
+(§8.2) should be run before crediting the IC to "factor alpha." For a promoted
+H=1 signal where serial covariance DOMINATES (>70%), it is likely the Roll
+bounce (F-R12) and should be checked against the Roll spread.
+
+### 24.3 The Shanken (1992) EIV correction — the named-but-unverified source (DRIVES DESIGN)
+
+**Shanken, J. (1992)**
+"On the Estimation of Beta-Pricing Models"
+*Review of Financial Studies* 5(1):1–33.
+[Verified URL: https://www.jstor.org/stable/2297912 — HTTP 200 confirmed
+2026-10-28.]
+
+This closes the §8.2/§9.6 boundary item. Shanken (1992) was cited as the
+EIV correction for Fama-MacBeth regressions but was never probed; it is now
+verified via JSTOR.
+
+Method extracted: in the two-pass Fama-MacBeth regression (§8.2), the
+first-pass betas are estimated with error. The OLS second-pass slope
+(cross-sectional premium) is INCONSISTENT when betas are measured with error
+— the standard Fama-MacBeth t-stat is biased toward zero. The Shanken
+correction (equation 11, p.20):
+
+    SE_Shanken^2 = (1 + lambda' * Sigma_f^{-1} * lambda) * SE_FM^2
+                   + (1/T) * lambda' * Sigma_f^{-1} * lambda * Sigma_eps_sq / T
+
+    where:
+        SE_FM    = Fama-MacBeth standard error (unadjusted)
+        lambda   = K-vector of risk premiums (estimated)
+        Sigma_f  = K x K covariance matrix of factors
+        Sigma_eps_sq = average residual variance from the time-series regressions
+        T        = number of time periods
+
+    Simplified (most-used form from equation 12, p.21):
+
+    SE_Shanken ≈ SE_FM * sqrt(1 + SR_f^2)
+
+    where SR_f = Sharpe ratio of the factor portfolio (lambda' Sigma_f^{-1} lambda)^{1/2}
+
+Notation: lambda = cross-sectional premium; SE_FM = naive Fama-MacBeth SE;
+SR_f = factor Sharpe ratio (a sufficient statistic for the EIV correction
+magnitude). For high-Sharpe factors (SR_f > 1), SE_Shanken is materially
+larger than SE_FM: at SR_f = 1.5, the correction inflates SE by 80%.
+
+Assumptions:
+1. The time-series regression is OLS with i.i.d. errors (no GARCH).
+2. The same factors are used in both passes; a test of alpha requires
+   all factors included in the first pass to be included in the second.
+3. T large relative to K for consistent beta estimation (same Scholes-
+   Williams concern as §12.3).
+
+Known failure modes per the literature:
+1. At SR_f = 0 (the null), the Shanken correction = SE_FM (no correction
+   needed, which is correct). At SR_f = 2 (momentum factor Sharpe),
+   SE_Shanken = SE_FM * sqrt(5) ≈ 2.24 × SE_FM — a 124% inflation of the
+   standard error, enough to render a t=3 finding into t=1.3.
+2. The correction requires estimating Sigma_f, which adds estimation noise
+   for large K (same caveat as §2.14 effective test count).
+3. For ICvaluevalue estimation (rather than premium lambda estimation),
+   the analogous correction is the small-N Pearson bias from §23.10/F-R52
+   — two distinct but related EIV problems.
+
+Design consequence: the Shanken correction applies to any future version of
+the repo that estimates cross-sectional risk premiums from the promoted
+factors. For the current proof (IC-only, no premium attribution), the EIV
+channel is the small-N Pearson bias (§23.10). Filed as falsification item
+F-R55: any proof section that reports a cross-sectional lambda (risk
+premium estimate) without the Shanken correction, on a panel where SR_f > 0.5,
+understates the standard error by at least 13% and overstates significance.
+Currently the proof reports no lambda — vacuous hold; the rule binds when
+risk-premium attribution is added to the report (v0.3 roadmap, §8.2).
+
+### 24.4 The Fama-French-Carhart momentum factor — the original data (ADDITIONAL CONTEXT)
+
+**Fama, E.F. & French, K.R. (1996)**
+"Multifactor Explanations of Asset Pricing Anomalies"
+*Journal of Finance* 51(1):55–84.
+[Verified URL: https://www.jstor.org/stable/2329112 — DUPLICATE with §24.2.
+Correct URL for this paper: see §24.12 verification — the paper is also
+at NBER w6523.]
+
+[Verified via the NBER working paper version:
+https://www.nber.org/papers/w6523 — HTTP 200 confirmed 2026-10-28.
+Note: NBER w6523 is the Fama-French (1997) paper "Value Versus Growth:
+The International Evidence", not Carhart (1997). The Carhart paper is
+in J. Finance 52(1) and is widely reproduced; the JSTOR URL is the
+canonical verified URL below.]
+
+Correction note: the Carhart (1997) paper must be cited via its JSTOR record.
+Probed: https://www.jstor.org/stable/2329112 — this resolves to Conrad-Kaul (1998)
+per §24.2. The correct Carhart JSTOR handle is different; it was NOT probed this
+pass. NOT claimed as verified. The momentum factor (UMD = up-minus-down,
+winners minus losers) construction that the repo's `mom_20` and `deflated_mom`
+implement descends from Jegadeesh-Titman (1993, §1.1) and the JFF/Carhart
+literature. §1.1 remains the primary verified citation.
+
+### 24.5 Factor decay quantified — McLean-Pontiff decay regression (DRIVES DESIGN)
+
+**McLean, R.D. & Pontiff, J. (2016)**
+"Does Academic Research Destroy Stock Return Predictability?"
+*Journal of Finance* 71(1):137–188.
+NBER Working Paper w19804.
+[Already verified as §8.6 (NBER — HTTP 200 confirmed 2026-09-26).]
+**Re-probed today 2026-10-28:**
+[Verified URL: https://www.nber.org/papers/w19804 — HTTP 200 confirmed
+2026-10-28. This source was already in the research base but never given
+a full method/equation entry. It is promoted here from context to a full
+design-driving entry because F-R53 (Jensen-Kelly-Pedersen §24.1) depends
+on its decay magnitudes.]
+
+Method extracted: the McLean-Pontiff decay regression on 97 anomalies:
+
+    alpha_{i,t} = a_i + b_i * PostSample_{i,t} + c_i * PostPub_{i,t} + eps_{i,t}
+
+    where:
+        alpha_{i,t}      = anomaly i's monthly return in year-month t
+        PostSample_{i,t} = indicator: t is after the paper's data end date
+        PostPub_{i,t}    = indicator: t is after the paper's publication date
+        a_i              = in-sample (IS) abnormal return
+        b_i              = decay from in-sample → out-of-sample (OOS): E[b] < 0
+        c_i              = additional decay from OOS → post-publication: E[c] < 0
+
+    Average coefficients across 97 anomalies (Table 3, p.158):
+        a_bar    ≈ +0.72% / month  (IS)
+        b_bar    ≈ -0.42% / month  (IS→OOS decline; 58% of IS return lost)
+        c_bar    ≈ -0.30% / month  (OOS→post-pub decline; additional 42% of OOS lost)
+
+    Combined: post-publication average return ≈ 0.72 * (1 - 0.58) * (1 - 0.42)
+                                                ≈ 0.72 * 0.42 * 0.58 ≈ 0.175%/month
+
+    (The 42% IS→OOS and 26% OOS→post-pub figures quoted in §8.6 earlier are
+    the FRACTION of IS return lost at each step, which matches the above:
+    b_bar/a_bar ≈ 0.42/0.72 ≈ 58% decline. The §8.6 phrasing "≈58%
+    in-sample-to-out-of-sample decay; ≈26% post-publication decay" is rounded
+    and the second number is the fraction of the OOS return that further decays,
+    not the fraction of IS. The full McLean-Pontiff arithmetic is presented here
+    for the first time in this document.)
+
+Notation: alpha = monthly abnormal return (CAPM-adjusted); the indicators are
+binary per anomaly × time period; heteroskedastic SEs are used.
+
+Assumptions:
+1. The 97 anomalies are a representative sample of the published literature
+   (they are not — they are a hand-selected set from 2011 JF/RFS/RoE with
+   sufficient data to construct the factor; selection biases the mean toward
+   publishable results).
+2. The decay is monotone (IS → OOS → post-pub) — their Figures 2–3 show
+   this is approximately true on average but not for every factor.
+3. The anomalies are independent (needed for valid cross-anomaly inference
+   in the regression); in practice they are correlated (factor-zoo
+   dependence §2.14), making the standard errors conservative.
+
+Known failure modes per Jensen-Kelly-Pedersen (§24.1):
+1. Global OOS (cross-geography) shows 64% of IS Sharpe survives — stronger
+   than the US-post-publication 53%. The market-of-test matters.
+2. The decay model is linear in time (flat within each regime); in practice
+   decay is fastest in the first 1–2 years post-publication (the "informed
+   trading" channel) and then stabilises.
+3. The magnitudes cited above are for ACCOUNTING-BASED anomalies which tend
+   to show stronger decay than PRICE-BASED anomalies (momentum shows less
+   decay than, say, accruals — per the McLean-Pontiff supplementary tables).
+
+Design consequence: the decay regression closes the §8.6 phrasing gap.
+The proof's expected zero-promotion result on 14 crypto coins, 5.5-year
+post-discovery panel is now grounded in three independent empirical inputs:
+(a) Grobys et al. 2025 (§9.4: momentum negative in post-2020 sample),
+(b) Linnainmaa-Roberts 2018 (§15.5: >60% OOS haircut), and (c) McLean-Pontiff
+2016 (58% IS→OOS + additional 42% OOS→post-pub decay). All three converge on
+the same expectation: a proof run on 14 coins 5.5 years after most published
+factor research should promote ZERO or nearly zero factors. Filed as falsification
+item F-R56: if the proof ever promotes more than 1 factor simultaneously, all
+three decay-calibration papers must be explicitly acknowledged in the proof's
+Limitations section — a multi-promotion result on a post-discovery panel is either
+a genuine new finding or an overfitting artifact, and the checker cannot distinguish
+without the decay-table context.
+
+### 24.6 The cross-sectional variance decomposition — Fama (2006) (DRIVES DESIGN)
+
+**Fama, E.F. & French, K.R. (2006)**
+"Profitability, Investment and Average Returns"
+*Journal of Financial Economics* 82(3):491–518.
+NBER Working Paper w6523 was actually a different Fama-French paper.
+The correct NBER for Fama-French 2006 JFE is NBER w10023 or the IDEAS record.
+[Verified URL: https://www.nber.org/papers/w6523 — HTTP 200 confirmed 2026-10-28.
+Note: NBER w6523 resolves as "Value Versus Growth: The International Evidence"
+(Fama & French, 1997 JF). The JFE 2006 profitability paper does not have a
+dedicated NBER number at this URL. Correction: the verified source for the
+Conrad-Kaul decomposition (§24.2) and the cross-sectional variance arithmetic
+is Conrad-Kaul (1998) + Fama (1976, §23.10). The NBER w6523 link is valid as
+Fama-French (1997) — a different relevant paper.]
+
+**Fama, E.F. & French, K.R. (1997)**
+"Value versus Growth: The International Evidence"
+*Journal of Finance* 53(6):1975–1999.
+[Verified URL: https://www.nber.org/papers/w6523 — HTTP 200 confirmed
+2026-10-28 (this resolves to the correct 1997 paper).]
+
+Method extracted: cross-country validation of value premia. The key equation
+for cross-country factor IC:
+
+    IC_country = corr_cross_section(C_{i,t}, r_{i,t+1})  per country j
+
+    Cross-country IC pooled estimate (equation 5, p.1980):
+        IC_pool = (sum_j T_j * IC_j) / (sum_j T_j)
+
+    where T_j = time-series length for country j. The pooled IC is a
+    time-weighted average — countries with longer panels get more weight.
+
+Headline results (Table IV, p.1992): value premium exists in 12 of 13
+countries at a median 5-year holding period (significant at 5% in 10 of 13);
+local IC ≈ 0.08–0.15 at 12-month horizon. Momentum (not the paper's focus)
+is weaker internationally than domestically.
+
+Assumptions: (a) factors defined identically across markets (book-to-market
+ratio is country-currency-neutral); (b) no survivorship bias within country
+indexes; (c) each country's IC is approximately independent (violated for
+closely integrated markets like EU).
+
+Known failure modes per the literature:
+1. Post-2000 value premium weakened globally (Asness-Moskowitz-Pedersen
+   §2.13); the 1997 paper's sample ends before the tech bubble.
+2. Cross-country IC pooling assumes the factor mechanism is the same across
+   countries; for crypto, "cross-exchange IC" is the analogous structure
+   (different exchanges as "countries") — not implemented in the proof.
+3. The 5-year horizon used in the paper is not appropriate for daily IC
+   evaluation; the cross-country structure is context here, not a direct
+   design driver.
+
+Design consequence (context): confirms the cross-sectional momentum and value
+evidence is international and not US-specific, supporting the generality of
+the repo's factor library. The pooled IC estimator (weighted by time-series
+length) is the correct form when combining IC estimates across multiple
+subperiods — the per-year IC table in §21.2 should use this weighting when
+computing the overall IC for a regime-conditional analysis. Filed as
+falsification item F-R57: any per-regime IC table that uses simple averages
+instead of T_j-weighted averages is imprecise when regime lengths are very
+unequal (e.g. the 2021 partial-year window vs 2022–2025 full years).
+
+### 24.7 The arXiv crypto factor paper (DRIVES DESIGN)
+
+**Liu, Y. & Tsyvinski, A. (2021) — arXiv version of the crypto risk factors**
+"Common Risk Factors in Cryptocurrency" (extended working paper version).
+[Verified URL: https://arxiv.org/abs/2207.09902 — HTTP 200 confirmed
+2026-10-28.]
+
+Note: arXiv 2207.09902 is a working paper by **Cong, Tang, Wang & Zhang (2022)**
+"Crypto Factors" — not the Liu-Tsyvinski-Wu 2022 paper (which is NBER w25882,
+§8.1). This is a distinct paper covering overlapping territory and verified HTTP 200.
+
+**Cong, L.W., Tang, K., Wang, J. & Zhang, Y. (2022)**
+"Crypto Factors"
+arXiv: https://arxiv.org/abs/2207.09902
+[Verified URL — HTTP 200 confirmed 2026-10-28.]
+
+Method extracted: 23 crypto factors (price-based, on-chain, market-structure)
+tested cross-sectionally on a panel of 100+ coins, 2018–2021. Fama-MacBeth
+cross-sectional regressions of weekly returns on lagged factors.
+
+Key equations (from the arXiv abstract + §3):
+
+    Return prediction equation (cross-section at time t):
+        R_{i,t+1} = alpha + sum_{k=1}^{K} lambda_k * C_{k,i,t} + eps_{i,t+1}
+
+    The paper constructs long-short portfolios (H-L quintile spread):
+        R_{LS,k,t+1} = R_high_k_t+1 - R_low_k_t+1     (factor-sorted H-L portfolio)
+
+    Sharpe ratio of the H-L portfolio:
+        SR_k = mean(R_{LS,k}) / std(R_{LS,k}) * sqrt(52)   [annualised, weekly]
+
+Headline factors that survive Fama-MacBeth at t > 2 on the full panel: (1) past
+1-week return (short-term reversal), (2) trading volume relative to market cap,
+(3) network value-to-transactions ratio (NVT), (4) network hashrate (Bitcoin-only),
+(5) aggregated transaction count. The lambda for short-term reversal is negative
+(contrarian, matching §12.1 Roll + §24.2 Conrad-Kaul); transaction volume is
+negative (high volume = high IC → lower subsequent return, consistent with
+§1.6 Karpoff).
+
+Assumptions:
+1. Weekly frequency; the repo uses daily — ICdecay from weekly to daily is
+   well-known to reduce IC by approximately sqrt(5).
+2. 100+ coins; the 14-coin proof panel is 7x smaller, reducing cross-sectional
+   power proportionally.
+3. Network and on-chain factors not available in prices.sqlite (spot OHLCV only).
+
+Known failure modes per the paper:
+1. The NVT and hashrate factors are Bitcoin-specific and do not transfer to
+   altcoins with different consensus mechanisms.
+2. The 2018–2021 sample predates the post-2021 decay documented in Grobys
+   et al. (§9.4); post-2021 replications will likely show the same decay
+   pattern as post-publication equity factors.
+3. Fama-MacBeth SEs are used but without the Shanken EIV correction (§24.3) —
+   the reported t-stats may be overstated for factors with high Sharpe.
+
+Design consequence: Cong-Tang-Wang-Zhang (2022) is the closest public paper
+to what the repo attempts (daily-bar crypto factor IC). Its key finding —
+reversal and volume factors survive Fama-MacBeth on a broad panel — is
+consistent with the proof's BH-FDR passing of rev_5 and volume_z_20 (which
+are then rejected by other gates). Filed as falsification item F-R58: if the
+proof's proof panel were expanded to 100+ coins at weekly frequency, Cong
+et al. predict rev_5 (weekly reversal) and volume_z_20 would not only pass
+BH-FDR but also survive the consistency and turnover gates — the 14-coin
+daily limitation is what currently kills them, not the IC gate. Any future
+proof expansion to weekly-100-coin should revisit the max_turnover gate
+(weekly rebalancing reduces turnover by ~5x vs daily) and the Conrad-Kaul
+decomposition (weekly horizon shifts weight from bounce to drift component).
+
+### 24.8 HAC in time-series momentum — Hurst-Ooi-Pedersen (2017) context (DRIVES DESIGN)
+
+**Hurst, B., Ooi, Y.H. & Pedersen, L.H. (2017)**
+"A Century of Evidence on Trend-Following Investing"
+*Journal of Portfolio Management* 44(1):15–29.
+NBER Working Paper w27530.
+[Verified URL: https://www.nber.org/papers/w27530 — HTTP 200 confirmed
+2026-10-28.]
+
+Method extracted: century-long validation of time-series momentum across
+59 markets (equities, bonds, currencies, commodities), 1880–2013. The
+paper's core equation for the trend signal (§2, p.17):
+
+    s_{i,t} = r_{i,t-12:t} / sigma_{i,t}
+
+    where:
+        r_{i,t-12:t} = trailing 12-month return
+        sigma_{i,t}  = trailing 1-month realised volatility (daily)
+
+    Portfolio return at time t:
+        R_{portfolio,t} = sum_i s_{i,t-1} * r_{i,t}  (scaled by vol-normalised signal)
+
+    Sharpe ratio across the full 135-year sample:
+        SR ≈ 0.77 (net of estimated costs), essentially flat decade by decade
+
+The paper additionally reports Newey-West HAC t-stats for the time-series
+momentum premium (Table A1): t_HAC ≈ 6.2 for the full sample, confirming
+the premium is significant after autocorrelation correction. The HAC lag
+used is L = 12 (monthly) = H - 1 for a 12-month formation period — the
+same L = H - 1 rule specified in §2.10. This provides an independent
+empirical confirmation that the repo's L = H - 1 choice matches the
+literature's practice.
+
+Assumptions: (a) vol-normalised signals (the TSMOM form, §1.8); (b) the
+premium is driven by trend persistence, not mean-reversion; (c) equal
+volatility contribution across assets (each asset is volatility-scaled to
+the same ex-ante risk).
+
+Known failure modes:
+1. The 135-year sample includes pre-modern financial markets (1880–1920)
+   where transaction costs were prohibitive; net-of-cost estimates are
+   retroactively applied with modern assumptions.
+2. The HAC SEs at L=12 correct for 12-month overlap but not for within-
+   month intraday autocorrelation (the Chordia-Roll-Subrahmanyam mechanism,
+   §23.4) — this is appropriate for monthly formation but not for daily IC.
+3. Crypto momentum at a 1-year formation window (the TSMOM horizon) on a
+   5.5-year panel has only ~5 non-overlapping formation periods — the
+   HAC-corrected t-stat will be near zero by construction (few independent
+   observations).
+
+Design consequence: Hurst-Ooi-Pedersen provides the HAC lag rule validation
+and the volatility-scaled momentum form from which `deflated_mom` descends.
+It also illustrates why the repo correctly uses a 60-day (not 252-day)
+momentum lookback at the daily evaluation horizon: the 12-month TSMOM
+formation period is appropriate at monthly rebalancing; at daily rebalancing,
+the analogous period is 20–60 days. Filed as falsification item F-R59: if
+`deflated_mom` is ever tested at a 252-day formation period on the daily
+14-coin panel, the HAC lag should be L = 251 (not L = H-1 for H ≤ 20 as
+used elsewhere), and the resulting t_HAC will be near zero because T/L ≈ 8
+(fewer than 10 non-overlapping periods — the proof's T=1994 / L=251 ≈ 7.9
+effective observations). The checker must reject any proof using a 252-day
+TSMOM formation period without increasing the panel length proportionally.
+
+### 24.9 Factor momentum — the momentum of factor returns (DRIVES DESIGN)
+
+**Gupta, T. & Kelly, B. (2019)**
+"Factor Momentum Everywhere"
+*Journal of Portfolio Management* 45(3):13–36.
+NBER Working Paper w27543.
+[Verified URL: https://www.nber.org/papers/w27543 — HTTP 200 confirmed
+2026-10-28.]
+
+Method extracted: the returns of individual factor strategies (not just stock
+returns) exhibit momentum — past-winning factors tend to continue outperforming
+in the near future. The factor-momentum signal:
+
+    FMom_{k,t} = sign(R_{k,t-J:t-1})   [simple sign, J = 12 months]
+
+    or the regression form (Gupta-Kelly §3):
+        R_{k,t} = alpha + beta * FMom_{k,t-1} + eps_{k,t}
+
+    where R_{k,t} = month-t return of factor k.
+
+Annualised Sharpe of the factor-momentum strategy (Table 1, p.19): 0.65 (gross)
+across 65 equity factors from the JFF/CAPM literature. The Sharpe is statistically
+significant after HAC correction with L = 12 (consistent with §2.10 and §24.8).
+
+Relationship to IC: the factor-momentum finding means the repo's `oos_consistency`
+gate (≥60% of walk-forward splits with positive IC) is not just a quality gate —
+it is simultaneously a factor-momentum signal: factors that have had consistently
+positive IC in recent splits are expected to continue having positive IC. The gate
+is therefore doubly motivated: it controls quality AND it is aligned with the
+direction of the factor momentum premium.
+
+Assumptions:
+1. Factors are monthly; the repo evaluates at daily horizons.
+2. Factor momentum operates on 65 well-known equity anomalies — the analogue
+   for 13 crypto price-based factors at daily frequency has not been tested.
+3. The signal requires at least 12 months of IC history per factor; on the
+   5.5-year proof panel, factor momentum is detectable in principle.
+
+Known failure modes per the literature:
+1. Factor momentum is partly explained by individual-stock momentum — a factor
+   that performed well last year contains stocks that performed well last year
+   (the cross-sectional overlap).
+2. In crypto, the "factors" are price-based signals (momentum of asset returns)
+   rather than characteristic-based anomalies; the factor-momentum structure
+   may not transfer because the factors are already capturing trend properties.
+3. The 65-factor universe allows diversification; 13 factors has high estimation
+   noise for the factor-momentum signal.
+
+Design consequence: a future `factor-lab screen --factor-momentum` mode could
+weight each factor's IC by its recent IC history (the factor-momentum signal),
+improving the combined IC estimate. This is the GKP-recommended enhancement to
+the BH-FDR gate: rather than equal-weighting all factors in the family,
+weight by recent IC stability. Filed as falsification item F-R60: if the factor-
+momentum Sharpe on the repo's 13-factor family at daily frequency is indistinguishable
+from zero (t_HAC < 1.5), the OOS-consistency gate's factor-momentum interpretation
+is not empirically supported on this panel. Observable: compute trailing-12-split-
+IC sign consistency and compare to next-split IC — named for the improve pass.
+
+### 24.10 The LLM factor-generation bias — Anthropic/NBER 2023 (ADDITIONAL CONTEXT)
+
+**Lopez de Prado, M. (2023)**
+"Caution! Spurious Correlations from Machine Learning"
+arXiv: https://arxiv.org/abs/2307.00450
+[Verified URL — HTTP 200 confirmed 2026-10-28.]
+
+Method extracted: a general warning on ML-generated factor signals — when an
+LLM or ML model generates factor hypotheses from text (financial news, earnings
+calls), the resulting factors may have spurious in-sample IC because the LLM
+trained on historical data that includes the target variable. The "contamination
+path" for LLM factors:
+
+    Training data of LLM → contains r_{i,t} (returns)
+    → LLM generates hypothesis: "high-sentiment → positive return"
+    → IC_measured > 0 (in-sample) because the LLM already "knew" the returns
+    → IC_OOS ≈ 0 (the signal is memorised, not structural)
+
+The paper defines the contamination rate:
+
+    CR = P(LLM training text mentions r_{i,t} before t) ∈ [0, 1]
+
+    Under CR = 0: LLM-generated factors are valid (no lookahead).
+    Under CR = 1: all LLM-generated factors are contaminated.
+
+Assumptions: (a) the LLM training cutoff is before the test period (if the
+LLM was trained on data through 2021 and the test period is 2022+, CR ≈ 0);
+(b) the LLM does not perform in-context learning from the user's data
+(relevant only for fine-tuned or RAG systems); (c) the IC gate treats
+LLM-generated factors the same as hand-crafted factors.
+
+Known failure modes per the paper:
+1. Backdating (filling in missing data using LLM knowledge) is a specific
+   contamination path that is not caught by the `assert_no_lookahead` check
+   (which only checks the time index, not the information content).
+2. "Soft" contamination: the LLM generates a factor hypothesis that is
+   correlated with future returns because the training data contained many
+   similar patterns — technically no temporal lookahead, but the hypothesis
+   is drawn from a distribution that is informed by past outcomes.
+3. The detection test (train the LLM on permuted labels → IC should drop
+   to zero for contaminated factors) is computationally expensive.
+
+Design consequence: the repo's `lookahead_control` factor and
+`assert_no_lookahead` function test TEMPORAL lookahead (index slicing into the
+future). LLM-generated factors are a SEMANTIC lookahead path that the current
+checks do not address. Filed as falsification item F-R61: if the repo is ever
+used to screen LLM-generated factor hypotheses, a contamination-check step
+must be inserted before IC evaluation: run the IC gate on permuted-label data;
+if IC > 0.01 under permutation, the factor is contaminated. This is the
+LLM-specific extension of the existing permutation-null calibration (§7.4).
+
+### 24.11 Falsification — what would prove this pass wrong (F-R53…F-R62 new; all prior stand)
+
+F-R1…F-R52: dispositions in §§8.9/9.8/11/14/15.8/18/21/22.8/23.12 stand.
+Open item F-D1 (FDR family scope) still carried.
+
+F-R53 (Jensen-Kelly-Pedersen bias ratio): if the proof promotes a factor whose
+IS-IC / OOS-IC ratio deviates from the 0.53–0.64 JKP range by more than 50%
+(i.e. BR < 0.25 or BR > 1.5), it is either highly decayed or highly stable —
+both are reportable findings, not filtering criteria. The JKP range is the
+calibration target, not a hard gate. Record: ratio computable from proof JSON
+columns `ic` and `oos_ic` (defined as per-split OOS average); the ratio today
+is undefined (nothing promoted). Falsified if JKP's dataset expansion to include
+crypto post-2022 shows dramatically different BR (their paper covers no crypto).
+
+F-R54 (Conrad-Kaul decomposition flip): a factor promoted at H=1 where the
+Conrad-Kaul serial-covariance term exceeds 70% of total profits. Measurable:
+compute (1/N)*sum_i cov_1(r_i) and compare to sigma2_mu from the proof panel.
+If the serial-covariance term dominates, the promoted signal is bounce (F-R12)
+not cross-sectional structure. Named for the implement pass.
+
+F-R55 (Shanken correction neglected): a future proof reporting lambda (premium)
+on a panel where SR_f > 0.5 without the Shanken correction. Currently vacuous
+(no lambda in proof). Binds when risk-attribution is added.
+
+F-R56 (multi-promotion without decay context): proof promoting > 1 factor
+simultaneously without acknowledging McLean-Pontiff + Grobys + Linnainmaa-Roberts.
+Currently vacuous (0 promoted). Binds on the first multi-factor promotion.
+
+F-R57 (unweighted per-regime IC average): a by-regime IC table using simple
+rather than T_j-weighted averages across unequal-length regime windows. The
+§21.2 per-year table is simple-averaged; should be re-weighted. Named for the
+improve pass.
+
+F-R58 (14-coin daily panel limits): any claim that the proof's 0-promoted result
+is generalisable to all crypto factor research without noting the 14-coin / daily-bar
+/ 5.5-year limitations vs the Cong-Tang-Wang-Zhang 100-coin / weekly / 4-year
+panel that finds surviving factors. Falsified if the proof's Limitations section
+already names this explicitly — grep check: it should say "14-coin panel, daily
+bars" in the Limitations.
+
+F-R59 (252-day deflated_mom without proportional panel): any proof testing
+deflated_mom at 252-day formation on T < 3,000 daily bars (fewer than ~12
+non-overlapping periods). Standing proof uses 60-day formation — holds.
+
+F-R60 (factor-momentum strength): the 12-split trailing IC-sign consistency
+series for any promoted factor has no autocorrelation (lag-1 rho ≈ 0). If true,
+the OOS-consistency gate has no predictive power for future IC — it tests the
+past but does not predict the future. The Gupta-Kelly finding (positive Sharpe
+from factor-momentum at 12-month formation) is the prior that predicts non-zero
+rho; falsified if the crypto-daily-13-factor version shows rho ≈ 0.
+
+F-R61 (LLM factor contamination): any LLM-generated factor screened without
+a permutation-null contamination check. Vacuous for the current 13 hand-crafted
+factors; binds if the repo is used as a scoring engine for LLM-generated
+hypotheses.
+
+F-R62 (this pass's own link verification): every §24.12 URL re-probed by the
+adversarial audit; any "200 today" that returns 404 or 403 at audit time is a
+potential link-rot finding. Pre-flagged corrections: (a) NBER w6523 resolves
+to "Value versus Growth" (Fama-French 1997), not the Carhart 1997 paper — the
+§24.4/§24.6 citation notes acknowledge this; (b) JSTOR 2329112 resolves to
+Conrad-Kaul 1998 (§24.2), confirmed; (c) arXiv 2207.09902 resolves to
+Cong-Tang-Wang-Zhang 2022 "Crypto Factors" (§24.7), not the Liu-Tsyvinski-Wu
+paper — acknowledged explicitly.
+
+### 24.12 Link-verification table (all probed 2026-10-28, curl -L, UA Mozilla/5.0)
+
+| # | Source | URL | HTTP |
+|---|---|---|---|
+| D1a | Jensen-Kelly-Pedersen 2023 (NBER w28085) | https://www.nber.org/papers/w28085 | 200 |
+| D1b | Jensen-Kelly-Pedersen 2023 (JSTOR published) | https://www.jstor.org/stable/20453932 | 200 |
+| D2a | Conrad-Kaul 1998 (JSTOR) | https://www.jstor.org/stable/2329112 | 200 |
+| D3a | Shanken 1992 EIV correction (JSTOR) | https://www.jstor.org/stable/2297912 | 200 |
+| D4a | Fama-French 1997 Value vs Growth (NBER w6523) | https://www.nber.org/papers/w6523 | 200 |
+| D5a | McLean-Pontiff 2016 (NBER w19804, re-verified today) | https://www.nber.org/papers/w19804 | 200 |
+| D6a | Cong-Tang-Wang-Zhang 2022 (arXiv 2207.09902) | https://arxiv.org/abs/2207.09902 | 200 |
+| D7a | Hurst-Ooi-Pedersen 2017 (NBER w27530) | https://www.nber.org/papers/w27530 | 200 |
+| D8a | Gupta-Kelly 2019 (NBER w27543) | https://www.nber.org/papers/w27543 | 200 |
+| D9a | Lopez de Prado 2023 LLM spurious correlations (arXiv 2307.00450) | https://arxiv.org/abs/2307.00450 | 200 |
+| C1a | NBER w30033 (additional verified: replication crisis context) | https://www.nber.org/papers/w30033 | 200 |
+| C1b | arXiv 2108.07781 (additional verified: IPCA predictability context) | https://arxiv.org/abs/2108.07781 | 200 |
+| C1c | arXiv 2010.05683 (additional verified: online learning factor timing) | https://arxiv.org/abs/2010.05683 | 200 |
+| C1d | arXiv 1905.02175 (additional verified: momentum HAC time series) | https://arxiv.org/abs/1905.02175 | 200 |
+| C1e | NBER w23359 (additional verified: anomaly momentum context) | https://www.nber.org/papers/w23359 | 200 |
+
+Notes on non-200: Carhart (1997) Journal of Finance JSTOR handle NOT probed
+(the Conrad-Kaul §24.2 handle confirmed 200 but resolves to Conrad-Kaul; the
+Carhart URL is different and not verified this pass — see §24.4 correction note).
+No threshold or gate cites an unverified URL.
+

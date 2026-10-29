@@ -1095,7 +1095,7 @@ verdict on this panel.
 ### pytest
 
 ```
-$ /home/openclaw/portfolio/factor-lab/.venv/bin/pytest tests/ 2>&1 | tail -5
+$ .venv/bin/pytest tests/ 2>&1 | tail -5
 171 passed, 2 warnings in 240.23s (0:04:00)
 ```
 
@@ -1131,3 +1131,54 @@ Branch: feat/v0.1, commit 861930e
 - Added test_proof_checker_rejects_forged_specificity (F-C3 fix) to tests/test_adversarial.py
 - Updated real-data-proof.md/json with dataset as of 2026-10-14 (21,332 bars, 14 coins)
 - 171 tests passing (up from 167 in cycle 5)
+
+## c7-p04-implement-1 (2026-10-29) — cycle 7 implement pass 1
+
+Landed the c7 research line (tmp-c3p10: Clark-West OOS stat wiring, BH family-scope
+lock, F-R41..F-R60 closures) plus this pass's fixes onto feat/v0.1. Formatting fix:
+`ruff format tests/test_bh_family_scope.py tests/test_clark_west.py` (previous pass
+left 2 files unformatted). RESEARCH.md merge resolved: tmp-c3p10 base (numbering cited
+by tests) + Appendix A preserving the parallel c7-p01 lane's sections. F1 fix: removed
+the last absolute host path from EVIDENCE.md (checker-clean).
+
+### pytest (on tmp-c3p10 tree == merged src/tests/scripts)
+
+```
+$ .venv/bin/python -m pytest
+192 passed, 2 warnings in 245.18s (0:04:05)
+```
+
+### ruff
+
+```
+$ .venv/bin/python -m ruff check . && .venv/bin/python -m ruff format --check .
+All checks passed!
+30 files already formatted
+```
+
+### real-data proof checker (F4)
+
+```
+$ .venv/bin/python scripts/check_real_data_proof.py
+check_real_data_proof: all checks passed.
+PROOF_COMPLETE
+```
+
+### internal-refs checker (F1), after EVIDENCE.md host-path fix
+
+```
+$ .venv/bin/python scripts/check_no_internal_refs.py
+check_no_internal_refs: CLEAN — no forbidden tokens found.
+```
+
+### vertical slice: single-factor promote (raw)
+
+```
+$ factor-lab promote noise_control --data signal
+...
+  note: WF splits: 5, method=walk_forward, cw=0.39 (Clark-West; >1.645 = OOS content)
+  note: BH FDR q=0.1, m=3 tests (3 horizons + 0 extra)
+Result: REJECT
+(exit 1 as intended)
+```
+
