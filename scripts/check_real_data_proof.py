@@ -4,6 +4,16 @@ Checks that both report files exist, contain all required F2 sections,
 and that the F3 thresholds (specificity, sensitivity, stability) are met.
 Also runs check_no_internal_refs.py as a final gate.
 
+Enforces the C7-F1 BH family-scope rule (docs/RESEARCH.md 26.1, F-D1):
+the BH family is the SET OF FACTORS (one best-horizon raw p-value per
+factor, m = number of factors), never the (factor, horizon) grid and
+never each horizon independently. On the 14-coin panel, per-horizon BH
+(m = 13 at each horizon, no selection first) discovered a seeded noise
+control at H=1 that the factor-level family correctly rejects — scope is
+determinative, not cosmetic. This checker recomputes BH from the JSON's
+per-factor p-values at the declared m and q and fails closed on any
+mismatch, so a proof computed at another scope cannot cross the gate.
+
 Exits 0 and prints PROOF_COMPLETE on success.
 Exits 1 on any failure with a clear message per failing check.
 
@@ -334,6 +344,89 @@ def check_md_json_consistency() -> list[str]:
     return fails
 
 
+def check_bh_family_scope() -> list[str]:
+    """C7-F1 / F-D1: the BH family is the FACTOR set, not the horizon grid.
+
+    docs/RESEARCH.md 26.1: BH applied per-horizon independently (m=13 at
+    each horizon, no best-horizon selection first) is determinative on the
+    real panel — it promoted a seeded noise control at H=1 that the
+    factor-level family rejects. The proof's rule is: one best-horizon raw
+    p-value per factor, then BH at m = number of factors. This check fails
+    closed on any other scope:
+
+    1. the markdown must declare the BH-FDR q level and the family size m;
+    2. m must equal the number of real_factors rows in the JSON;
+    3. every bh_fdr_pass flag must equal BH(p_raw) recomputed at that m
+       and q — flags computed at any other scope cannot match.
+    """
+    if not _PROOF_JSON.exists() or not _PROOF_MD.exists():
+        return []
+
+    try:
+        data = json.loads(_PROOF_JSON.read_text(encoding="utf-8"))
+    except json.JSONDecodeError:
+        return []  # already caught by check_json_fields
+
+    rows = data.get("real_factors")
+    if not isinstance(rows, list) or not rows:
+        return []  # already caught by structure checks
+
+    fails: list[str] = []
+    md_text = _PROOF_MD.read_text(encoding="utf-8")
+
+    q_match = re.search(r"BH-FDR q=([0-9]*\.?[0-9]+)", md_text)
+    if not q_match:
+        return ["BH SCOPE: markdown never declares the BH-FDR q level"]
+    q = float(q_match.group(1))
+
+    m_match = re.search(r"family:\s*(\d+)\s*factors", md_text, re.IGNORECASE)
+    if not m_match:
+        return [
+            "BH SCOPE: markdown never declares the BH family size "
+            "(expected 'family: <m> factors' — C7-F1)"
+        ]
+    declared_m = int(m_match.group(1))
+    if declared_m != len(rows):
+        fails.append(
+            f"BH SCOPE FAIL: markdown declares family m={declared_m} but the JSON "
+            f"has {len(rows)} real_factors rows. The family is the factor set."
+        )
+
+    from factorlab.significance import benjamini_hochberg
+
+    p_vals: list[float] = []
+    valid_rows: list[dict] = []
+    for r in rows:
+        p = r.get("p_raw")
+        if isinstance(p, int | float) and not isinstance(p, bool):
+            p_vals.append(float(p))
+            valid_rows.append(r)
+        else:
+            fails.append(f"BH SCOPE: {r.get('factor')} missing numeric p_raw")
+    if len(valid_rows) != len(rows):
+        return fails
+
+    mask = benjamini_hochberg(p_vals, q=q)
+    n_sig = 0
+    for r, passed in zip(valid_rows, mask):
+        if bool(r.get("bh_fdr_pass")) != bool(passed):
+            fails.append(
+                f"BH SCOPE FAIL: {r.get('factor')} bh_fdr_pass="
+                f"{r.get('bh_fdr_pass')} but BH recomputed at m={len(p_vals)}, "
+                f"q={q} on the per-factor p-values gives {bool(passed)}. "
+                "The family scope must be the factor set (one best-horizon p "
+                "per factor), not per-horizon or per-(factor, horizon) pairs."
+            )
+        n_sig += int(bool(passed))
+    delta = data.get("delta", {})
+    if isinstance(delta.get("n_bh_fdr_sig"), int) and delta["n_bh_fdr_sig"] != n_sig:
+        fails.append(
+            f"BH SCOPE FAIL: delta.n_bh_fdr_sig={delta['n_bh_fdr_sig']} but the "
+            f"factor-level BH recompute finds {n_sig}."
+        )
+    return fails
+
+
 def check_f3_aggregate_consistency(data: dict) -> list[str]:
     """Verify F3 self-reported aggregates match the per-entry verdicts (F-C3 fix).
 
@@ -440,6 +533,7 @@ def main() -> int:
     all_failures.extend(check_bars_against_source())
     all_failures.extend(check_section_content())
     all_failures.extend(check_md_json_consistency())
+    all_failures.extend(check_bh_family_scope())
     if _PROOF_JSON.exists():
         try:
             _data = json.loads(_PROOF_JSON.read_text(encoding="utf-8"))

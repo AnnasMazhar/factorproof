@@ -82,6 +82,14 @@ def to_markdown(
         )
         lines.append(line)
 
+    lines.append("")
+    lines.append("## Limitations")
+    lines.append("")
+    lines.append(
+        "- IC values are on raw returns; the systematic fraction per "
+        "Grundy & Martin (2001) is unknown on this panel where FF4 "
+        "factors are not constructible."
+    )
     return "\n".join(lines)
 
 
@@ -236,7 +244,7 @@ def to_html(
 
 def _md_table_to_html(md: str) -> str:
     """Convert a Markdown pipe-table to HTML. Simple, no deps."""
-    lines = [row.strip() for row in md.strip().splitlines() if row.strip()]
+    lines = [row.strip() for row in md.strip().splitlines() if row.strip().startswith("|")]
     rows = []
     for i, line in enumerate(lines):
         if line.startswith("|---") or line.startswith("| ---"):

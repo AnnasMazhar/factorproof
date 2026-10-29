@@ -23,7 +23,7 @@ from dataclasses import dataclass
 import numpy as np
 import pandas as pd
 
-from .evaluate import FactorMetrics, evaluate_factor
+from .evaluate import FactorMetrics, evaluate_factor, oos_cw_stat
 from .factors.base import Factor
 
 # ---------------------------------------------------------------------------
@@ -207,6 +207,7 @@ class WalkForwardResult:
     oos_ic_ir: float
     sign_consistency: float  # fraction of splits with IC matching overall sign
     n_splits: int
+    oos_cw_stat: float = float("nan")  # Clark-West MSPE-adjusted OOS stat (F-R53)
 
 
 def evaluate_walk_forward(
@@ -305,6 +306,7 @@ def evaluate_walk_forward(
                 oos_ic_ir=ic_ir,
                 sign_consistency=sign_match,
                 n_splits=len(ics),
+                oos_cw_stat=oos_cw_stat(factor_vals, df, splits, h),
             )
         )
 
@@ -413,7 +415,10 @@ def check_lookahead_runtime(
     try:
         factor_vals = factor.compute(df)
     except Exception as e:
-        return (False, f"factor.compute() raised: {e}")
+        # Fail closed (F-B5): a factor that raises here but computes
+        # elsewhere (e.g. only on unperturbed data) would otherwise dodge
+        # every lookahead layer. An honest factor computes on real data.
+        return (True, f"factor.compute() raised on real data, fail-closed: {e}")
 
     # Pivot to wide format for correlation calculation
     close = df.pivot(index="date", columns="asset", values="close")
@@ -554,7 +559,9 @@ def check_lookahead_perturbation(
     try:
         baseline = factor.compute(df)
     except Exception as e:
-        return (False, f"factor.compute() raised: {e}")
+        # Fail closed (F-B5): without a baseline there is nothing to
+        # compare against, so causality cannot be verified.
+        return (True, f"factor.compute() raised on baseline, fail-closed: {e}")
 
     all_dates = sorted(df["date"].unique())
     n_dates = len(all_dates)
@@ -603,7 +610,15 @@ def check_lookahead_perturbation(
         try:
             retested = factor.compute(perturbed)
         except Exception as e:
-            return (False, f"factor.compute() raised on perturbed panel: {e}")
+            # Fail closed (F-B5): the perturbed panel has identical shape,
+            # dtypes and index — only values are reordered within the
+            # window. Raising here while the baseline computed fine proves
+            # data-dependent refusal, the exact shape of a gate-evasion
+            # attack. An honest factor computes on any same-shape panel.
+            return (
+                True,
+                f"factor.compute() raised on perturbed panel, fail-closed: {e}",
+            )
 
         first_perturbed = pd.Timestamp(window_dates[0])
         past_mask = baseline.index.get_level_values("date") < first_perturbed

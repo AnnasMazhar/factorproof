@@ -1095,3 +1095,158 @@ the table is a regime average, and the tool is honest about it.
   **not observed** (grep empty today).
 - Family discipline: falsified if the report's screened set differs from
   13 real + 10 noise — **not observed**.
+
+## 13. Cycle 7 update — applicability, closed (2026-10-29, pass c7-p03)
+
+This pass closes every open item from cycle-7 passes 1–2 (F-R41…F-R57 plus F-R58…F-R60;
+dispositions in docs/RESEARCH.md §26). No code changed. The three executed experiments
+(F-R41 scope test, F-R44 minBF arithmetic, F-R52 bias correction) produced one new
+major finding (C7-F1: BH family scope is determinative at m=13 vs m=39).
+
+### 13.1 Tuesday recipe status: unchanged
+
+The §8.1 proof commands and the §10.1–§10.2 pre-screens stand. The proof artifact is
+from 2026-10-12 (21,308 daily bars); the dataset has grown by approximately 12 bars/day
+in the two weeks since. The proof is not re-run (motion, not evidence), but two new
+optional pre-screens from cycle 7 research are now recommended:
+
+**New pre-screen 1 — volatility-correlation check (F-R55 context, §18.3):**
+```bash
+python3 -c "
+# Confirm the Moreira-Muir mechanism sign before running vol-managed factor variants.
+# Expected: panel mean corr(lagged 20d variance, next-day return) < 0 (cycle 5 result: -0.011)
+# If a coin shows corr > +0.05, vol-managed variants of promoted factors are contra-indicated.
+import sqlite3, json
+# ... (standard load, same pattern as §10.1)
+"
+```
+Reference numbers from §18.3: panel mean = −0.011 (correct sign, small magnitude);
+BTC +0.007, HBAR +0.009, SOL +0.003 (contra-indicated for vol-managed variants on these
+specific coins). This pre-screen is optional (no vol-managed factors are currently in the
+repo's default family).
+
+**New pre-screen 2 — daily-bar convention check (F-R49 context, §23.4):**
+State explicitly which daily-bar close convention your prices.sqlite uses. The repo's
+proof uses midnight UTC (Unix timestamp rounded to the UTC day boundary). If your data
+uses a different close convention (16:00 UTC, exchange-local midnight), note this in the
+research log alongside any proof output — IC values may differ by up to one factor-length
+day across close conventions for momentum factors at H=1.
+
+```bash
+# Verify the bar convention of your prices.sqlite
+python3 -c "
+import sqlite3
+con = sqlite3.connect('file:///path/to/prices.sqlite?mode=ro', uri=True)
+# Check what time the 'ts' column represents (Unix epoch → UTC hour)
+import datetime
+row = con.execute('select ts, coin from candles where coin=\"BTC\" order by ts limit 1').fetchone()
+dt = datetime.datetime.utcfromtimestamp(row[0])
+print(f'First bar: {dt} UTC')
+con.close()"
+```
+
+### 13.2 BH family scope — the Tuesday rule from C7-F1
+
+**FINDING C7-F1 (severity: major, confirmed 2026-10-29):** the BH family scope is
+determinative. On the real 14-coin panel:
+
+- Per-horizon BH (m=13 per horizon): 3 discoveries at H=1 + 1 at H=5 = 4 unique factor
+  discoveries, including `noise_control`.
+- Pooled BH (m=39 across all horizons): 3 discoveries total — lookahead, rev_5, volume_z_20.
+- Proof's current method (best-horizon per factor, then BH at m=13): 3 discoveries matching
+  the pooled result, correctly excluding `noise_control`.
+
+The correct BH family scope for factorproof:
+1. For each factor, compute its best-horizon raw p-value (smallest p across horizons 1/5/20).
+2. Apply BH at q=0.15 across factors (m = number of factors = 13), not across the full
+   factor × horizon grid (m = 39) and not independently per horizon (m = 13 per horizon).
+
+Step 1 is critical: testing per-horizon independently over-discovers because a noise factor
+can find a lucky horizon — the `noise_control` example is direct evidence of this. The current
+proof JSON implements step 1 implicitly (each row is the best-horizon per factor), which is
+why the `bh_fdr_pass` column is correct. But if a researcher submits 13 factors × 3 horizons
+as 39 independent tests and applies BH at q=0.15/3 per horizon, they get a spurious
+noise_control discovery.
+
+**Tuesday adoption rule:** if using factorproof's `promote()` API, always call it per-factor
+(not per horizon separately). The CLI command `factor-lab promote <factor>` handles this
+correctly by default (it picks the best horizon). The `factor-lab screen` command also
+correctly applies BH across the factor family, not within each horizon. Do NOT write a loop
+that calls `benjamini_hochberg()` separately on each horizon's p-values — this is the
+over-discovering pattern.
+
+### 13.3 Competitive positioning update (cycle 7, 2026-10-29)
+
+The ecosystem has two material changes since §11 (cycle 5):
+
+**ml4t-diagnostic v0.2.0** (released 2026-10-27) now explicitly documents HAC-adjusted
+IC t-stats and FDR control in its README. This is the most complete open-source competitor
+on the measurement axis. The verdict gap is unchanged: ml4t-diagnostic returns metrics
+(`analyze_signal` result object); factorproof exits 1 on reject with a reason table. The
+pitch against ml4t-diagnostic is now: "ml4t-diagnostic tells you what the IC is; factorproof
+tells you what to DO about it, with an exit code your CI pipeline can act on."
+
+**purgedcv v0.1.11** (released 2026-10-16) now ships `deflated_sharpe_ratio_full`, `PBO`,
+and minimum backtrack length. The statistics half of the repo's gap has narrowed. The family-wise
+correction (BH across a screened factor family) and the IC-computation-to-verdict pipeline
+remain exclusively in factorproof.
+
+**Two new rows** in the comparison table: vectorbt (9,582★, Commons Clause licence — not
+permissive) and quantstats (7,762★, Apache-2.0) are the backtesting/reporting tier. Neither
+has purge/embargo, FDR, or a promotion gate. They define the tier factorproof is NOT
+(execution-speed backtesters; reporting tear sheets) and help position factorproof correctly:
+"we gate before we report; we refuse before we show a chart."
+
+Updated positioning for any researcher evaluating the tool space:
+
+| Tool | Has verdict/gate | Has family-wise FDR | Offline + no subscription |
+|------|-----------------|---------------------|---------------------------|
+| MlFinLab | No (public source) | Yes (BHY) | Yes (but £100/mo licence) |
+| ml4t-diagnostic 0.2.0 | No | Yes (reported) | Yes (Polars required) |
+| purgedcv 0.1.11 | No | No | Yes |
+| vectorbt 1.2.0 | No | No | Commons Clause (not permissive) |
+| quantstats 0.0.86 | No | No | Yes |
+| **factorproof** | **Yes — exit 1** | **Yes — in the gate** | **Yes** |
+
+### 13.4 Production failure mode: the over-discovering BH pattern
+
+This is a NEW failure mode discovered in cycle 7 (C7-F1). A researcher who calls
+`benjamini_hochberg()` on the full 39-value grid (13 factors × 3 horizons) rather than
+on the 13 best-horizon p-values will see `noise_control` appear as a discovery at H=1.
+Raw output that demonstrates the error:
+
+```python
+# WRONG: per-horizon BH (over-discovers)
+bh_h1_results = benjamini_hochberg(all_pvalues_at_h1, q=0.15)  # 13 tests
+# noise_control appears because H=1 raw p = 0.0001 (lucky horizon)
+
+# CORRECT: best-horizon per factor, then BH
+best_p = {factor: min(pvals_by_horizon[factor]) for factor in factors}
+bh_results = benjamini_hochberg(list(best_p.values()), q=0.15)  # 13 tests
+# noise_control does not appear (its best raw p is still above the threshold at m=13)
+```
+
+The `factor-lab screen` and `factor-lab promote` CLI commands implement the correct pattern
+by default. The raw API (`promote()`, `benjamini_hochberg()`) can be misused in the
+over-discovering way — the research note above is the defense.
+
+### 13.5 The single most likely reason someone would NOT adopt it (cycle-7 edition)
+
+§8.6/§9.5/§10.5/§11.6/§12.5 stand with one addition: the BH family scope rule (§13.2)
+is an invisible correctness requirement. A researcher who screens factors "correctly" (runs
+`factor-lab screen`) gets the right answer. A researcher who implements their own BH
+loop over horizons gets a noise factor promoted and concludes the tool is miscalibrated.
+
+The mitigation is unchanged: use the CLI, not the raw API, for family-level decisions. The
+spec's `--force` FORBIDDEN by design means there is no escape hatch — the gate is what it
+is and the scope rule enforces it.
+
+### 13.6 Falsification for this section
+
+- C7-F1 scope result: falsified if an independent run of the F-R41 script (raw p-values
+  from `reports/real-data-proof.json`) shows noise_control does NOT appear in per-horizon
+  BH — the §26.1 numbers are the record.
+- F-R44 minBF: falsified if posterior P(H0|data) > 0.40 at 1:99 priors for rev_5
+  p=0.0003 — §26.3 arithmetic is the record.
+- Competitive: falsified if any probe shows purgedcv or ml4t-diagnostic shipping an
+  accept/reject verdict with a documented exit code — §25.2 greps are the record.

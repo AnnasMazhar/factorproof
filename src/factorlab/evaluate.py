@@ -500,6 +500,12 @@ def _newey_west_se(ic_arr: np.ndarray, max_lags: int) -> float:
 
     The HAC SE of the sample mean is sqrt(V_HAC / T).
 
+    Cross-section note (F-R54, docs/RESEARCH.md 26.13): this is a
+    time-series HAC for the mean of an IC series. When choosing between
+    NW and two-way clustered SEs on the cross-section, Petersen (2009)
+    Sec. III.C: NW is the right estimator below N=30 firm clusters;
+    revisit double-clustering at N>=50.
+
     Parameters
     ----------
     ic_arr:
@@ -661,3 +667,198 @@ def _rankdata(x: np.ndarray) -> np.ndarray:
             ranks[order[k]] = avg_rank
         i = j + 1
     return ranks
+
+
+# ---------------------------------------------------------------------------
+# Clark-West MSPE-adjusted OOS statistic (F-R53)
+# ---------------------------------------------------------------------------
+
+
+def clark_west_stat(
+    bench_errors: np.ndarray,
+    model_errors: np.ndarray,
+    bench_preds: np.ndarray,
+    model_preds: np.ndarray,
+    max_lags: int = 0,
+) -> float:
+    """Clark-West MSPE-adjusted OOS test statistic (eq. 11).
+
+    For a nested pair (benchmark = restricted model, factor model =
+    full model) evaluated on the same OOS dates, define per date t:
+
+        f_t = e0_t**2 - (e1_t**2 - (p1_t - p0_t)**2)
+
+    where e = actual - predicted (signed forecast error) and p is the
+    prediction; the (p1 - p0)**2 term corrects the finite-sample bias
+    that makes the larger model look worse OOS even under the null.
+    The statistic is:
+
+        f_bar = mean(f_t);  CW = f_bar / SE_HAC(f_bar, lags=max_lags)
+
+    Under H0 (nested benchmark correctly specified) CW is asymptotically
+    standard normal; evidence of OOS predictive content at the one-sided
+    5% level is CW > 1.645.
+
+    Reference: Clark, T.E. & West, K.D. (2007) "Approximately Normal
+    Tests for Equal Predictive Accuracy in Nested Models", Journal of
+    Econometrics 138(1):291-311, eq. 11 (p. 299). Assumptions: nested
+    models, recursive (expanding) OOS estimation, covariance-stationary
+    forecast errors (same stationarity assumption as Newey-West).
+    Known failure mode: liberal (over-rejects) when the OOS window is
+    short (P < 50); use max_lags = H - 1 when labels overlap by H-1 days.
+
+    Conventions: if the two models are identical the statistic is 0.0
+    (no evidence either way). NaN if there are fewer than 2 observations
+    or the HAC standard error is not estimable.
+
+    Parameters
+    ----------
+    bench_errors:
+        Signed forecast errors of the benchmark model (actual - p0).
+    model_errors:
+        Signed forecast errors of the factor model (actual - p1).
+    bench_preds:
+        Benchmark predictions p0, same shape as bench_errors.
+    model_preds:
+        Factor-model predictions p1, same shape as model_preds.
+    max_lags:
+        HAC lags for the Newey-West SE of f_bar (H-1 for horizon H).
+
+    Returns
+    -------
+    Clark-West statistic (float).
+    """
+    e0 = np.asarray(bench_errors, dtype=float)
+    e1 = np.asarray(model_errors, dtype=float)
+    p0 = np.asarray(bench_preds, dtype=float)
+    p1 = np.asarray(model_preds, dtype=float)
+    if e0.shape != e1.shape or e0.shape != p0.shape or e0.shape != p1.shape:
+        raise ValueError("bench_errors, model_errors, bench_preds, model_preds must align")
+    if e0.ndim != 1 or len(e0) < 2:
+        return float("nan")
+
+    f = e0**2 - (e1**2 - (p1 - p0) ** 2)
+    f_bar = float(np.mean(f))
+    if f_bar == 0.0 and not np.any(f):
+        return 0.0  # identical models: no evidence either way
+    se = _newey_west_se(f, max_lags=max_lags)
+    if math.isnan(se) or se <= 0.0:
+        return float("nan")
+    return f_bar / se
+
+
+def oos_cw_stat(
+    factor_vals: pd.Series,
+    df: pd.DataFrame,
+    splits,
+    horizon: int,
+    min_train_obs: int = 30,
+) -> float:
+    """Clark-West statistic over walk-forward OOS dates for one factor.
+
+    Wires clark_west_stat onto the purged walk-forward infrastructure
+    (F-R53, docs/RESEARCH.md 24.1). The nested pair, per Clark & West's
+    intercept-only benchmark:
+
+        benchmark: p0 = pooled expanding mean of forward returns (a)
+        factor model: p1 = a + b * x  (pooled expanding OLS of the
+            forward return on the factor value, estimated on all
+            earlier dates whose label window lies strictly before t,
+            mirroring the PurgedWalkForward purge rule s + H < t)
+
+    f_t is averaged over the cross-section at each OOS date, then
+    CW = mean(f) / HAC_SE(f, lags=horizon-1). One-sided: > 1.645
+    indicates magnitude-weighted OOS content; the sign-consistency
+    gate alone cannot see this (it is magnitude-blind).
+
+    Parameters
+    ----------
+    factor_vals:
+        Factor output Series with MultiIndex (date, asset).
+    df:
+        Tidy long-format OHLCV panel.
+    splits:
+        Iterable of walk-forward split objects exposing .test_idx
+        (iloc positions into df), as produced by PurgedWalkForward.split.
+    horizon:
+        Forward-return horizon whose labels drive the comparison.
+    min_train_obs:
+        Minimum pooled estimation rows before CW is computed; below
+        this the result is NaN (estimation noise dominates, per the
+        P < 50 failure mode in Clark & West).
+
+    Returns
+    -------
+    Clark-West statistic for the factor's OOS dates (float, possibly NaN).
+    """
+    dates = pd.DatetimeIndex(sorted(df["date"].unique()))
+    date_pos = {d: i for i, d in enumerate(dates)}
+
+    fwd_df = forward_returns(df, [horizon])[horizon]
+    # forward_returns returns a long DataFrame (date, asset, fwd_ret); convert
+    # to a MultiIndex Series so it can be concat'd with factor_vals.
+    fwd_series = fwd_df.set_index(["date", "asset"])["fwd_ret"]
+    combined = pd.concat([factor_vals.rename("x"), fwd_series.rename("r")], axis=1, join="inner")
+    combined = combined.dropna()
+    if combined.empty:
+        return float("nan")
+
+    obs_by_pos: dict[int, tuple[np.ndarray, np.ndarray]] = {}
+    for d, grp in combined.groupby(level="date", sort=True):
+        pos = date_pos.get(d)
+        if pos is None:
+            continue
+        obs_by_pos[pos] = (grp["x"].to_numpy(dtype=float), grp["r"].to_numpy(dtype=float))
+
+    test_positions = sorted(
+        {
+            date_pos[d]
+            for spl in splits
+            for d in df.iloc[spl.test_idx]["date"].unique()
+            if d in date_pos
+        }
+    )
+    if len(test_positions) < 2:
+        return float("nan")
+
+    sx = sy = sxx = sxy = 0.0
+    n_train = 0
+    flush_pos = 0
+    f_vals: list[float] = []
+    for pos in test_positions:
+        # Expanding window with purge: a training observation at date s is
+        # usable only once its label (realised at s + horizon) is known
+        # strictly before pos.
+        while flush_pos + horizon < pos:
+            if flush_pos in obs_by_pos:
+                x, r = obs_by_pos[flush_pos]
+                sx += float(x.sum())
+                sy += float(r.sum())
+                sxx += float((x * x).sum())
+                sxy += float((x * r).sum())
+                n_train += int(len(x))
+            flush_pos += 1
+        if n_train < min_train_obs or pos not in obs_by_pos:
+            f_vals.append(float("nan"))
+            continue
+        denom = n_train * sxx - sx * sx
+        if denom == 0.0:
+            f_vals.append(float("nan"))
+            continue
+        b = (n_train * sxy - sx * sy) / denom
+        a = (sy - b * sx) / n_train
+        x, r = obs_by_pos[pos]
+        p0 = np.full_like(r, a)
+        p1 = a + b * x
+        f_vals.append(float(np.mean((r - p0) ** 2 - ((r - p1) ** 2 - (p1 - p0) ** 2))))
+
+    f_arr = np.array([v for v in f_vals if not math.isnan(v)], dtype=float)
+    if len(f_arr) < 2:
+        return float("nan")
+    f_bar = float(f_arr.mean())
+    if f_bar == 0.0:
+        return 0.0
+    se = _newey_west_se(f_arr, max_lags=horizon - 1)
+    if math.isnan(se) or se <= 0.0:
+        return float("nan")
+    return f_bar / se
