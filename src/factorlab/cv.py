@@ -23,7 +23,7 @@ from dataclasses import dataclass
 import numpy as np
 import pandas as pd
 
-from .evaluate import FactorMetrics, evaluate_factor
+from .evaluate import FactorMetrics, evaluate_factor, oos_cw_stat
 from .factors.base import Factor
 
 # ---------------------------------------------------------------------------
@@ -207,6 +207,7 @@ class WalkForwardResult:
     oos_ic_ir: float
     sign_consistency: float  # fraction of splits with IC matching overall sign
     n_splits: int
+    oos_cw_stat: float = float("nan")  # Clark-West MSPE-adjusted OOS stat (F-R53)
 
 
 def evaluate_walk_forward(
@@ -305,6 +306,7 @@ def evaluate_walk_forward(
                 oos_ic_ir=ic_ir,
                 sign_consistency=sign_match,
                 n_splits=len(ics),
+                oos_cw_stat=oos_cw_stat(factor_vals, df, splits, h),
             )
         )
 
