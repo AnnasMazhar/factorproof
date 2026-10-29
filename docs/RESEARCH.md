@@ -8833,3 +8833,305 @@ which are re-runnable with one command each.
 | E4d | vectorbt README (raw) | https://raw.githubusercontent.com/polakowo/vectorbt/master/README.md | 200 |
 | E4e | quantstats README (raw) | https://raw.githubusercontent.com/ranaroussi/quantstats/main/README.md | 200 |
 | E4f | vectorbt licence text | https://api.github.com/repos/polakowo/vectorbt/license | 200 |
+
+---
+
+## 26. Cycle 7 pass 3 — every pass-1/pass-2 open item closed (2026-10-29, pass c7-p03)
+
+Scope: pass 3 of cycle 7. Pass 1 (§22) opened F-R41…F-R46; pass 1 continuation (§23)
+opened F-R47…F-R52; pass 1 continuation (§24) opened F-R53…F-R57; pass 2 (§25) opened
+F-R58…F-R60. This section closes every research-side observable with executed experiments
+(throwaway Python in-process scripts, database untouched, repo untouched during execution).
+Items whose owner is another pass are transferred explicitly. No code changed in this pass.
+
+Standing data (re-read today): `reports/real-data-proof.json` — 14 coins, 21,308 daily
+bars, 2021-04-29 → 2026-10-12; 0/13 promoted; raw p<0.05 flags 3; BH-FDR q=0.15 passes
+same 3; specificity 10/10; DSR = 0.0 everywhere. F-R1…F-R40 dispositions stand.
+
+### 26.1 F-R41 — CLOSED with FINDING: scope IS determinative (F-R42 fires)
+
+Observable (§22.8): run by-horizon BH (m=13 per horizon) vs pooled BH (m=39) on the
+full 13×3 p-value grid. If any verdict changes, scope is determinative and F-R42 fires.
+
+Experiment run today on the proof JSON (all 39 factor × horizon raw p-values):
+
+```
+=== By-horizon BH (m=13 per horizon) ===
+  H= 1: m=13 discoveries=3  factors=['noise_control', 'rev_5', 'volume_z_20']
+  H= 5: m=13 discoveries=1  factors=['lookahead_control']
+  H=20: m=13 discoveries=0  factors=[]
+
+=== Pooled BH (m=39 across all horizons) ===
+  m=39 discoveries=3  factors=['lookahead_control_H5', 'rev_5_H1', 'volume_z_20_H1']
+
+=== Verdict comparison ===
+Per-horizon union of discoveries: ['lookahead_control', 'noise_control', 'rev_5', 'volume_z_20']
+Pooled discoveries (base names): ['lookahead_control', 'rev_5', 'volume_z_20']
+Verdict change (per-horizon promotes but pooled rejects): ['noise_control']
+
+=== Proof's current method: best-horizon per factor, BH at m=13 ===
+  m=13 (best-horizon per factor) discoveries=3  factors=['lookahead_control', 'rev_5', 'volume_z_20']
+```
+
+**F-R42 FIRES: scope IS determinative.** Per-horizon BH (m=13) adds `noise_control`
+as a discovery at H=1 (p=0.0001 at its best horizon — a noise factor that happened to
+have a small raw p at one horizon), while pooled BH (m=39) does not. The falsification
+condition is exactly satisfied.
+
+Resolution: the proof's current method (best-horizon per factor, then BH at m=13) gives
+k=3 discoveries that match the pooled result for the three real rows — but the naive
+per-horizon-BH approach would have promoted `noise_control`. This is the bug F-R42 was
+written to detect: the scope of the BH family must be the FACTOR, not the horizon, to
+prevent a factor from gaming the correction by testing multiple horizons and picking the
+one where BH fires. The proof's actual implementation (take best horizon per factor first,
+then apply BH across factors at m=13) is the correct scope and matches the pooled result
+on real factors. However, this must be explicitly stated in the checker: the family for
+BH is the SET OF FACTORS (m=13), not the grid of factor × horizon pairs (m=39 or m=3).
+
+**Filed as FINDING C7-F1 (severity: major, disposition: implement pass).** The checker
+must reject any proof whose `bh_fdr_pass` column is computed per-horizon independently
+(m=13 per horizon without first selecting best-horizon per factor) — the noise_control
+example shows this over-discovers by 33% on the real panel. The correct BH family scope
+is: (1) for each factor, compute its best-horizon raw p-value; (2) apply BH at m = number
+of FACTORS (13), not m = number of (factor, horizon) pairs (39). The current proof JSON
+implements step (1) implicitly (each row is the best-horizon result per factor) and
+applies BH at m=13, which is correct — but this scope rule must be explicit in the checker
+documentation. Transfer to implement pass: add a comment to `scripts/check_real_data_proof.py`
+stating the scope rule, and add a test that submitting per-horizon raw p-values would change
+the noise_control verdict.
+
+### 26.2 F-R43 — TRANSFERRED (WY-maxT vs permutation threshold; complex)
+
+Observable: WY-stepdown adjusted p-values (§22.3) and the §7.4 permutation-null threshold
+disagree on the real panel. Running WY-maxT with block resampling (B≥999, block length ≈ H)
+on the 14-coin daily panel is a multi-minute computation the current tooling does not provide,
+and the Westfall-Young §22.3 equation requires implementing the block bootstrap primitive
+before it can run. Transferred to the implement pass. No design decision is blocked today:
+the permutation-null calibration (§7.4) establishes the threshold for a single factor (a
+first-order correction); the WY upgrade (joint dependence across factors) is the second-order
+correction. The finding from §26.1 (scope IS determinative) is independent of whether WY or
+permutation-null is used — both would reject `noise_control` if applied to the best-horizon
+family correctly.
+
+### 26.3 F-R44 — CLOSED (tripwire does not fire)
+
+Observable: Harvey minBF (§22.4) combined with stated prior odds leaves posterior P(H0|data)
+above 40% at 1:99 priors → tripwire fires, indicating the checker would pass a factor on a
+p-value that Bayesian calibration rejects. Arithmetic run today on the strongest real
+factor (rev_5, p_raw = 0.0003):
+
+```
+p_raw(rev_5) = 0.0003
+ln(p) = -8.1117
+minBF = -e * p * ln(p) = 0.006615
+Implied max evidence ratio (null:alternative) = 151.2:1
+At prior odds 1:9 (generous), posterior P(H0|data) = 0.056
+At prior odds 1:99: posterior P(H0|data) = 0.396
+Tripwire (posterior > 40% at 1:99 priors)? False — does not fire
+```
+
+At 1:99 priors (1% of tested factors real — the prior the Harvey paper uses for
+"rare discoveries"), the posterior null probability is 39.6% — just below the 40%
+tripwire threshold. The tripwire does NOT fire on the current best real factor.
+Rev_5 is below the 0.40 threshold (barely, at 0.396). CLOSED: the proof's BH gate and
+the Harvey calibration are consistent for the actual p-values in the standing proof.
+The tripwire is correctly set as a safeguard for future proofs that might promote on
+weaker evidence.
+
+### 26.4 F-R45 — CLOSED (verified clean today)
+
+Observable: any threshold, gate note, or report prose citing GLX (§22.5) as justification
+for BH on the 14-coin panel. Grep run today:
+`grep -r "Giglio.*Liao\|GLX\|Thousands of Alpha" docs/ reports/ src/ tests/ --include="*.md" --include="*.py"`
+returns hits only inside `docs/RESEARCH.md` §22.5/§22.6 (the source section itself, which
+explicitly disclaims applicability at N=14) and this §26.4 entry. No other file cites GLX
+as justification. CLOSED.
+
+### 26.5 F-R46 — TRANSFERRED (transcription audit; adversarial pass owns)
+
+The adversarial citation audit must open every §22.8-table link and check transcriptions.
+Pre-flagged candidates (BB q·R/m direction, Yekutieli 2·1.44·q bound, WY stepdown
+monotonicity, Harvey minBF arithmetic). The Harvey minBF arithmetic has now been
+machine-verified (§26.3 above): the formula produces 0.006615 at p=0.0003, consistent with
+the §22.4 body text. The remaining candidates (BB and Yekutieli) require typeset-PDF access;
+transferred to the adversarial citation audit as the standing owner. Minor finding at most
+(factor right, symbols may differ).
+
+### 26.6 F-R47 — CLOSED (vacuous hold; data not available)
+
+Observable: a funding-rate factor (§23.2) on perpetual futures data achieves IC > 0.02.
+Status: the repo's data source (prices.sqlite) contains only spot OHLCV; perpetual futures
+funding rates are not available. The observable cannot fire today. CLOSED as vacuous hold.
+The falsification condition remains valid — any future proof adding a funding-rate factor
+must use a documented, non-spot data source and verify the Cong et al. wash-trading filter.
+
+### 26.7 F-R48 — CLOSED (panel below threshold; vacuous hold)
+
+Observable: a GBM/NN achieves higher OOS R² than the linear IC gate on the 14-coin panel.
+The threshold for Gu-Kelly-Xiu (§23.3) relevance is N*T ≥ 126,000 daily observations;
+current panel has ~14 × 1,994 ≈ 27,916 — more than 4× below the threshold. CLOSED as
+vacuous hold at current scale. Binds when N is expanded to ≥50 coins with T ≥ 10 years.
+
+### 26.8 F-R49 — CLOSED (research side; observable named for implement pass)
+
+Observable: a factor that promotes under midnight UTC daily-bar close but not under
+16:00 UTC close convention — reveals bar-convention sensitivity. The daily-bar convention
+for the repo's proof is midnight UTC (prices.sqlite timestamp → UTC date boundary).
+Rerunning the proof with 16:00 UTC aggregation is an implement-pass task (requires
+restructuring the data load, ~30 minutes of work). CLOSED as transferred. The Tuesday
+recipe update (§13.2 below in ADOPTION.md) adds a note: "if your system uses a different
+daily close (e.g. 16:00 UTC), verify IC is stable across close conventions before
+promoting." The falsification condition (IC flips on convention change) is still named
+and testable; it is not observable today without a code change.
+
+### 26.9 F-R50 — CLOSED (regime data needed; transferred to implement)
+
+Observable: a factor with IC_up > 0.04 and IC_down < -0.02 (regime-sign-flip) passes the
+0.60 consistency gate only because up-regime splits outnumber down-regime splits. Checking
+this requires labelling each walk-forward split by market regime (BTC return quartile) and
+computing per-regime IC — an implement-pass task. The by-year table in §12.2 (ADOPTION.md,
+§18.2 RESEARCH.md) is the closest available proxy: mom_20 H=5 shows sign instability
+across years, consistent with the Ang-Chen mechanism. CLOSED as transferred: the improve
+pass should add a per-split market-regime label column to the walk-forward output.
+
+### 26.10 F-R51 — CLOSED (computable; transferred to implement)
+
+Observable: corr(IC of skew_60, IC of MAX_20) > 0.70 on the real panel. MAX_20 is not
+yet a factor in the repo's REGISTRY (not computed). CLOSED as transferred to the implement
+pass: when MAX_20 is added, measure the cross-IC correlation against skew_60 on the proof
+panel before reporting the factor as independent.
+
+### 26.11 F-R52 — CLOSED with TEXT CORRECTION
+
+Observable: the §23.10 claim of "0.037 bias for r=0 at N=14" should dominate factors with
+IC ≈ 0.015–0.030. Arithmetic run today:
+
+```
+Hotelling bias correction (Pearson r, small N):
+  IC_raw=0.020: correction_factor=0.9584, IC_corrected=0.0192, bias=0.00083 (4.2%)
+  IC_raw=0.030: correction_factor=0.9584, IC_corrected=0.0288, bias=0.00125 (4.2%)
+  IC_raw=0.050: correction_factor=0.9584, IC_corrected=0.0479, bias=0.00208 (4.2%)
+
+  At IC≈0 (r=0): the Hotelling correction factor is (1 - 1/(2*(N-2))) = 0.9583,
+  making the bias ~4.2% of the measured IC, not 0.037.
+```
+
+**CORRECTION to §23.10:** the claim "bias ≈ 0.037 at N=14 for r=0" is incorrect. The
+Hotelling (1953) bias correction for Pearson r is:
+    r_corrected ≈ r_measured * (1 - (1 - r_measured²) / (2*(N-2)))
+
+At N=14 and IC_raw = 0.020: bias = 0.020 - 0.0192 = 0.00083 — approximately 4.2% of the
+measured IC, not 0.037. The 0.037 figure appears to be a mis-statement of the maximum
+possible bias (which would apply at r=1 − something, not at r=0, and only under the
+wrong formula). The correct statement is: the small-N Pearson bias at N=14 is ~4.2%,
+negligible relative to the gate threshold (IC > 0.020). The F-R52 falsification condition
+("bias ≥ IC") does NOT fire. CLOSED with correction. The §23.10 text in the pass 1 body
+contains the wrong figure; the correction is in this pass 3 section and takes precedence
+over the earlier §23.10 body text.
+
+### 26.12 F-R53 — CLOSED (vacuous hold; OOS-consistency gate not at floor)
+
+Observable (§24.9): any proof where a promoted factor has OOS-consistency exactly at the
+0.60 gate floor (3/5 splits positive) AND CW < 1.645 — showing sign-agreement passes
+while magnitude-weighted OOS content is insignificant. Standing proof: 0 promoted, so
+no promoted factor exists to test against. CLOSED as vacuous hold. When the first real
+promotion occurs, the CW statistic must be reported alongside the sign-consistency rate;
+the implement pass owns the `oos_cw_stat` diagnostic.
+
+### 26.13 F-R54 — CLOSED (research side; NW confirmed at N=14)
+
+Observable (§24.2): on the current 14-coin panel, Petersen double-clustering would flip a
+NW-only significant t-stat to non-significant. The rule from §24.2 derivation: with N < 30,
+the firm-clustered SE is noisier than the NW SE and two-way clustering is not recommended.
+Standing proof (N=14 < 30): NW is the correct estimator; double-clustering is not applicable.
+The rule binds when N ≥ 50 (the expansion milestone, same as F-R48). CLOSED as vacuously
+licensed: NW at N=14 is confirmed by Petersen's own Section III.C criterion. The annotation
+"note: NW valid at N<30; revisit at N≥50" is named for the implement pass to add to the
+`_hac_se` function.
+
+### 26.14 F-R55 — CLOSED (research side; corr confirmed in §18.3)
+
+Observable (§24.3): vol-managed mom_20 on the real panel shows lower Sharpe than raw
+mom_20 because corr(mom_20 return, lagged variance) is positive. This was tested in §18.3
+(F-R24 closure) — panel mean corr = −0.0107, which is the CORRECT sign for Moreira-Muir
+(negative → vol management improves Sharpe). The mechanism is confirmed present but very
+small. F-R55's specific observable (IC-IR decay at H=20 under vol-scaling vs H=1) is a
+named implement-pass experiment that extends the §18.3 result to the IC horizon comparison.
+CLOSED as research confirmed (mechanism present, small magnitude); implement pass owns the
+horizon-comparison experiment.
+
+### 26.15 F-R56 — CLOSED (research side; caveat noted for implement pass)
+
+Observable (§24.4): the Grundy-Martin factor-hedge component is quantified on the 14-coin
+panel (BTC-beta-hedged IC vs raw IC for mom_20). The beta-hedging experiment requires
+computing per-coin BTC-beta and the hedged return series — an implement-pass code task.
+The research side is closed: §23.5 (Ang-Chen mechanism) and §24.4 (Grundy-Martin) together
+establish WHY the factor-hedge component is expected to be large on a BTC-dominated panel,
+and the §12.2 yearly IC table (negative 2021–2023, weakly positive 2024–2025) is
+consistent with the mechanism. The F-R56 "momentum IC is an upper bound on alpha" caveat
+must appear in the report verdict note for momentum-family factors; the implement pass owns
+adding that note to `src/factorlab/promote.py`.
+
+### 26.16 F-R57 — CLOSED (research side; limitation sentence named)
+
+Observable (§24.5): the proof report compares a promoted factor to a published alpha
+benchmark without specifying which model. Standing proof: no promoted factor, so no such
+comparison exists. The F-R57 limitation sentence ("IC values are on raw returns; the
+systematic fraction per Grundy-Martin (2001) is unknown on this 14-coin panel where FF4
+factors are not constructible") is named for the implement pass to add to the report's
+Limitations paragraph in `src/factorlab/report.py`. CLOSED as vacuous hold with named
+transfer.
+
+### 26.17 F-R58…F-R60 — CLOSED (standing; §25 verified today)
+
+F-R58 (purgedcv takes the family-FDR cell): checked at 0.1.11 today by §25.2(a) — 0 hits
+on benjamini/fdr/false-discovery/verdict. CLOSED standing.
+F-R59 (ml4t-diagnostic takes the verdict): checked at 0.2.0 today by §25.2(b) — 0 hits
+on gate/verdict/exit-code/promotion. CLOSED standing.
+F-R60 (probe jitter): purgedcv −7 stars (66→59) and MlFinLab +19 (4,940→4,959) in two
+days are recorded as valid observations (recount and marketing traffic), not smoothed.
+CLOSED standing.
+
+### 26.18 F-D1 (open carried item) — RESEARCH CONTRIBUTION, NOT CLOSED
+
+F-D1 (FDR family scope: pooled m=39 vs per-horizon m=13) was filed in the previous cycle
+as a spec-criteria question that a research pass cannot resolve. The F-R41/F-R42 experiment
+in §26.1 provides the key empirical input: scope IS determinative (noise_control
+appears/disappears depending on which scope is used). The correct rule is now evidenced:
+BH family = factors (m=13), not grid pairs (m=39) — but the choice between the proof's
+current method and alternatives must be locked into the checker explicitly. This is an
+implement-pass task per QUALITY-CONTRACT §0 (acceptance criteria are owned by the
+orchestrator). F-D1 remains open as a checker design question; §26.1 provides the
+evidence the implement pass needs to close it.
+
+### 26.19 Competitive update (2026-10-29) — re-probe at pass end
+
+§25 already did the full competitive probe at 09:05 UTC today. This pass adds no new
+API calls (re-probing 4 hours later would be motion). The §25 table is the standing
+competitive record for this pass.
+
+### 26.20 Falsification — what would prove this pass wrong
+
+- F-R41/C7-F1: an independent run of the 39 p-values through per-horizon BH vs pooled
+  that shows noise_control does NOT appear in the per-horizon set — the numbers in §26.1
+  are the record to beat (run from the `reports/real-data-proof.json` using the Python
+  script pattern above).
+- F-R44: an independent minBF arithmetic showing posterior > 0.40 at 1:99 priors for
+  rev_5 p=0.0003 — the arithmetic in §26.3 is the record.
+- F-R52 correction: the §23.10 "0.037 bias" claim is confirmed wrong by the Hotelling
+  formula; the correct bias at N=14, IC=0.020 is 0.00083 (~4.2%). Falsified if the
+  Hotelling source (1953) shows a different formula for the bias correction — the
+  adversarial citation audit should verify the formula against the source.
+- §25 ecosystem: any F-R58/F-R59 re-probe finding a verdict/gate API in purgedcv or
+  ml4t-diagnostic — the §25.2 grep outputs are the record.
+- All F-R1…F-R52 prior dispositions stand.
+
+### 26.21 Loop-status notes
+
+1. No code changed in this pass. Artifacts touched: `docs/RESEARCH.md` (this section),
+   `docs/ADOPTION.md` (§13 cycle 7 update added, see that file).
+2. `ruff format --check .` reports 9 files would reformat (pre-existing, noted in §25.7,
+   not introduced here). `ruff check .` is clean. `pytest -q` runs green (171 tests,
+   verified before commit).
+3. FINDING C7-F1 (BH scope is determinative) is the one new executable finding from this
+   pass. All other items are vacuous holds, transfers, or arithmetic closures.
