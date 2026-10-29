@@ -44,9 +44,7 @@ from factorlab.data import synthetic_ohlcv
 from factorlab.evaluate import clark_west_stat, oos_cw_stat
 from factorlab.factors import get_factor
 
-_FINITE = st.floats(
-    min_value=-100.0, max_value=100.0, allow_nan=False, allow_infinity=False
-)
+_FINITE = st.floats(min_value=-100.0, max_value=100.0, allow_nan=False, allow_infinity=False)
 
 
 def test_clark_west_kat_hand_computed() -> None:
@@ -104,7 +102,9 @@ def test_clark_west_sign_tracks_adjusted_mspe() -> None:
     """
     r = np.array([3.0, -1.0, 2.0])
     p0 = np.zeros(3)
-    better = clark_west_stat(r - p0, r - np.array([2.0, -1.0, 1.0]), p0, np.array([2.0, -1.0, 1.0]), max_lags=0)
+    better = clark_west_stat(
+        r - p0, r - np.array([2.0, -1.0, 1.0]), p0, np.array([2.0, -1.0, 1.0]), max_lags=0
+    )
     worse_p1 = np.array([-2.0, 1.0, -1.0])
     worse = clark_west_stat(r - p0, r - worse_p1, p0, worse_p1, max_lags=0)
     assert better > 0.0, better
@@ -119,7 +119,9 @@ def test_clark_west_sign_tracks_adjusted_mspe() -> None:
     )
 )
 @settings(max_examples=100, deadline=None)
-def test_clark_west_order_invariance_zero_lags(obs: list[tuple[float, float, float, float]]) -> None:
+def test_clark_west_order_invariance_zero_lags(
+    obs: list[tuple[float, float, float, float]],
+) -> None:
     """Property: with max_lags=0 the statistic ignores observation order.
 
     The HAC-free SE of the mean depends only on the empirical
@@ -228,9 +230,9 @@ def test_oos_cw_stat_null_and_signal_ordering() -> None:
     df = synthetic_ohlcv(n_days=600, n_assets=8, seed=7, plant_signal=True)
     sig = _wf("mom_20", df)
     noise = _wf("noise_control", df)
-    assert sig.oos_cw_stat > noise.oos_cw_stat, (
-        f"signal CW={sig.oos_cw_stat} noise CW={noise.oos_cw_stat}"
-    )
+    assert (
+        sig.oos_cw_stat > noise.oos_cw_stat
+    ), f"signal CW={sig.oos_cw_stat} noise CW={noise.oos_cw_stat}"
 
 
 def test_oos_cw_stat_nan_on_too_short_history() -> None:

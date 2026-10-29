@@ -147,9 +147,7 @@ def test_committed_proof_passes_scope_check() -> None:
     assert fails == [], fails
 
 
-def test_forged_per_horizon_flags_fail_scope_check(
-    tmp_path: Path, monkeypatch
-) -> None:
+def test_forged_per_horizon_flags_fail_scope_check(tmp_path: Path, monkeypatch) -> None:
     """Forged bh_fdr_pass flags (per-horizon results) fail the recompute.
 
     Fault detected: checker trusting stored flags instead of recomputing
@@ -163,9 +161,7 @@ def test_forged_per_horizon_flags_fail_scope_check(
     for r in rows:
         if r["factor"] == "noise_control":
             r["bh_fdr_pass"] = True
-    data["delta"]["n_bh_fdr_sig"] = sum(
-        1 for r in rows if r.get("bh_fdr_pass")
-    )
+    data["delta"]["n_bh_fdr_sig"] = sum(1 for r in rows if r.get("bh_fdr_pass"))
     forged_json = tmp_path / "real-data-proof.json"
     forged_json.write_text(json.dumps(data), encoding="utf-8")
 
@@ -175,16 +171,16 @@ def test_forged_per_horizon_flags_fail_scope_check(
     assert any("BH SCOPE FAIL" in f and "noise_control" in f for f in fails), fails
 
 
-def test_missing_family_declaration_fails_scope_check(
-    tmp_path: Path, monkeypatch
-) -> None:
+def test_missing_family_declaration_fails_scope_check(tmp_path: Path, monkeypatch) -> None:
     """A proof whose markdown never states 'family: <m> factors' is rejected.
 
     Fault detected: checker accepting scope-unverifiable prose (the old
     "across family" wording).
     """
     md_text = _PROOF_MD.read_text(encoding="utf-8")
-    stripped = md_text.replace("family: 13 factors, one best-horizon p per factor; not per-horizon", "across family")
+    stripped = md_text.replace(
+        "family: 13 factors, one best-horizon p per factor; not per-horizon", "across family"
+    )
     assert "family: 13 factors" not in stripped  # the old wording must be gone
     bad_md = tmp_path / "real-data-proof.md"
     bad_md.write_text(stripped, encoding="utf-8")
@@ -195,18 +191,14 @@ def test_missing_family_declaration_fails_scope_check(
     assert fails and "family size" in fails[0], fails
 
 
-def test_declared_family_size_mismatch_fails_scope_check(
-    tmp_path: Path, monkeypatch
-) -> None:
+def test_declared_family_size_mismatch_fails_scope_check(tmp_path: Path, monkeypatch) -> None:
     """Declared m disagreeing with the JSON's factor count is rejected.
 
     Fault detected: checker trusting prose over the artifact's own rows.
     """
     md_text = _PROOF_MD.read_text(encoding="utf-8")
     bad_md = tmp_path / "real-data-proof.md"
-    bad_md.write_text(
-        md_text.replace("family: 13 factors", "family: 39 factors"), encoding="utf-8"
-    )
+    bad_md.write_text(md_text.replace("family: 13 factors", "family: 39 factors"), encoding="utf-8")
 
     monkeypatch.setattr(checker, "_PROOF_JSON", _PROOF_JSON)
     monkeypatch.setattr(checker, "_PROOF_MD", bad_md)
