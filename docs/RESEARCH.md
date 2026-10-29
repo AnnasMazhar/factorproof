@@ -8552,3 +8552,284 @@ Moreira-Muir (already cited as D3a); arXiv 1712.00564 is Barroso-Santa-Clara 201
 JSTOR stable/2961986 maps to Lo-MacKinlay 1990, not Stambaugh-Yuan; arXiv 2104.00954
 is the verified Stambaugh-Yuan 2017 preprint. All 18 URLs returned HTTP 200 today;
 no threshold or gate cites any of the mis-matched NBER IDs (corrections recorded above).
+
+---
+
+## 25. Cycle 7 pass 2 — ecosystem and competition (added 2026-10-29, pass c7-p02)
+
+Scope: the research pass-2 contract (ITERATION-PROTOCOL §"What each research
+pass must produce") — name the real competition with versions and links,
+produce the comparison table, and state the gap we claim and how a user
+notices it. Per MARKET-VERDICTS.md this pass does not re-litigate
+positioning; it deepens the table with today's live numbers. Builds on §20
+(c6-p02) and §23.11 (c7-p01): those sections are read, not re-derived; only
+the metadata cells are re-taken, plus two new entrants (vectorbt,
+quantstats) and the two closest competitors' released versions (purgedcv
+0.1.11, ml4t-diagnostic 0.2.0), both of which moved since §23.11.
+
+Method (all probes 2026-10-29, this terminal session):
+- GitHub REST `api.github.com/repos/<owner>/<repo>` (unauthenticated) for
+  stars, `pushed_at`, licence, archived flag;
+- `api.github.com/repos/<owner>/<repo>/releases/latest` for release tag and
+  publish date (404 = no published releases);
+- `pypi.org/pypi/<pkg>/json` for latest version, upload date, first release
+  date and release count;
+- `raw.githubusercontent.com` README fetches for the four tools closest to
+  the gap (purgedcv 0.1.11, ml4t-diagnostic 0.2.0, vectorbt, quantstats),
+  grepped for the gap-class terms (gate / verdict / accept-reject / exit
+  code / promotion / benjamini|fdr / purge|embargo / deflated).
+
+Raw output (verbatim, this session):
+
+```
+hudson-and-thames/mlfinlab	stars=4959	pushed=2023-10-02T03:05:19Z	lic=NOASSERTION	archived=False
+quantopian/alphalens	stars=4484	pushed=2024-02-12T06:44:22Z	lic=Apache-2.0	archived=False
+quantopian/pyfolio	stars=6438	pushed=2023-12-23T06:14:58Z	lic=Apache-2.0	archived=False
+quantopian/empyrical	stars=1517	pushed=2024-07-26T06:19:42Z	lic=Apache-2.0	archived=False
+microsoft/qlib	stars=49796	pushed=2026-10-22T06:22:15Z	lic=MIT	archived=False
+eslazarev/purged-cross-validation	stars=59	pushed=2026-10-25T07:47:09Z	lic=MIT	archived=False
+ml4t/diagnostic	stars=39	pushed=2026-10-27T14:35:56Z	lic=MIT	archived=False
+chulwoohan/pyanomaly	stars=132	pushed=2024-03-13T08:03:25Z	lic=MIT	archived=False
+stefan-jansen/alphalens-reloaded	stars=681	pushed=2026-10-26T19:57:02Z	lic=Apache-2.0	archived=False
+stefan-jansen/pyfolio-reloaded	stars=619	pushed=2026-10-26T19:11:33Z	lic=Apache-2.0	archived=False
+stefan-jansen/empyrical-reloaded	stars=131	pushed=2026-10-26T19:59:21Z	lic=Apache-2.0	archived=False
+polakowo/vectorbt	stars=9582	pushed=2026-10-28T19:18:42Z	lic=NOASSERTION	archived=False
+ranaroussi/quantstats	stars=7762	pushed=2026-09-27T19:40:19Z	lic=Apache-2.0	archived=False
+=== qlib latest release ===
+v0.9.8 2026-10-08T10:58:43Z
+=== PyPI ===
+purgedcv	latest=0.1.11	uploaded=2026-10-16T08:44:56
+ml4t-diagnostic	latest=0.2.0	uploaded=2026-10-27T09:14:36
+vectorbt	latest=1.2.0	uploaded=2026-10-19T13:19:04
+quantstats	latest=0.0.86	uploaded=2026-09-27T19:41:42
+=== releases/latest (404 = no published releases) ===
+hudson-and-thames/mlfinlab releases/latest -> HTTP 404
+Quantopian/alphalens releases/latest -> HTTP 200
+Quantopian/pyfolio releases/latest -> HTTP 200
+Quantopian/empyrical releases/latest -> HTTP 200
+https://github.com/quantopian/alphalens/releases/tag/v0.4.0 | v0.4.0 | 2020-04-30T15:42:52Z
+https://github.com/quantopian/pyfolio/releases/tag/0.9.2 | 0.9.2 | 2019-04-15T11:38:22Z
+https://github.com/quantopian/empyrical/releases/tag/0.5.5 | 0.5.5 | 2020-10-13T21:28:25Z
+=== PyPI release-history bounds ===
+quantstats: first=2019-05-01T13:56:11  latest=2026-09-27T19:41:42  n_releases=82
+vectorbt: first=2020-12-06T01:22:33  latest=2026-10-19T13:19:04  n_releases=66
+purgedcv: first=2026-05-16T09:34:20  latest=2026-10-16T08:44:56  n_releases=24
+ml4t-diagnostic: first=2026-01-19T21:35:20  latest=2026-10-27T09:14:36  n_releases=46
+=== vectorbt LICENSE (GitHub /license API, decoded head) ===
+name: LICENSE.md | spdx: NOASSERTION
+"Commons Clause" License Condition v1.0
+The Software is provided to you by the Licensor under the License, as defined
+below, subject to the following condition. Without limiting other conditions
+in the License, the grant of rights under the License will not include, and the
+License does not grant to you, the right to Sell the Software...
+=== ml4t-diagnostic releases (latest 3) ===
+v0.2.0 2026-10-27T09:14:52Z | fix: propagate declared annualization through backtest reports (PR 115);
+  fix: preserve and validate dated portfolio input snapshots (PR 117); fix: include initial cap...
+v0.1.9 2026-10-15T19:55:33Z | feat(metrics): add calibration diagnostics for probability forecasts (PR 92);
+  ci: bump gitpython...; fix: support factor timestamps and e...
+v0.1.8 2026-09-24T20:24:10Z | docs: verify Diagnostic task and book guidance (PR 86); chore: prepare 0.1.8 (PR 87)
+```
+
+### 25.1 Live metadata (probed 2026-10-29)
+
+| Tool | Version / release (date) | Stars (today) | Last push | Licence |
+|------|---------------------------|---------------|-----------|---------|
+| MlFinLab (hudson-and-thames/mlfinlab) | no published releases (`releases/latest` HTTP 404) | 4,959 | 2023-10-02 | NOASSERTION (proprietary, all rights reserved) |
+| alphalens (Quantopian) | **v0.4.0** (2020-04-30) | 4,484 | 2024-02-12 | Apache-2.0 |
+| pyfolio (Quantopian) | **0.9.2** (2019-04-15) | 6,438 | 2023-12-23 | Apache-2.0 |
+| empyrical (Quantopian) | **0.5.5** (2020-10-13) | 1,517 | 2024-07-26 | Apache-2.0 |
+| qlib (microsoft) | **v0.9.8** (2026-10-08) | 49,796 | 2026-10-22 | MIT |
+| purgedcv (eslazarev) | PyPI **0.1.11** (2026-10-16; first release 2026-05-16, 24 releases) | 59 | 2026-10-25 | MIT |
+| ml4t-diagnostic (ml4t) | PyPI **0.2.0** (2026-10-27; first release 2026-01-19, 46 releases) | 39 | 2026-10-27 | MIT |
+| pyanomaly (chulwoohan) | no published releases | 132 | 2024-03-13 | MIT |
+| alphalens-reloaded (stefan-jansen) | fork, rolling | 681 | 2026-10-26 | Apache-2.0 |
+| pyfolio-reloaded (stefan-jansen) | fork, rolling | 619 | 2026-10-26 | Apache-2.0 |
+| empyrical-reloaded (stefan-jansen) | fork, rolling | 131 | 2026-10-26 | Apache-2.0 |
+| vectorbt (polakowo) — **new row** | PyPI **1.2.0** (2026-10-19; first release 2020-12-06, 66 releases) | 9,582 | 2026-10-28 | **Commons Clause v1.0** (NOASSERTION; "does not grant the right to Sell") |
+| quantstats (ranaroussi) — **new row** | PyPI **0.0.86** (2026-09-27; first release 2019-05-01, 82 releases) | 7,762 | 2026-09-27 | Apache-2.0 |
+
+Deltas vs §23.11 (2026-10-27, two days ago):
+
+| Tool | §23 (10-27) | today | Delta |
+|------|-------------|-------|-------|
+| MlFinLab | 4,940 | **4,959** | +19 (still no push since 2023-10-02) |
+| qlib | 49,736 | **49,796** | +60 (active) |
+| purgedcv | 66 | **59** | −7 — beyond ±1 jitter (F-R40); likely stale-count recount by GitHub. Cell corrected; gap cells re-checked directly against today's README, not against the count |
+| ml4t-diagnostic | 36 | **39** | +3, plus version 0.1.8 → **0.2.0** (released 2026-10-27) |
+| pyanomaly | 133 | **132** | −1 (inactive since 2024-03) |
+| alphalens-reloaded | 671 | **681** | +10 |
+
+Correction to §20.1: the Quantopian repos are **not** release-less —
+`releases/latest` returns 200 with last releases alphalens v0.4.0
+(2020-04-30), pyfolio 0.9.2 (2019-04-15), empyrical 0.5.5 (2020-10-13).
+"Archival-era, no releases" in §20 was wrong; the releases exist and date
+the stack's last real cuts to 2019–2020, which strengthens the
+"unmaintained" cell rather than weakening it.
+
+### 25.2 Gap-closure watch items (raw README probes, 2026-10-29)
+
+**(a) purgedcv 0.1.11 — statistics side widened; gate still absent.**
+README greps: `verdict` 0, `accept.?reject` 0, `exit` 0,
+`benjamini|fdr|false discovery` 0; `gate` 2 hits, both dev-process gates
+("the local gates (`ruff`, `black`, `mypy --strict` … prose-quality gate
+are documented in CONTRIBUTING.md"). But the statistics half moved since §20
+("only single-strategy DSR/PSR" is now stale): the 0.1.11 README documents
+`deflated_sharpe_ratio_full`, `DSRDiagnostics`, minimum backtest length,
+`effective_n_trials` for correlated Optuna trials, and an end-to-end
+backtest-overfitting audit with PBO on BTC/USDT data ("the Deflated Sharpe
+Ratio deflates by the number of strategy *configurations* searched … with
+`var_sharpe` estimated from the spread of trial Sharpes"). Net: purgedcv
+now covers purged CV + single-search deflation + PBO. It still ships **no
+family-wise correction across a screened factor family (0 FDR hits), no
+factor computation/IC, and no verdict**.
+
+**(b) ml4t-diagnostic 0.2.0 — no verdict API.** README greps at the
+0.2.0 tag: `gate` 0, `verdict` 0, `exit code` 0, `promotion|accept.?reject`
+0; `benjamini|fdr` 1 hit (a capability-table row: "Selection bias | Deflated
+Sharpe Ratio, PBO, RAS, FDR control, White's Reality Check" — diagnostics,
+not a gate). Release notes for 0.2.0 and 0.1.9: annualization propagation
+fix, dated portfolio snapshot validation, calibration diagnostics. The
+diagnostics-only shape §20/§23.11 recorded holds at 0.2.0.
+
+**(c) vectorbt and quantstats — the volume incumbents, none of the controls.**
+README greps: vectorbt `purge|embargo` 0, `benjamini|fdr` 0, `deflated` 0
+(`walk.?forward` 1 = parameter-sweep docs); quantstats `purge|embargo` 0,
+`benjamini|fdr` 0, `deflated` 0. vectorbt is additionally **not permissively
+licensed** (Commons Clause v1.0 — no right to Sell). Neither is a threat to
+the gap; they define the tier this repo is *not* (execution-speed
+backtesting; reporting tear sheets).
+
+### 25.3 Comparison table (all cells today's probes)
+
+| Tool | Approach | What it does well | Gap it leaves | What we do differently |
+|------|----------|-------------------|---------------|------------------------|
+| **MlFinLab** (4,959★, proprietary, no code push since 2023-10-02) | Commercial quant-ML library: AFML ch.7 purged/CPCV CV, BHY adjustment, haircut Sharpe, DSR, PBO, profit hurdles | Breadth (bars, labelling, meta-labels, ensembles, ONC, notebooks), production users, per-function docs | Licence: all-rights-reserved, £100+VAT/month/user, improvements assigned to licensor; no binary accept/reject verdict in the public source (`unverified` for the paid package) | MIT, offline, inspectable; the four controls + an explicit gate, none of the breadth |
+| **Quantopian stack** (alphalens 4,484★ / pyfolio 6,438★ / empyrical 1,517★; reloaded forks 681/619/131★) | Tear-sheet factor/portfolio analytics; last releases 2019–2020, forks maintain installability | The mental model of the field; familiar IC/quantile tear sheets; still the most-copied vocabulary | No purged CV, no FDR, no DSR, no gate; upstream frozen since 2019–2020 releases (re-confirmed today: pushes are branch-tip churn) | Same IC/quantile vocabulary, but every number passes through purge + family-wise FDR + gate |
+| **qlib** (49,796★, v0.9.8 2026-10-08, MIT) | End-to-end ML research platform (data, models, experiments) | Scale, data pipelines, model zoo, active releases (+60★/2d) | No purged/embargo CV, no multiple-testing correction, plain Sharpe only, no verdict | The narrow statistics layer qlib lacks; complementary, not competing |
+| **purgedcv** (59★, v0.1.11 2026-10-16, MIT) | sklearn-compatible CV + selection-bias statistics: PurgedKFold/CPCV/walk-forward, DSR-full, PBO, minimum backtest length | Correct time-series splits, JOSS paper, fastest mover on the statistics half since §20 (PBO + effective-n-trials shipped) | **No gate** (verdict/accept-reject/exit: 0 hits today), **no family-wise FDR across a factor family** (0 hits), no factor computation/IC | We consume its problem space (purged CV, DSR) and add the screen → family-wise correction → verdict chain on top |
+| **ml4t-diagnostic** (39★, v0.2.0 2026-10-27, MIT) | 7-library ML4T diagnostics: HAC-IC, FDR control, DSR, PBO, White's RC | Closest feature overlap on the statistics; active (46 PyPI releases) | **No binary verdict**: 0 hits for gate/verdict/exit-code/promotion at 0.2.0; Polars-required input; 7-library ecosystem overhead | The gate itself: ordered checks, exit 1 on reject, `--force` forbidden by design |
+| **vectorbt** (9,582★, v1.2.0 2026-10-19, Commons Clause) | Event-driven vectorized backtesting engine, parameter sweeps at speed | The strongest free backtester by star count; 66 releases since 2020-12 | No purge/embargo, no FDR, no DSR (README 0 hits); licence forbids commercial redistribution ("Sell") | Statistics over speed: we do not backtest at all — we gate factor research claims |
+| **quantstats** (7,762★, v0.0.86 2026-09-27, Apache-2.0) | Portfolio/report tear sheets (returns, drawdowns, attribution) | Reporting default for a lot of the ecosystem; 82 releases since 2019-05 | No purge/embargo, no FDR, no DSR (README 0 hits); reports any series you hand it, gated on nothing | We refuse before we report: the verdict precedes the tear sheet |
+| **pyanomaly** (132★, MIT, stale since 2024-03) | Academic anomaly replication on WRDS/CRSP | Real-data academic scope (large literature replication) | WRDS subscription required (no offline path); no purged CV, no FDR, no verdict | Offline synthetic-first; planted controls that prove the gate rejects |
+| **factorproof (this repo)** (MIT, active) | Screen factors → purged walk-forward CV → HAC-corrected IC → BH-FDR across the tested family → DSR → binary promotion gate | The full chain as one offline command; exit code IS the research decision; noise/lookahead controls that must fail | Narrow: ~15 factors, one data path, no bars/labelling/ML/portfolio construction, no PBO/haircut Sharpe, no production history | — (this is the row above; see COMPARISONS.md "Where this repo loses") |
+
+### 25.4 The gap we claim, and how a user notices it
+
+Standing gap (unchanged in kind, sharpened by §25.2(a)): there is still no
+live, permissively-licensed tool that packages **purged walk-forward CV +
+family-wise multiple-testing correction across the screened factor family +
+deflated Sharpe + an explicit binary promotion gate** together. The
+sharpening: purgedcv has now taken the single-search statistics (DSR, PBO,
+min-track-record), so the exclusively-ours territory is narrower than §20
+claimed — it is the **verdict layer**: family-wise BH-FDR *inside an
+accept/reject decision* applied to *computed factors*, with exit codes and
+no override, under MIT, offline.
+
+How a user notices it (concrete, runnable today):
+
+    factor-lab promote noise_control --data synthetic   # exits 1, prints the failing reasons
+    factor-lab promote mom_20 --data synthetic          # exits 0 on planted-signal data
+
+No tool in §25.3 offers a command whose exit code IS the research decision,
+with the full reason table on stdout and no override flag. That is the
+observable difference — not a feature list. ("Nothing else exists" is not
+the claim: five-plus real tools are named above; the claim is that none of
+them ships *this* combination.)
+
+Positioning per MARKET-VERDICTS.md stands verbatim: "the overfitting
+controls that quant research actually needs, without a £100/month licence",
+with the honesty clause that MlFinLab is more complete (COMPARISONS.md
+"Where MlFinLab wins", unchanged). The v0.1 spec's "not another
+backtester" framing does not conflict with that verdict; no new conflict to
+record in EVIDENCE.md this pass (existing records at EVIDENCE.md §"MARKET-
+VERDICTS" lines 272/292/302 stand).
+
+### 25.5 Alternatives considered (this pass)
+
+(i) Adding bt / riskfolio-lib / ta-lib to the table — rejected: none claims
+(or is asked about) overfitting controls; vectorbt + quantstats already
+represent the backtest-and-report tier honestly, and unprobed rows would be
+memory-cited cells (banned by QUALITY-CONTRACT §3).
+(ii) Re-opening the market question (e.g. "should we pivot to X?") —
+forbidden by MARKET-VERDICTS; not done.
+(iii) Inspecting MlFinLab's paid package for a verdict API — impossible
+without a licence; cell stays `unverified`, as §20 recorded.
+(iv) Dropping the pyanomaly row — kept: it is one of the ≥5 named academic
+comparators and costs one table row.
+
+### 25.6 Falsification — what would prove this pass wrong (F-R58…F-R60 new; F-R39/F-R40 stand)
+
+F-R39/F-R40 (standing, §20.5): gap-closure and probe-jitter checks —
+re-run today, both hold (§25.2).
+
+F-R58 (purgedcv takes the last cell): purgedcv ships (a) BH/Bonferroni/BY
+across a screened factor family, or (b) a promote/reject API with an exit
+code. Observable: README/API grep at the then-current PyPI version.
+Checked today at 0.1.11: 0 hits on both. First observation flips this to
+blocking.
+
+F-R59 (ml4t-diagnostic takes the verdict): `analyze_signal` or a sibling
+entry point returns a verdict or process exit code encoding
+accept/reject. Observable: README + source grep at the then-current version.
+Checked today at 0.2.0: gate/verdict/exit-code/promotion all 0 hits.
+
+F-R60 (this pass's numbers): all stars/pushes/releases above are probe-time
+values; the purgedcv −7 (66→59) and MlFinLab +19 (4,940→4,959) in two days
+exceed ±1 jitter and are recorded as observed (recount / traffic), not
+smoothed. If a same-day re-probe contradicts any cell, the cell is
+corrected; the gap claim depends only on the term-count greps in §25.2,
+which are re-runnable with one command each.
+
+### 25.7 Loop-status notes (observed today — NOT fixed here)
+
+1. No code changed in this pass. Only `docs/RESEARCH.md` (this section) and
+   `COMPARISONS.md` (metadata refresh + two new rows) are touched.
+2. Branch note (same precedent as §20.6): `feat/v0.1` is checked out in a
+   sibling worktree of this repo, so this pass commits on the current lane
+   branch for the orchestrator to fold in — content-complete, ref-neutral.
+3. `reports/mutants-survived-c6.txt` is 0 lines; `reports/mutation-c6.json`
+   reports killed=0 total=0 (the cycle-6 mutation run recorded no mutants) —
+   nothing to disposition; the authoritative kill score remains the
+   cycle-1 44.4% per §19.10. An implement/evaluate pass should re-run
+   mutmut rather than cite a 0/0 JSON.
+4. F-D1 (FDR family scope: pooled vs per-horizon) remains open — carried
+   from §23.12; not closable by a research pass per QUALITY-CONTRACT §0.
+5. Observed at pass end, pre-existing on the lane branch (verified on a
+   stashed clean tree, not introduced by this pass): `ruff format --check .`
+   reports 9 files "would reformat" (scripts/prove_on_real_data.py,
+   src/factorlab/promote.py, and 7 test files), while `ruff check .` is
+   clean and the full suite passes (`pytest -q` rc=0, 171 tests). Left
+   failing per QUALITY-CONTRACT §0 — an implement pass should run
+   `ruff format .` as a single focused change; a research pass must not
+   touch code.
+
+### 25.8 Link-verification table (all probed 2026-10-29, curl -L, UA Mozilla/5.0)
+
+| # | Source | URL | HTTP |
+|---|--------|-----|------|
+| E1a | GitHub API: mlfinlab (2026-10-29) | https://api.github.com/repos/hudson-and-thames/mlfinlab | 200 |
+| E1b | GitHub API: alphalens | https://api.github.com/repos/quantopian/alphalens | 200 |
+| E1c | GitHub API: pyfolio | https://api.github.com/repos/quantopian/pyfolio | 200 |
+| E1d | GitHub API: empyrical | https://api.github.com/repos/quantopian/empyrical | 200 |
+| E1e | GitHub API: qlib | https://api.github.com/repos/microsoft/qlib | 200 |
+| E1f | GitHub API: purgedcv | https://api.github.com/repos/eslazarev/purged-cross-validation | 200 |
+| E1g | GitHub API: ml4t-diagnostic | https://api.github.com/repos/ml4t/diagnostic | 200 |
+| E1h | GitHub API: pyanomaly | https://api.github.com/repos/chulwoohan/pyanomaly | 200 |
+| E1i | GitHub API: vectorbt | https://api.github.com/repos/polakowo/vectorbt | 200 |
+| E1j | GitHub API: quantstats | https://api.github.com/repos/ranaroussi/quantstats | 200 |
+| E1k | GitHub API: reloaded forks (3) | https://api.github.com/repos/stefan-jansen/alphalens-reloaded (+pyfolio-reloaded, empyrical-reloaded) | 200 |
+| E2a | GitHub releases: mlfinlab (no releases) | https://api.github.com/repos/hudson-and-thames/mlfinlab/releases/latest | 404 (expected) |
+| E2b | GitHub releases: alphalens v0.4.0 | https://api.github.com/repos/quantopian/alphalens/releases/latest | 200 |
+| E2c | GitHub releases: pyfolio 0.9.2 | https://api.github.com/repos/quantopian/pyfolio/releases/latest | 200 |
+| E2d | GitHub releases: empyrical 0.5.5 | https://api.github.com/repos/quantopian/empyrical/releases/latest | 200 |
+| E2e | GitHub releases: qlib v0.9.8 | https://api.github.com/repos/microsoft/qlib/releases/latest | 200 |
+| E3a | PyPI: purgedcv 0.1.11 | https://pypi.org/pypi/purgedcv/json | 200 |
+| E3b | PyPI: ml4t-diagnostic 0.2.0 | https://pypi.org/pypi/ml4t-diagnostic/json | 200 |
+| E3c | PyPI: vectorbt 1.2.0 | https://pypi.org/pypi/vectorbt/json | 200 |
+| E3d | PyPI: quantstats 0.0.86 | https://pypi.org/pypi/quantstats/json | 200 |
+| E4a | purgedcv 0.1.11 README (raw) | https://raw.githubusercontent.com/eslazarev/purged-cross-validation/main/README.md | 200 |
+| E4b | ml4t-diagnostic 0.2.0 README (raw) | https://raw.githubusercontent.com/ml4t/diagnostic/main/README.md | 200 |
+| E4c | ml4t-diagnostic releases (raw API) | https://api.github.com/repos/ml4t/diagnostic/releases?per_page=3 | 200 |
+| E4d | vectorbt README (raw) | https://raw.githubusercontent.com/polakowo/vectorbt/master/README.md | 200 |
+| E4e | quantstats README (raw) | https://raw.githubusercontent.com/ranaroussi/quantstats/main/README.md | 200 |
+| E4f | vectorbt licence text | https://api.github.com/repos/polakowo/vectorbt/license | 200 |
