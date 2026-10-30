@@ -37,9 +37,11 @@ Faults detected per test:
         scale-aware absolute floor: when the true lag-1 autocovariance is ~0,
         both spreads are float-cancellation residue (~2*sqrt(eps)*rms) that
         need not scale exactly (observed: cov ratio 32x instead of 9x on
-        products [+1.7e-18, -0.0625, -5.2e-18, +0.0625]). The floor is ~1e6x
-        below any meaningful spread, so the pin keeps full power on real
-        inputs.
+        products [+1.7e-18, -0.0625, -5.2e-18, +0.0625]). A second absolute
+        floor at sqrt(DBL_MIN) ≈ 1.49e-154 catches subnormal autocovariance
+        territory where c^2*cov vs cov*c^2 differ at the last ULP in IEEE 754
+        (observed: cov1=-2.27e-322 subnormal, c=2.0, c*s1 ≠ s2 by ~1 ULP).
+        Both floors are ~1e6x below any meaningful spread on real data.
     test_roll_spread_nonnegative_when_real:
         Fault: negative spread from a sign error under the square root.
 """
@@ -192,14 +194,21 @@ def test_roll_spread_scales_linearly(returns: list[float], c: float) -> None:
     scale = float(np.sqrt(np.mean(r**2))) if r.size else 0.0
     _noise_floor = 1e-7 * scale
 
+    # sqrt(DBL_MIN) ≈ 1.49e-154: when the lag-1 autocovariance is subnormal
+    # (< DBL_MIN ≈ 2.23e-308), IEEE 754 rounding causes c^2*cov ≠ cov*c^2
+    # at the last ULP, so the scaling law S(c*r)=c*S(r) cannot be asserted.
+    # Any spread below sqrt(DBL_MIN) is autocovariance-subnormal residue.
+    _subnormal_floor = 1.5e-154
+
     if math.isnan(s1):
         # s1=NaN means autocovariance was barely non-negative.
         # s2 must be NaN OR a noise-floor-dominated value (autocovariance
         # flipped to barely negative by scaling).
         assert math.isnan(s2) or s2 < _noise_floor * max(c, 1.0) * 2.0
-    elif s1 < _noise_floor:
-        # s1 is noise-floor-dominated: s2 may be NaN or equally tiny
-        assert math.isnan(s2) or s2 < _noise_floor * max(c, 1.0) * 2.0
+    elif s1 < _noise_floor or s1 < _subnormal_floor:
+        # s1 is noise-floor-dominated or autocovariance is subnormal:
+        # scaling law cannot hold in IEEE 754 subnormal territory
+        assert math.isnan(s2) or s2 < max(_noise_floor, _subnormal_floor) * max(c, 1.0) * 4.0
     else:
         # Meaningful spread: must scale linearly
         assert math.isclose(s2, c * s1, rel_tol=1e-6, abs_tol=1e-8 * scale)
