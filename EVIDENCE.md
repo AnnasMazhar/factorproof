@@ -1143,7 +1143,39 @@ FORBIDDEN [<host-path>]  EVIDENCE.md:1098  $ .venv/bin/pytest tests/ 2>&1 | tail
 ```
 
 Fixed EVIDENCE.md:1098 to repo-relative `$ .venv/bin/pytest tests/`. Re-run:
+## c7-p04-implement-1 (2026-10-29) — cycle 7 implement pass 1
 
+Landed the c7 research line (tmp-c3p10: Clark-West OOS stat wiring, BH family-scope
+lock, F-R41..F-R60 closures) plus this pass's fixes onto feat/v0.1. Formatting fix:
+`ruff format tests/test_bh_family_scope.py tests/test_clark_west.py` (previous pass
+left 2 files unformatted). RESEARCH.md merge resolved: tmp-c3p10 base (numbering cited
+by tests) + Appendix A preserving the parallel c7-p01 lane's sections. F1 fix: removed
+the last absolute host path from EVIDENCE.md (checker-clean).
+
+### pytest (on tmp-c3p10 tree == merged src/tests/scripts)
+
+```
+$ .venv/bin/python -m pytest
+192 passed, 2 warnings in 245.18s (0:04:05)
+```
+
+### ruff
+
+```
+$ .venv/bin/python -m ruff check . && .venv/bin/python -m ruff format --check .
+All checks passed!
+30 files already formatted
+```
+
+### real-data proof checker (F4)
+
+```
+$ .venv/bin/python scripts/check_real_data_proof.py
+check_real_data_proof: all checks passed.
+PROOF_COMPLETE
+```
+
+### internal-refs checker (F1), after EVIDENCE.md host-path fix
 ```
 $ .venv/bin/python scripts/check_no_internal_refs.py
 check_no_internal_refs: CLEAN — no forbidden tokens found.
@@ -1236,4 +1268,15 @@ hotspot is `information_coefficient` per-date pandas overhead + repeated
 walk-forward re-evaluation). The demo completes (prior evidence) but is too slow
 for a launch conversion path. Proposed fix (not attempted here — KAT-value risk):
 vectorize the per-date cross-sectional IC into wide date×asset matrices, with the
-existing KAT tests as the equivalence oracle. Recorded, not stubbed.
+existing KAT tests as the equivalence oracle. Recorded, not stubbed.```
+
+### vertical slice: single-factor promote (raw)
+
+```
+$ factor-lab promote noise_control --data signal
+...
+  note: WF splits: 5, method=walk_forward, cw=0.39 (Clark-West; >1.645 = OOS content)
+  note: BH FDR q=0.1, m=3 tests (3 horizons + 0 extra)
+Result: REJECT
+(exit 1 as intended)
+```
