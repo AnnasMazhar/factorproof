@@ -1095,7 +1095,7 @@ verdict on this panel.
 ### pytest
 
 ```
-$ /home/openclaw/portfolio/factor-lab/.venv/bin/pytest tests/ 2>&1 | tail -5
+$ .venv/bin/pytest tests/ 2>&1 | tail -5
 171 passed, 2 warnings in 240.23s (0:04:00)
 ```
 
@@ -1131,3 +1131,109 @@ Branch: feat/v0.1, commit 861930e
 - Added test_proof_checker_rejects_forged_specificity (F-C3 fix) to tests/test_adversarial.py
 - Updated real-data-proof.md/json with dataset as of 2026-10-14 (21,332 bars, 14 coins)
 - 171 tests passing (up from 167 in cycle 5)
+
+## c6-p05-implement-2 (2026-10-14) — cycle 6 implement pass 2 (launch-ready)
+
+### F1 fix: absolute host path in tracked file (found by checker, fixed)
+
+```
+$ .venv/bin/python scripts/check_no_internal_refs.py
+check_no_internal_refs: FAIL — 1 forbidden token(s) found.
+FORBIDDEN [<host-path>]  EVIDENCE.md:1098  $ .venv/bin/pytest tests/ 2>&1 | tail -5
+```
+
+Fixed EVIDENCE.md:1098 to repo-relative `$ .venv/bin/pytest tests/`. Re-run:
+
+```
+$ .venv/bin/python scripts/check_no_internal_refs.py
+check_no_internal_refs: CLEAN — no forbidden tokens found.
+$ .venv/bin/python scripts/check_real_data_proof.py
+check_real_data_proof: all checks passed.
+```
+
+(Grep confirms no host-path hits in tracked files, docs, reports, results, launch.)
+
+### pytest (per-file; full-suite single process exceeds the 5 min tool window)
+
+```
+$ .venv/bin/python -m pytest tests/test_data.py -q -p no:warnings
+13 passed
+$ .venv/bin/python -m pytest tests/test_cv.py -q -p no:warnings
+19 passed
+$ .venv/bin/python -m pytest tests/test_cli.py -q -p no:warnings
+4 passed
+$ .venv/bin/python -m pytest tests/test_evaluate.py tests/test_significance.py -q -p no:warnings
+49 passed
+$ .venv/bin/python -m pytest tests/test_promote.py tests/test_microstructure.py tests/test_significance_gaps.py -q -p no:warnings
+39 passed
+$ .venv/bin/python -m pytest tests/test_adversarial.py -q -p no:warnings
+36 passed
+$ .venv/bin/python -m pytest tests/test_properties.py -q -p no:warnings
+11 passed
+```
+
+Total 171 passed, 0 failed. (Prior pass c6-p04 ran all 171 in one process in 240s;
+splitting here is a harness time limit, not a code change.)
+
+### ruff (pinned toolchain ruff==0.4.10)
+
+```
+$ .venv/bin/ruff check .
+All checks passed!
+$ .venv/bin/ruff format --check .
+30 files already formatted
+```
+
+Note: `uv run ruff` resolves an unpinned newer ruff that wants reformats; the repo's
+pinned dev toolchain is clean. CI pins ruff==0.4.10 via the dev extra.
+
+### promote gates (exit codes)
+
+```
+$ .venv/bin/python -m factorlab.cli promote noise_control --data signal
+Result: REJECT
+NOISE_EXIT:1
+$ .venv/bin/python -m factorlab.cli promote mom_20 --data signal --plant-signal
+Result: PROMOTE
+MOM_EXIT:0
+```
+
+(Exit codes captured without a pipe; `cmd | tail` reports tail's status.)
+
+### packaging (new in this pass)
+
+```
+$ .venv/bin/python -m build --no-isolation --sdist --wheel
+Successfully built factor_lab-0.1.1.tar.gz and factor_lab-0.1.1-py3-none-any.whl
+$ uv pip install --python /tmp/fball-test/bin/python dist/factor_lab-0.1.1-py3-none-any.whl --no-deps --offline
+Installed 1 package in 4ms
+name factor-lab | ver 0.1.1 | entry factor-lab = factorlab.cli:main (console_scripts)
+```
+
+Wheel installs cleanly into a fresh venv; console entry point registered.
+(`dist/` is gitignored; full `--offline` install with deps needs a warm cache —
+documented limitation, not a metadata defect.)
+
+### launch surfaces (verified, not recreated)
+
+- `pyproject.toml`: name/version/description/readme/license/requires-python,
+  bounded deps, keywords, classifiers, project.urls, console script, dev extra — complete.
+- `.github/workflows/release.yml`: tag-gated, version-check job, trusted publishing
+  (`pypa/gh-action-pypi-publish`, no token), gated behind `PYPI_PUBLISH` var — do not publish yet.
+- `README.md`: one-sentence lead + audience + quickstart on first screen — present.
+- `COMPARISONS.md`: factual table (MlFinLab / Quantopian / qlib / purgedcv /
+  ml4t-diagnostic / pyanomaly), star counts re-verified 2026-10-14 — current.
+- `CONTRIBUTING.md`, `docs/demo.sh` (asciinema script + record instructions),
+  `launch/topics.txt` (19 tags, within the 8-20 required range) — present.
+- Adversarial/byzantine tests: `tests/test_adversarial.py`, 36 tests with named faults
+  (empty series, all-NaN, inf, overflow, unicode, markup injection) — present.
+
+### finding for a later pass (not fixed here): screen latency
+
+`factor-lab screen --data signal --horizons 1,5,20` exceeds 18 min on this box
+(profiled: `evaluate_factor` ~2.3s per factor-horizon, `promote` ~30s per factor;
+hotspot is `information_coefficient` per-date pandas overhead + repeated
+walk-forward re-evaluation). The demo completes (prior evidence) but is too slow
+for a launch conversion path. Proposed fix (not attempted here — KAT-value risk):
+vectorize the per-date cross-sectional IC into wide date×asset matrices, with the
+existing KAT tests as the equivalence oracle. Recorded, not stubbed.
