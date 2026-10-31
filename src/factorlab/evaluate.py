@@ -246,11 +246,22 @@ def yearly_ic_table(
     Dict mapping horizon -> list of {"year", "n", "ic", "t_hac"} dicts,
     years in ascending order. A year with fewer than 2 valid
     cross-sections keeps its (small) n with NaN statistics.
+
+    An additional summary horizon key ``"summary"`` is added mapping to a
+    dict of horizon -> {"ic": <simple mean>, "weighted_ic": <T_j-weighted>}.
+    The T_j-weighted IC follows Fama & French (1997) Eq. 5, p. 1980::
+
+        IC_pool = sum_j(T_j * IC_j) / sum_j(T_j)
+
+    where T_j is the number of valid cross-sections in year j.  When regime
+    windows differ in length, the weighted estimate gives more influence to
+    years with more data (F-R57, docs/RESEARCH.md §24.6).
     """
     fwd_dict = forward_returns(df, horizons)
     dates = pd.DatetimeIndex(pd.to_datetime(factor_vals.index.get_level_values("date")))
     year_of = dates.year.to_numpy()
     out: dict[int, list[dict[str, float | int]]] = {}
+    summary: dict[int, dict[str, float]] = {}
     for h in horizons:
         rows: list[dict[str, float | int]] = []
         for year in sorted(set(year_of.tolist())):
@@ -260,7 +271,35 @@ def yearly_ic_table(
             )
             rows.append({"year": int(year), "n": int(n), "ic": mean_ic, "t_hac": t_hac})
         out[h] = rows
+
+        # T_j-weighted pooled IC (Fama & French 1997, Eq. 5, p. 1980).
+        # Weight year j by T_j = n_j (number of valid cross-sections).
+        # Years with NaN IC (n < 2) contribute 0 weight.
+        valid_rows = [(r["n"], r["ic"]) for r in rows if not _isnan(r["ic"])]
+        if valid_rows:
+            sum_w = sum(n_j for n_j, _ in valid_rows)
+            if sum_w > 0:
+                weighted_ic: float = sum(n_j * ic_j for n_j, ic_j in valid_rows) / sum_w
+            else:
+                weighted_ic = float("nan")
+            simple_ic: float = sum(ic_j for _, ic_j in valid_rows) / len(valid_rows)
+        else:
+            weighted_ic = float("nan")
+            simple_ic = float("nan")
+        summary[h] = {"ic": simple_ic, "weighted_ic": weighted_ic}
+
+    # Expose summary under the string key "summary" for callers that want
+    # the pooled estimates without altering the per-year list structure.
+    out["summary"] = summary  # type: ignore[assignment]
     return out
+
+
+def _isnan(x: float | int) -> bool:
+    """Return True if x is NaN (works for both float and int)."""
+    try:
+        return x != x  # NaN != NaN
+    except TypeError:
+        return False
 
 
 def quantile_analysis(
@@ -862,3 +901,82 @@ def oos_cw_stat(
     if math.isnan(se) or se <= 0.0:
         return float("nan")
     return f_bar / se
+
+
+def ic_sign_autocorr(ic_series: list[float]) -> dict[str, float]:
+    """Lag-1 IC sign autocorrelation (factor-momentum OOS-consistency test).
+
+    Measures whether the sign of the IC in split t predicts the sign in
+    split t+1 — the empirical test for factor momentum in the sense of
+    Gupta & Kelly (2019) *Factor Momentum Everywhere*, JPM 45(3):13-36.
+
+    If the OOS-consistency gate (≥60% of splits with positive IC) has
+    predictive power for FUTURE IC, the lag-1 IC sign autocorrelation
+    (rho) should be positive and statistically distinguishable from zero.
+    If rho ≈ 0, the gate tests past IC quality but does not predict future
+    IC — an honest finding reported as F-R60 in docs/RESEARCH.md §24.9.
+
+    Method
+    ------
+    Given a sequence of per-split IC values [ic_0, ..., ic_{T-1}]:
+
+    1. Binarise: s_t = sign(ic_t) ∈ {-1, +1} (NaN splits dropped).
+    2. Lag-1 autocorrelation of the sign series::
+
+           rho = corr(s_t, s_{t-1}) = Pearson(s_1…s_{T-1}, s_0…s_{T-2})
+
+    3. Hypothesis test: under H0 rho=0, the approximate SE is 1/sqrt(T-1)
+       where T-1 = number of consecutive sign pairs.  The t-statistic is
+       rho * sqrt(T-1).  This is an asymptotic normal approximation valid
+       for T >= 6; smaller T returns NaN for t_stat.
+
+    Parameters
+    ----------
+    ic_series:
+        Ordered list of per-split IC values (e.g. from walk-forward CV).
+        NaN values are dropped before the autocorrelation is computed.
+
+    Returns
+    -------
+    Dict with keys:
+
+    * ``"rho"`` — lag-1 Pearson autocorrelation of the sign series.
+    * ``"t_stat"`` — asymptotic t-statistic under H0: rho=0.
+    * ``"n_pairs"`` — number of consecutive sign pairs used.
+    * ``"pct_positive"`` — fraction of non-NaN splits with positive IC.
+
+    All float; NaN if fewer than 4 valid IC values (3 pairs minimum for
+    a non-trivial estimate and t-stat).
+    """
+    valid = [ic for ic in ic_series if not (ic != ic)]  # drop NaN
+    if len(valid) < 4:
+        return {
+            "rho": float("nan"),
+            "t_stat": float("nan"),
+            "n_pairs": 0,
+            "pct_positive": float("nan"),
+        }
+
+    signs = np.array([1.0 if v >= 0.0 else -1.0 for v in valid])
+    pct_pos = float((signs > 0).sum()) / len(signs)
+
+    # Lag-1 pairs: x = signs[:-1], y = signs[1:]
+    x = signs[:-1]
+    y = signs[1:]
+    n_pairs = len(x)
+
+    # Pearson correlation of the binary sign series
+    rho = _pearson_corr(x, y)
+
+    # Asymptotic t-stat: rho * sqrt(n_pairs) under H0: rho = 0
+    if n_pairs >= 3 and not math.isnan(rho):  # noqa: PLR2004
+        t_stat = rho * math.sqrt(n_pairs)
+    else:
+        t_stat = float("nan")
+
+    return {
+        "rho": rho,
+        "t_stat": t_stat,
+        "n_pairs": n_pairs,
+        "pct_positive": pct_pos,
+    }

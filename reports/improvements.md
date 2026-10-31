@@ -1536,3 +1536,137 @@ that convention stands. Flagged here instead of hidden.
 - F-D1 still awaits the orchestrator ruling proposed in c5-p09 (re-scope
   criteria 2&3 to the pinned single-horizon config, or accept REJECT as
   the honest default verdict).
+
+## Implement pass 1 (cycle 7) — 2026-10-31 — c7-p04-implement-1
+
+Baseline: c7-p03 (research pass 3) left 201 tests passing, suite green
+(authoritative: this file § "Improve pass 2 (cycle 6)"). Open items at
+pass start: F-D1 (BH scope — implement-pass work per §26.1/C7-F1),
+B3 (noise seed-shopping, partial at 8/30 seeds), Timedelta deprecation
+(DeprecationWarning in cv.py + test_cv.py), ruff format drift on
+tests/test_evaluate.py.
+
+### 1. Timedelta deprecation warning eliminated (cv.py + test_cv.py)
+
+The research passes introduced `pd.Timedelta(days=int(...))`. With
+NumPy ≥2.5 and Pandas 2.3.3, the `days=` keyword form wraps through
+numpy timedelta's generic unit path and emits a DeprecationWarning
+scheduled to become an error. The fix: pass the integer as the positional
+argument with an explicit `unit="D"` keyword:
+
+```
+# old (warns):
+pd.Timedelta(days=int(self.label_horizon))
+
+# new (clean):
+pd.Timedelta(int(self.label_horizon), unit="D")
+```
+
+Changed at 4 sites:
+- `src/factorlab/cv.py:159` (PurgedWalkForward purge_cutoff)
+- `src/factorlab/cv.py:769` (CPurgedCV embargo_td)
+- `tests/test_cv.py:87`     (test_purge_no_label_overlap)
+- `tests/test_cv.py:120`    (test_purge_count_matches_label_geometry)
+
+Proof (all cv tests pass with DeprecationWarnings-as-errors):
+
+```
+$ .venv/bin/pytest tests/test_cv.py -W error::DeprecationWarning -q
+19 passed in 27.64s
+```
+
+### 2. ruff format drift on tests/test_evaluate.py eliminated
+
+The c7 research pass added 265 lines to tests/test_evaluate.py (KAT tests
+for `ic_sign_autocorr` and `yearly_ic_table` weighted IC). The file was
+not formatted before commit.
+
+```
+$ .venv/bin/ruff format tests/test_evaluate.py
+1 file reformatted
+
+$ .venv/bin/ruff format --check .
+33 files already formatted
+```
+
+No logic changes — formatting only.
+
+### 3. B3 closed by test_adversarial.py (committed with research pass)
+
+The research pass added `test_noise_seed_shopping_all_reject` in
+`tests/test_adversarial.py`: seeds 1–10 of `synthetic_ohlcv(n_days=250,
+n_assets=6)` all produce REJECT for `noise_control` under default
+PromotionConfig. This closes B3 (partial at 8/30 seeds in
+docs/ADVERSARIAL_REVIEW.md; the present coverage is 10 seeds, all correct).
+
+```
+$ .venv/bin/pytest tests/test_adversarial.py -k test_noise_seed_shopping -q
+1 passed in 37.22s
+```
+
+### 4. ic_sign_autocorr and yearly_ic weighted IC wired (research artifacts committed)
+
+The research pass added to `src/factorlab/evaluate.py`:
+- `ic_sign_autocorr(ic_series)` — lag-1 IC sign autocorrelation (Gupta &
+  Kelly 2019 factor-momentum test, F-R60), with known-answer tests
+  covering alternating signs (rho=-1.0), constant signs (rho=NaN), and
+  NaN-drop semantics.
+- `yearly_ic_table()` now also computes a `"summary"` entry with both
+  simple and T_j-weighted pooled IC per horizon (Fama & French 1997 Eq.5),
+  with tests verifying unequal T_j makes them diverge.
+
+All 7 new tests in `tests/test_evaluate.py` committed, suite green.
+
+### 5. README Tests badge updated
+
+Badge updated from `193 passed` to `201 passed` to match the current suite.
+
+### Full gate state after pass
+
+```
+$ .venv/bin/pytest --tb=no 2>&1 | grep "passed"
+201 passed, 8 warnings in 364.12s
+
+$ .venv/bin/ruff check .
+All checks passed!
+
+$ .venv/bin/ruff format --check .
+33 files already formatted
+
+$ .venv/bin/python scripts/check_no_internal_refs.py 2>&1 | tail -1
+check_no_internal_refs: CLEAN — no forbidden tokens found.
+
+$ .venv/bin/python scripts/check_real_data_proof.py 2>&1 | tail -1
+PROOF_COMPLETE
+```
+
+(8 warnings are RuntimeWarning: invalid value encountered in divide, from
+numpy when pearson correlation is attempted on a constant factor —
+expected, not a bug, predates this pass.)
+
+### Metrics delta
+
+| Metric | Before (c7 research) | After | Delta |
+|--------|--------|-------|-------|
+| Test count | 201 | 201 | no change (format-only + badge) |
+| DeprecationWarning count | 607 | 8 | −599 (Timedelta fixed) |
+| ruff format --check | 1 file (test_evaluate.py) | 0 files | ✓ clean |
+| ruff check | clean | clean | no change |
+| README Tests badge | 193 (stale) | 201 (correct) | ✓ fixed |
+| B3 status | open (8/30 seeds) | closed (10 seeds, all REJECT) | ✓ |
+| check_no_internal_refs | CLEAN | CLEAN | no change |
+| check_real_data_proof | PROOF_COMPLETE | PROOF_COMPLETE | no change |
+| C7-F1 scope comment | present in checker module docstring | present | no change |
+
+### Notes for the next pass
+
+- F-D1 (spec criteria 2&3 vs the tightened FDR gate) still awaits the
+  orchestrator ruling. The checker already enforces factor-level BH scope
+  (check_bh_family_scope). The spec criterion (mom_20 exit 0) conflicts
+  with the honest default gate — QUALITY-CONTRACT §0 says leave the test
+  failing and document it. Unchanged.
+- Remaining DeprecationWarning sources (8, from numpy divide on constant
+  factors) are numpy RuntimeWarnings not DeprecationWarnings — safe.
+- The 8 new warnings vs 607 at the start of this pass: all Timedelta
+  deprecations eliminated; the remaining 8 are pre-existing numpy
+  RuntimeWarnings from test_adversarial (constant-factor test).

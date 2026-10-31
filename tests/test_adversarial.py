@@ -80,6 +80,11 @@ Faults detected per test:
         returning clean (False) when factor.compute() raises — a factor that
         computes on real data but refuses perturbed panels dodges every
         lookahead layer while flipping REJECT into PROMOTE.
+    test_noise_seed_shopping_all_reject (B3):
+        Fault: noise_control accidentally promoted on some synthetic panel seed —
+        "seed shopping" where repeated runs find a seed where noise looks like
+        signal; all 10 seeds 1-10 must produce REJECT (closes B3 from
+        docs/ADVERSARIAL_REVIEW.md, which was partial at 8/30 seeds).
 """
 
 from __future__ import annotations
@@ -1657,3 +1662,56 @@ def test_internal_refs_detector_catches_forbidden_token(tmp_path):
     clean_file = tmp_path / "clean.py"
     clean_file.write_text("# Normal code\nimport factorlab\n", encoding="utf-8")
     assert checker.scan_file(clean_file) == [], "clean file produced false-positive hits"
+
+
+# ---------------------------------------------------------------------------
+# B3: noise seed-shopping sweep (adversarial finding, docs/ADVERSARIAL_REVIEW.md §B3)
+# ---------------------------------------------------------------------------
+
+
+def test_noise_seed_shopping_all_reject():
+    """B3: noise_control must be REJECTED on every synthetic panel seed.
+
+    Fault detected: a seeded random noise factor that happens to produce
+    enough IC autocorrelation (or correlation with the planted signal) to
+    slip past the statistical gates on some seeds — "seed shopping" being
+    the researcher's ability to run promote() repeatedly and cherry-pick
+    the seed where noise accidentally looks like signal.
+
+    Method: run promote(noise_control, synthetic_ohlcv(n_days=250, seed=k))
+    for seeds k ∈ {1, …, 10}. All 10 must produce REJECT.
+
+    This test closes B3 (open since c2-p11, partial at 8/30 seeds in
+    docs/ADVERSARIAL_REVIEW.md).  Seeds 1-4 were covered in c3-p11,
+    seeds 5, 6, 8, 9 in c4-p11 — all rejected.  This pass covers 1-10.
+
+    Configuration: n_days=250, n_assets=6 — the smallest panel that still
+    generates enough non-overlapping walk-forward splits for the gate.
+    PromotionConfig defaults (no softening).
+
+    External ground truth: the BH-FDR gate at q=0.10 over 3 horizons
+    (H=1,5,20) has a theoretical FDR rate of 10% per family — i.e. the
+    probability that ANY noise factor survives FDR over a random panel is
+    ≤ 0.10.  Over 10 independent seeds each with n=250 bars, the probability
+    that all 10 are correctly rejected under the null is ≥ 0.90^10 ≈ 35%.
+    So a single green run is not guaranteed; but repeated runs across many
+    seeds should reject the overwhelming majority — the gate's whole purpose.
+    The 10-seed sample establishes the baseline; a single promotion here is
+    a P0 finding (raise immediately, do not soften the gate).
+    """
+    from factorlab.promote import PromotionConfig, promote
+
+    cfg = PromotionConfig()
+    failures: list[tuple[int, str]] = []
+
+    for seed in range(1, 11):
+        df = synthetic_ohlcv(n_days=250, n_assets=6, seed=seed)
+        decision = promote(get_factor("noise_control"), df, cfg)
+        if decision.verdict != "reject":
+            failures.append((seed, decision.verdict))
+
+    assert not failures, (
+        f"noise_control was PROMOTED on seeds {[s for s,_ in failures]} — "
+        f"this is a P0 finding. Do NOT soften the gate to fix this test. "
+        f"Investigate which gate(s) failed and add a specific test for that path."
+    )

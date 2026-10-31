@@ -156,7 +156,7 @@ class PurgedWalkForward:
             # Remove training rows where the label window [date, date+horizon] overlaps
             # the first test date.  A row at training date t is purged if:
             #     t + label_horizon >= first_test_date
-            purge_cutoff = first_test_date - pd.Timedelta(days=self.label_horizon)
+            purge_cutoff = first_test_date - pd.Timedelta(int(self.label_horizon), unit="D")
             # Using calendar days (not trading days) for simplicity and safety
             train_after_purge = train_dates_raw[train_dates_raw <= purge_cutoff]
             n_purged = len(train_dates_raw) - len(train_after_purge)
@@ -766,7 +766,7 @@ class CPurgedCV:
             #   t + label_horizon >= first date of any adjacent test group
             # We remove training dates within label_horizon calendar days of any
             # test group's start boundary.
-            embargo_td = pd.Timedelta(days=self.label_horizon)
+            embargo_td = pd.Timedelta(int(self.label_horizon), unit="D")
             keep_mask = np.ones(len(train_dates_raw), dtype=bool)
 
             for tg in test_groups:

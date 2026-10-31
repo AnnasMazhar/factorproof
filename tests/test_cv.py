@@ -84,7 +84,7 @@ def test_purge_no_label_overlap(small_df):
 
         for td in train_dates:
             # td + label_horizon calendar days must be strictly before first_test_date
-            label_end = td + pd.Timedelta(days=splitter.label_horizon)
+            label_end = td + pd.Timedelta(int(splitter.label_horizon), unit="D")
             assert label_end < first_test_date, (
                 f"Split {spl.split_id}: training date {td.date()} has label window "
                 f"ending at {label_end.date()} which overlaps test start {first_test_date.date()}"
@@ -117,7 +117,7 @@ def test_purge_count_matches_label_geometry(small_df):
         test_start_pos = (spl.split_id + 1) * chunk_size
         first_test_date = dates[test_start_pos]
         train_raw = dates[:test_start_pos]
-        cutoff = first_test_date - pd.Timedelta(days=splitter.label_horizon)
+        cutoff = first_test_date - pd.Timedelta(int(splitter.label_horizon), unit="D")
         expected_purged = int((train_raw > cutoff).sum())
         assert expected_purged > 0, (
             f"Split {spl.split_id}: fixture too short to purge anything — "
