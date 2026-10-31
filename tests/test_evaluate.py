@@ -32,6 +32,10 @@ Faults detected per test:
         Fault: calendar-year slicing mis-assigns or drops observation dates.
     test_yearly_ic_partition_and_determinism:
         Fault: yearly slices that drop/duplicate dates, or hidden randomness.
+    test_max20_negation_present:
+        Fault: Max20.compute() returns the raw max instead of the negated max,
+        so the factor predicts positive-MAX momentum rather than the documented
+        reversal premium (Bali-Cakici-Whitelaw 2011).
 """
 
 from __future__ import annotations
@@ -696,3 +700,84 @@ def test_yearly_ic_partition_and_determinism(seed):
             assert (
                 math.isnan(ic) or -1.0 - 1e-9 <= ic <= 1.0 + 1e-9
             ), f"h={h} year {r['year']}: ic out of bounds: {ic}"
+
+
+# ---------------------------------------------------------------------------
+# MAX_20 factor — KAT for negation
+# ---------------------------------------------------------------------------
+
+
+def test_max20_negation_present() -> None:
+    """KAT: Max20 returns the negated rolling maximum, not the raw maximum.
+
+    Fault detected: missing negation in Max20.compute() — without negation,
+    the factor correlates positively with the 20-day maximum return, predicting
+    momentum for high-MAX assets rather than the documented reversal premium
+    (Bali, Cakici & Whitelaw 2011 J. Financial Economics 99(2):427-446).
+
+    Ground truth: by construction, max_20 = -max(log_ret over 20 days).
+    A hand-built 3-asset panel with known max values lets us verify the sign
+    independently of the factor implementation.
+
+    Non-vacuity: removing the negation from Max20.compute() causes this test
+    to fail because the values produced by the factor would be positive where
+    the true negated-max is negative.
+    """
+    import numpy as np
+    import pandas as pd
+
+    from factorlab.factors import Max20
+
+    rng = np.random.default_rng(42)
+    n_days = 30
+    dates = pd.date_range("2020-01-01", periods=n_days, freq="D")
+    assets = ["A", "B", "C"]
+
+    # Build deterministic prices with known log-return series
+    rows = []
+    for asset in assets:
+        prices = 100.0 * np.cumprod(1 + rng.standard_normal(n_days) * 0.02)
+        for i, date in enumerate(dates):
+            rows.append(
+                {
+                    "date": date,
+                    "asset": asset,
+                    "open": prices[i],
+                    "high": prices[i] * 1.001,
+                    "low": prices[i] * 0.999,
+                    "close": prices[i],
+                    "volume": 1e6,
+                }
+            )
+    df = pd.DataFrame(rows)
+
+    factor = Max20()
+    result = factor.compute(df)
+
+    # Independently compute the expected result
+    close_wide = df.pivot(index="date", columns="asset", values="close")
+    log_ret = np.log(close_wide / close_wide.shift(1))
+    expected_wide = -log_ret.rolling(window=20, min_periods=20).max()
+
+    # Convert to long format for comparison
+    expected_long = expected_wide.stack().rename_axis(["date", "asset"]).rename("value").dropna()
+    result_nonnan = result.dropna()
+
+    # Align on the same index
+    common = result_nonnan.index.intersection(expected_long.index)
+    assert len(common) > 0, "No overlapping non-NaN observations"
+
+    np.testing.assert_allclose(
+        result_nonnan.loc[common].values,
+        expected_long.loc[common].values,
+        rtol=1e-10,
+        err_msg="Max20 values do not match negated rolling maximum",
+    )
+
+    # Sign check: all non-NaN factor values must be <= 0
+    # (the maximum of returns is >= 0, so its negation is <= 0)
+    pos_count = int((result_nonnan > 1e-12).sum())
+    assert pos_count == 0, (
+        f"Max20 returned {pos_count} positive values — negation is missing. "
+        f"First positive: {result_nonnan[result_nonnan > 1e-12].head(3)}"
+    )

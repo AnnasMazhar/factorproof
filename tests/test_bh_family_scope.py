@@ -233,19 +233,26 @@ def test_hypothesis_bh_flags_match_scipy_style_reference() -> None:
     """Cross-check BH against a from-scratch reference on random p-vectors.
 
     Fault detected: a regression in benjamini_hochberg itself that would
-    silently invalidate both the proof and the scope check.
+    silently invalidate both the proof and the scope check, including a
+    float arithmetic ordering bug where q*k/m diverges from (k/m)*q by
+    up to 2 ULP at boundaries, causing the reference to disagree with the
+    implementation at exact-equality boundary cases.
     """
     from hypothesis import given, settings
     from hypothesis import strategies as st
 
     def ref_bh(p: list[float], q: float) -> list[bool]:
+        # B&H (1995) threshold: (k/m)*q — divide first, then multiply.
+        # q*k/m diverges from (k/m)*q by up to 2 ULP at float boundaries
+        # because multiplying q*k accumulates rounding before /m; the
+        # implementation uses (rank/m)*q throughout, so ref_bh must match.
         m = len(p)
         order = sorted(range(m), key=lambda i: p[i])
         max_k = 0
         for k, i in enumerate(order, start=1):
-            if p[i] <= q * k / m:
+            if p[i] <= (k / m) * q:
                 max_k = k
-        return [p[i] <= q * max_k / m for i in range(m)]
+        return [p[i] <= (max_k / m) * q for i in range(m)]
 
     @given(
         pvals=st.lists(

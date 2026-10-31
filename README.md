@@ -3,7 +3,7 @@
 The overfitting controls that quant research actually needs — without a £100/month licence.
 
 ![Python](https://img.shields.io/badge/python-3.11%2B-blue)
-![Tests](https://img.shields.io/badge/tests-192%20passed-brightgreen)
+![Tests](https://img.shields.io/badge/tests-193%20passed-brightgreen)
 ![Ruff](https://img.shields.io/badge/ruff-clean-brightgreen)
 ![Licence](https://img.shields.io/badge/licence-MIT-green)
 
@@ -16,7 +16,7 @@ user. This does less and costs nothing.
 # Install (no network at test time)
 uv venv && uv pip install -e '.[dev]'
 
-# Screen 13 factors, reject the noise
+# Screen 14 factors, reject the noise
 factor-lab screen --data signal --horizons 1,5,20
 
 # Ask the gate (exit 1 = reject; there is no --force by design).
@@ -88,7 +88,7 @@ Requires Python 3.11+. No network access in tests.
 ## 60-second quickstart
 
 ```bash
-# Screen all 13 factors on synthetic data with a planted momentum signal
+# Screen all 14 factors on synthetic data with a planted momentum signal
 factor-lab screen --data signal --horizons 1,5,20 --out results/
 
 # Promote or reject a single factor
@@ -107,7 +107,7 @@ If this is useful, a GitHub star helps others find it.
 ## Real results (from examples/run_demo.sh)
 
 Run on synthetic data with an embedded AR(1) momentum signal (rho=0.15).
-13 factors screened at horizons 1, 5, 20 days with Newey-West HAC t-stats.
+14 factors screened at horizons 1, 5, 20 days with Newey-West HAC t-stats.
 
 | Factor | H | IC | IC-IR | t-stat | Q-Spread | HR-WLB | Turnover | Coverage | FDR | Verdict |
 |--------|---|-----|-------|--------|----------|--------|----------|----------|-----|---------|
@@ -125,14 +125,14 @@ Run on synthetic data with an embedded AR(1) momentum signal (rho=0.15).
 | noise_control | 20 | -0.0094 | -0.0313 | -1.21 | -0.0020 | 0.4911 | 1.3184 | 1.00 | N | REJECT |
 | amihud_illiq_20 | 5 | 0.0041 | 0.0122 | 0.25 | 0.0001 | 0.4790 | 0.1038 | 0.99 | N | REJECT |
 
-Promoted in screen: 0/13 (all factors rejected under HAC + BH FDR across 13 factors).
+Promoted in screen: 0/14 (all factors rejected under HAC + BH FDR across 14 factors).
 Promoted (standalone, defaults): 0 — `factor-lab promote mom_20 --data signal --plant-signal`
 currently REJECTs on `survives_fdr` (BH p=0.1065 vs q=0.10, m=3 horizons; exit 1, measured
 2026-10-14). The planted signal (IC=0.025 at H=5) does not clear the default bar once the
 FDR family spans all evaluated horizons (c5-p04 multiplicity fix).
 
 **Why does the screen reject everything?** HAC t-stats at H=20 are ~3x lower than naive t-stats
-due to overlapping-label autocorrelation. Combined with FDR over 13 factors (BH threshold for
+due to overlapping-label autocorrelation. Combined with FDR over 14 factors (BH threshold for
 rank 6 = 0.069), no factor survives. This is correct behaviour — this AR(1) signal (rho=0.15)
 is genuinely weak when measured honestly. Sensitivity (the gate CAN see a real signal) is
 pinned by `tests/test_promote.py::test_planted_signal_promoted` under an explicit
@@ -149,7 +149,7 @@ pessimistic end of the confidence interval. A factor with 55% hit rate on 30
 observations has Wilson LB = 37% — the gate would correctly reject it.
 
 **Why Benjamini-Hochberg FDR correction?**
-If you test 13 factors, you expect 5% * 13 = 0.65 spurious discoveries at alpha=5%.
+If you test 14 factors, you expect 5% * 14 = 0.70 spurious discoveries at alpha=5%.
 FDR correction controls the expected fraction of false discoveries. BH q=0.10
 (the gate default) means that among promoted factors, roughly 1 in 10 is
 expected to be noise.

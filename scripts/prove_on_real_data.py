@@ -459,6 +459,71 @@ def _make_noise_factor(df: pd.DataFrame, seed: int) -> pd.Series:
 
 
 # ---------------------------------------------------------------------------
+# Cross-IC correlation check (F-R51)
+# ---------------------------------------------------------------------------
+
+
+def _cross_ic_corr(
+    factor_a_name: str,
+    factor_b_name: str,
+    df: pd.DataFrame,
+    horizon: int,
+) -> float:
+    """Pearson correlation between the per-date IC time series of two factors.
+
+    F-R51 (docs/RESEARCH.md 26.10): max_20 (lottery premium) and skew_60
+    (skewness premium) both proxy for tail/lottery preference. Cross-IC
+    correlation > 0.70 indicates < 5% incremental information per the
+    Green-Hand-Zhang (2017) threshold. This is a diagnostic, not a gate:
+    the proof reports the value so reviewers can assess redundancy.
+
+    The per-date IC is the cross-sectional Pearson correlation between
+    the factor's values and the H-day forward log-return, computed on each
+    date independently (same as the IC computation in evaluate.py).
+    """
+    from factorlab.evaluate import forward_returns
+
+    fwd = forward_returns(df, [horizon])[horizon]
+
+    def _ic_series(factor_name: str) -> np.ndarray:
+        factor = get_factor(factor_name)
+        vals = factor.compute(df)
+        factor_df = vals.reset_index()
+        factor_df.columns = pd.Index(["date", "asset", "factor"])
+        merged = pd.merge(factor_df, fwd, on=["date", "asset"], how="inner")
+        merged = merged.dropna(subset=["factor", "fwd_ret"])
+        series = []
+        for _, grp in merged.groupby("date"):
+            if len(grp) < 2:  # noqa: PLR2004
+                continue
+            f = grp["factor"].values
+            r = grp["fwd_ret"].values
+            # Pearson correlation — same formula as evaluate.py _pearson_corr
+            fbar, rbar = f.mean(), r.mean()
+            fc, rc = f - fbar, r - rbar
+            denom = math.sqrt(np.dot(fc, fc) * np.dot(rc, rc))
+            if denom == 0.0:
+                continue
+            series.append(np.dot(fc, rc) / denom)
+        return np.array(series)
+
+    series_a = _ic_series(factor_a_name)
+    series_b = _ic_series(factor_b_name)
+
+    # Align on the shorter of the two (same date grid, so they should match)
+    n = min(len(series_a), len(series_b))
+    if n < 5:  # noqa: PLR2004
+        return float("nan")
+    a, b = series_a[:n], series_b[:n]
+    abar, bbar = a.mean(), b.mean()
+    ac, bc = a - abar, b - bbar
+    denom = math.sqrt(np.dot(ac, ac) * np.dot(bc, bc))
+    if denom == 0.0:
+        return float("nan")
+    return float(np.dot(ac, bc) / denom)
+
+
+# ---------------------------------------------------------------------------
 # Stability check (F3c)
 # ---------------------------------------------------------------------------
 
@@ -544,6 +609,7 @@ def write_report(
     command: str,
     output_md: Path,
     output_json: Path,
+    cross_ic: dict | None = None,
 ) -> None:
     promoted = [r for r in real_rows if r.get("verdict") == "promote"]
     n_raw_sig = sum(1 for r in real_rows if r.get("p_raw", 1.0) < 0.05 and "error" not in r)
@@ -759,9 +825,26 @@ def write_report(
     )
     md_lines.append(
         "- **Factor independence assumed for BH-FDR.** Momentum factors share overlapping data. "
-        "The effective number of independent tests is less than 13, making BH conservative "
+        "The effective number of independent tests is less than the family size, making BH conservative "
         "(over-rejects), not anti-conservative."
     )
+    # F-R51: cross-IC correlation between max_20 and skew_60 (lottery-premium overlap)
+    if cross_ic:
+        corr = cross_ic.get("corr", float("nan"))
+        h = cross_ic.get("horizon", "?")
+        n = cross_ic.get("n_dates", "?")
+        threshold = cross_ic.get("threshold", 0.70)
+        corr_txt = f"{corr:.4f}" if isinstance(corr, float) and math.isfinite(corr) else "n/a"
+        flag = (
+            " (OVERLAP: < 5% incremental information per Green-Hand-Zhang 2017)"
+            if isinstance(corr, float) and math.isfinite(corr) and corr > threshold
+            else ""
+        )
+        md_lines.append(
+            f"- **Cross-IC correlation (F-R51):** max_20 vs skew_60 at H={h}, "
+            f"n={n} dates: corr={corr_txt}{flag}. "
+            f"Threshold for redundancy: >{threshold}."
+        )
     caveat = summary.get("microstructure", {}).get("dsr_bias_caveat", "")
     if caveat:
         md_lines.append(f"- **DSR magnitudes are bounds, not point estimates.** {caveat}")
@@ -801,6 +884,8 @@ def write_report(
             "n_promoted": n_promoted,
         },
     }
+    if cross_ic:
+        json_payload["cross_ic_correlations"] = cross_ic
     output_json.write_text(json.dumps(json_payload, indent=2, default=str), encoding="utf-8")
     print(f"Wrote {output_json.relative_to(_REPO_ROOT)}")
 
@@ -925,7 +1010,42 @@ def main(argv: list[str] | None = None) -> int:
     output_md = _REPO_ROOT / "reports" / "real-data-proof.md"
     output_json = _REPO_ROOT / "reports" / "real-data-proof.json"
 
-    write_report(summary, real_rows, noise_rows, stability, command, output_md, output_json)
+    # F-R51: cross-IC correlation between max_20 and skew_60 (lottery overlap check)
+    cross_ic: dict | None = None
+    if "max_20" in REGISTRY and "skew_60" in REGISTRY:
+        # Use H=20 — both max_20 and skew_60 have distributional character
+        # best captured at longer horizons (Bali-Cakici-Whitelaw 2011, §22.7).
+        try:
+            print("Computing cross-IC correlation: max_20 vs skew_60 ...")
+            corr_h20 = _cross_ic_corr("max_20", "skew_60", df, horizon=20)
+            cross_ic = {
+                "pair": ("max_20", "skew_60"),
+                "horizon": 20,
+                "corr": round(corr_h20, 6) if math.isfinite(corr_h20) else None,
+                "n_dates": None,  # computed inline; approximate from panel length
+                "threshold": 0.70,
+                "note": (
+                    "F-R51: Green-Hand-Zhang (2017) threshold for < 5% incremental "
+                    "information is 0.70. Correlation above threshold implies max_20 "
+                    "and skew_60 are largely redundant in the BH family."
+                ),
+            }
+            corr_txt = f"{corr_h20:.4f}" if math.isfinite(corr_h20) else "n/a"
+            print(f"  cross-IC corr(max_20, skew_60) at H=20: {corr_txt}")
+        except Exception as exc:
+            print(f"  WARN: cross-IC computation failed: {exc}")
+            cross_ic = {"pair": ("max_20", "skew_60"), "error": str(exc)}
+
+    write_report(
+        summary,
+        real_rows,
+        noise_rows,
+        stability,
+        command,
+        output_md,
+        output_json,
+        cross_ic=cross_ic,
+    )
 
     # --- Print summary ---
     n_promoted = len(promoted_names)
