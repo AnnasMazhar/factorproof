@@ -32,6 +32,8 @@ import subprocess
 import sys
 from pathlib import Path
 
+import pytest
+
 from factorlab.significance import benjamini_hochberg
 
 _CHECKER = Path(__file__).resolve().parents[1] / "scripts" / "check_real_data_proof.py"
@@ -223,8 +225,16 @@ def test_end_to_end_checker_green() -> None:
 
     Fault detected: the new check_bh_family_scope wiring breaking the
     real proof gate (e.g. an import or path error at runtime).
+
+    The trading panel lives only on the build host. When it is absent (CI),
+    the checker must REFUSE rather than pass blind; that refusal is asserted
+    here instead of skipping the test outright.
     """
     proc = _run_checker()
+    if not checker.PRICES_SQLITE.is_file():
+        assert proc.returncode != 0, (proc.stdout, proc.stderr)
+        assert "prices.sqlite not found" in proc.stdout, proc.stdout
+        pytest.skip(f"{checker.PRICES_SQLITE.name} absent on this host; checker refused as required")
     assert proc.returncode == 0, (proc.stdout, proc.stderr)
     assert "PROOF_COMPLETE" in proc.stdout
 
