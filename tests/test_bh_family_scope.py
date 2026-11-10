@@ -234,7 +234,9 @@ def test_end_to_end_checker_green() -> None:
     if not checker.PRICES_SQLITE.is_file():
         assert proc.returncode != 0, (proc.stdout, proc.stderr)
         assert "prices.sqlite not found" in proc.stdout, proc.stdout
-        pytest.skip(f"{checker.PRICES_SQLITE.name} absent on this host; checker refused as required")
+        pytest.skip(
+            f"{checker.PRICES_SQLITE.name} absent on this host; checker refused as required"
+        )
     assert proc.returncode == 0, (proc.stdout, proc.stderr)
     assert "PROOF_COMPLETE" in proc.stdout
 
