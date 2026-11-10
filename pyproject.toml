@@ -52,7 +52,7 @@ dev = [
     "pytest-cov==5.0.0",
     "pytest-xdist==3.8.0",
     "hypothesis==6.112.1",
-    "mutmut==2.4.4",
+    "mutmut==3.3.0",
     "ruff==0.4.10",
 ]
 
@@ -66,6 +66,9 @@ target-version = "py311"
 [tool.ruff.lint]
 select = ["E", "F", "W", "I", "UP"]
 ignore = ["E501"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["factorlab"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

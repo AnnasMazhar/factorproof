@@ -393,6 +393,40 @@ class DeflatedMom(Factor):
 
 # ---------------------------------------------------------------------------
 # Controls (deliberately bad — gate must detect and reject these)
+class Max20(Factor):
+    """Rolling 20-day maximum daily log-return (MAX_20).
+
+    Reference: Bali, Cakici & Whitelaw (2011) J. Financial Economics 99(2):427-446.
+    MAX is the highest daily return in the past 20 trading days. Assets with
+    high MAX have lottery-like upside; investor preference for these drives
+    overpricing, yielding a negative cross-sectional premium (low MAX → high
+    future return). The factor is negated so high-MAX assets rank lower,
+    matching the direction convention of skew_60.
+
+    Cross-factor check (F-R51, docs/RESEARCH.md §26.10): skew_60 and MAX_20
+    capture overlapping information (both proxy for tail/lottery preference).
+    When both are in the family, their cross-IC correlation should be measured
+    on the proof panel; correlation > 0.70 indicates < 5% incremental information
+    (Green-Hand-Zhang §23.1 threshold).
+
+    Fault this test detects: missing negation — without negation, the factor
+    predicts upward momentum rather than the documented reversal premium.
+    """
+
+    name = "max_20"
+    category = "distributional"
+    description = "Negated 20-day maximum daily log-return (lottery premium proxy)"
+    params = {"window": 20}
+
+    def compute(self, df: pd.DataFrame) -> pd.Series:
+        w = self.params["window"]
+        close = _pivot_close(df)
+        log_ret = np.log(close / close.shift(1))
+        max_ret = log_ret.rolling(window=w, min_periods=w).max()
+        # Negate: lottery preference → investors overprice high-MAX assets
+        return _melt(-max_ret)
+
+
 # ---------------------------------------------------------------------------
 
 

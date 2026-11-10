@@ -296,8 +296,20 @@ def wilson_lower(k: int, n: int, z: float = 1.96) -> float:
         Total trials.
     z:
         z-score for confidence level (1.96 = 95%).
+
+    Raises
+    ------
+    ValueError
+        If ``n`` is negative, or ``k`` is outside ``[0, n]``. ``n == 0``
+        returns 0.0 (no observations, no evidence).
     """
-    if n <= 0:
+    if n < 0:
+        raise ValueError(f"wilson_lower: n must be >= 0 (number of valid observations), got n={n}.")
+    if k < 0 or k > n:
+        raise ValueError(
+            f"wilson_lower: require 0 <= k <= n (successes cannot exceed trials), got k={k}, n={n}."
+        )
+    if n == 0:
         return 0.0
     p_hat = k / n
     z2 = z * z

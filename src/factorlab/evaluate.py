@@ -216,6 +216,92 @@ def ic_decay(
     return result
 
 
+def yearly_ic_table(
+    factor_vals: pd.Series,
+    df: pd.DataFrame,
+    horizons: list[int],
+) -> dict[int, list[dict[str, float | int]]]:
+    """Per-calendar-year mean IC and HAC t-stat (regime-robustness table).
+
+    Splits the factor's observation dates by calendar year and runs
+    :func:`information_coefficient` on each year slice at each horizon.
+    Forward returns are computed on the full panel first, so year-edge
+    labels still use the correct t+h closes — only the grouping is yearly.
+
+    This is the machine behind the "by-year IC" report section: a factor
+    whose full-sample t-stat looks significant but whose yearly ICs flip
+    sign is not robust across regimes.
+
+    Parameters
+    ----------
+    factor_vals:
+        Factor output Series with MultiIndex (date, asset).
+    df:
+        Original OHLCV panel (used to compute forward returns).
+    horizons:
+        List of horizons in trading days.
+
+    Returns
+    -------
+    Dict mapping horizon -> list of {"year", "n", "ic", "t_hac"} dicts,
+    years in ascending order. A year with fewer than 2 valid
+    cross-sections keeps its (small) n with NaN statistics.
+
+    An additional summary horizon key ``"summary"`` is added mapping to a
+    dict of horizon -> {"ic": <simple mean>, "weighted_ic": <T_j-weighted>}.
+    The T_j-weighted IC follows Fama & French (1997) Eq. 5, p. 1980::
+
+        IC_pool = sum_j(T_j * IC_j) / sum_j(T_j)
+
+    where T_j is the number of valid cross-sections in year j.  When regime
+    windows differ in length, the weighted estimate gives more influence to
+    years with more data (F-R57, docs/RESEARCH.md §24.6).
+    """
+    fwd_dict = forward_returns(df, horizons)
+    dates = pd.DatetimeIndex(pd.to_datetime(factor_vals.index.get_level_values("date")))
+    year_of = dates.year.to_numpy()
+    out: dict[int, list[dict[str, float | int]]] = {}
+    summary: dict[int, dict[str, float]] = {}
+    for h in horizons:
+        rows: list[dict[str, float | int]] = []
+        for year in sorted(set(year_of.tolist())):
+            sub = factor_vals[year_of == year]
+            mean_ic, _, t_hac, _, n = information_coefficient(
+                sub, fwd_dict[h], "pearson", horizon=h
+            )
+            rows.append({"year": int(year), "n": int(n), "ic": mean_ic, "t_hac": t_hac})
+        out[h] = rows
+
+        # T_j-weighted pooled IC (Fama & French 1997, Eq. 5, p. 1980).
+        # Weight year j by T_j = n_j (number of valid cross-sections).
+        # Years with NaN IC (n < 2) contribute 0 weight.
+        valid_rows = [(r["n"], r["ic"]) for r in rows if not _isnan(r["ic"])]
+        if valid_rows:
+            sum_w = sum(n_j for n_j, _ in valid_rows)
+            if sum_w > 0:
+                weighted_ic: float = sum(n_j * ic_j for n_j, ic_j in valid_rows) / sum_w
+            else:
+                weighted_ic = float("nan")
+            simple_ic: float = sum(ic_j for _, ic_j in valid_rows) / len(valid_rows)
+        else:
+            weighted_ic = float("nan")
+            simple_ic = float("nan")
+        summary[h] = {"ic": simple_ic, "weighted_ic": weighted_ic}
+
+    # Expose summary under the string key "summary" for callers that want
+    # the pooled estimates without altering the per-year list structure.
+    out["summary"] = summary  # type: ignore[assignment]
+    return out
+
+
+def _isnan(x: float | int) -> bool:
+    """Return True if x is NaN (works for both float and int)."""
+    try:
+        return x != x  # NaN != NaN
+    except TypeError:
+        return False
+
+
 def quantile_analysis(
     factor_vals: pd.Series,
     fwd_ret: pd.DataFrame,
@@ -453,6 +539,12 @@ def _newey_west_se(ic_arr: np.ndarray, max_lags: int) -> float:
 
     The HAC SE of the sample mean is sqrt(V_HAC / T).
 
+    Cross-section note (F-R54, docs/RESEARCH.md 26.13): this is a
+    time-series HAC for the mean of an IC series. When choosing between
+    NW and two-way clustered SEs on the cross-section, Petersen (2009)
+    Sec. III.C: NW is the right estimator below N=30 firm clusters;
+    revisit double-clustering at N>=50.
+
     Parameters
     ----------
     ic_arr:
@@ -553,16 +645,46 @@ def _pearson_corr(x: np.ndarray, y: np.ndarray) -> float:
 
     Reference: Pearson (1895) Philosophical Transactions, Series A, 187:253-318.
     corr(X, Y) = cov(X,Y) / (std(X) * std(Y))
-              = sum((x-xbar)*(y-ybar)) / sqrt(sum((x-xbar)^2) * sum((y-ybar)^2))
+               = sum((x-xbar)*(y-ybar)) / sqrt(sum((x-xbar)^2) * sum((y-ybar)^2))
+
+    Scale-invariance note: corr(a*X + c, b*Y + d) == corr(X, Y) for a, b > 0,
+    so each input is centred first and the *deviations* are rescaled by
+    their own max abs. Rescaling raw inputs by max(|X|, |Y|) is not enough:
+    when one input's variation sits far below its own level (e.g.
+    Y = -2X - 1 with X ~ 1e-200, so Y ~ -1 with 1e-200 wiggles), the
+    centred deviations square to ~1e-400, which underflows to 0.0, the
+    denominator vanishes, and a true corr of -1.0 comes back NaN. The same
+    happens with a single shared rescale when the two inputs' magnitudes
+    differ wildly (X ~ 1e200, Y ~ 1e-200: Y/scale ~ 1e-400 rounds to 0.0).
+    Centring-then-rescaling-deviations is exact-arithmetic-identical and
+    keeps every squared term near unit magnitude. Without any rescale,
+    inputs with |x| ~ 1e-79 produce a denominator sum-of-squares ~1e-317,
+    which is subnormal in float64 (min normal 2.2e-308, ~27 bits of
+    precision left), and corr(x, x) comes back as 0.9999999953 instead
+    of 1.0.
     """
     if len(x) < 2:  # noqa: PLR2004
         return float("nan")
+    if bool(np.all(x == x[0])) or bool(np.all(y == y[0])):
+        # Fail closed: an exactly-constant input has undefined correlation,
+        # and a constant factor given +/-1.0 instead of NaN could pass gates
+        # it must fail (NaN propagates to rejection). Checked before
+        # centring because mean() of identical floats can carry rounding
+        # residue (e.g. mean([85.8]*3) != 85.8), which would otherwise
+        # normalise into a spurious corr of 1.0.
+        return float("nan")
     xd = x - x.mean()
     yd = y - y.mean()
-    denom = math.sqrt((xd**2).sum() * (yd**2).sum())
+    sx = float(np.max(np.abs(xd)))
+    sy = float(np.max(np.abs(yd)))
+    if sx == 0 or sy == 0:
+        return float("nan")
+    xs = xd / sx
+    ys = yd / sy
+    denom = math.sqrt((xs**2).sum() * (ys**2).sum())
     if denom == 0:
         return float("nan")
-    return float((xd * yd).sum() / denom)
+    return float((xs * ys).sum() / denom)
 
 
 def _rankdata(x: np.ndarray) -> np.ndarray:
@@ -584,3 +706,277 @@ def _rankdata(x: np.ndarray) -> np.ndarray:
             ranks[order[k]] = avg_rank
         i = j + 1
     return ranks
+
+
+# ---------------------------------------------------------------------------
+# Clark-West MSPE-adjusted OOS statistic (F-R53)
+# ---------------------------------------------------------------------------
+
+
+def clark_west_stat(
+    bench_errors: np.ndarray,
+    model_errors: np.ndarray,
+    bench_preds: np.ndarray,
+    model_preds: np.ndarray,
+    max_lags: int = 0,
+) -> float:
+    """Clark-West MSPE-adjusted OOS test statistic (eq. 11).
+
+    For a nested pair (benchmark = restricted model, factor model =
+    full model) evaluated on the same OOS dates, define per date t:
+
+        f_t = e0_t**2 - (e1_t**2 - (p1_t - p0_t)**2)
+
+    where e = actual - predicted (signed forecast error) and p is the
+    prediction; the (p1 - p0)**2 term corrects the finite-sample bias
+    that makes the larger model look worse OOS even under the null.
+    The statistic is:
+
+        f_bar = mean(f_t);  CW = f_bar / SE_HAC(f_bar, lags=max_lags)
+
+    Under H0 (nested benchmark correctly specified) CW is asymptotically
+    standard normal; evidence of OOS predictive content at the one-sided
+    5% level is CW > 1.645.
+
+    Reference: Clark, T.E. & West, K.D. (2007) "Approximately Normal
+    Tests for Equal Predictive Accuracy in Nested Models", Journal of
+    Econometrics 138(1):291-311, eq. 11 (p. 299). Assumptions: nested
+    models, recursive (expanding) OOS estimation, covariance-stationary
+    forecast errors (same stationarity assumption as Newey-West).
+    Known failure mode: liberal (over-rejects) when the OOS window is
+    short (P < 50); use max_lags = H - 1 when labels overlap by H-1 days.
+
+    Conventions: if the two models are identical the statistic is 0.0
+    (no evidence either way). NaN if there are fewer than 2 observations
+    or the HAC standard error is not estimable.
+
+    Parameters
+    ----------
+    bench_errors:
+        Signed forecast errors of the benchmark model (actual - p0).
+    model_errors:
+        Signed forecast errors of the factor model (actual - p1).
+    bench_preds:
+        Benchmark predictions p0, same shape as bench_errors.
+    model_preds:
+        Factor-model predictions p1, same shape as model_preds.
+    max_lags:
+        HAC lags for the Newey-West SE of f_bar (H-1 for horizon H).
+
+    Returns
+    -------
+    Clark-West statistic (float).
+    """
+    e0 = np.asarray(bench_errors, dtype=float)
+    e1 = np.asarray(model_errors, dtype=float)
+    p0 = np.asarray(bench_preds, dtype=float)
+    p1 = np.asarray(model_preds, dtype=float)
+    if e0.shape != e1.shape or e0.shape != p0.shape or e0.shape != p1.shape:
+        raise ValueError("bench_errors, model_errors, bench_preds, model_preds must align")
+    if e0.ndim != 1 or len(e0) < 2:
+        return float("nan")
+
+    f = e0**2 - (e1**2 - (p1 - p0) ** 2)
+    f_bar = float(np.mean(f))
+    if f_bar == 0.0 and not np.any(f):
+        return 0.0  # identical models: no evidence either way
+    se = _newey_west_se(f, max_lags=max_lags)
+    if math.isnan(se) or se <= 0.0:
+        return float("nan")
+    return f_bar / se
+
+
+def oos_cw_stat(
+    factor_vals: pd.Series,
+    df: pd.DataFrame,
+    splits,
+    horizon: int,
+    min_train_obs: int = 30,
+) -> float:
+    """Clark-West statistic over walk-forward OOS dates for one factor.
+
+    Wires clark_west_stat onto the purged walk-forward infrastructure
+    (F-R53, docs/RESEARCH.md 24.1). The nested pair, per Clark & West's
+    intercept-only benchmark:
+
+        benchmark: p0 = pooled expanding mean of forward returns (a)
+        factor model: p1 = a + b * x  (pooled expanding OLS of the
+            forward return on the factor value, estimated on all
+            earlier dates whose label window lies strictly before t,
+            mirroring the PurgedWalkForward purge rule s + H < t)
+
+    f_t is averaged over the cross-section at each OOS date, then
+    CW = mean(f) / HAC_SE(f, lags=horizon-1). One-sided: > 1.645
+    indicates magnitude-weighted OOS content; the sign-consistency
+    gate alone cannot see this (it is magnitude-blind).
+
+    Parameters
+    ----------
+    factor_vals:
+        Factor output Series with MultiIndex (date, asset).
+    df:
+        Tidy long-format OHLCV panel.
+    splits:
+        Iterable of walk-forward split objects exposing .test_idx
+        (iloc positions into df), as produced by PurgedWalkForward.split.
+    horizon:
+        Forward-return horizon whose labels drive the comparison.
+    min_train_obs:
+        Minimum pooled estimation rows before CW is computed; below
+        this the result is NaN (estimation noise dominates, per the
+        P < 50 failure mode in Clark & West).
+
+    Returns
+    -------
+    Clark-West statistic for the factor's OOS dates (float, possibly NaN).
+    """
+    dates = pd.DatetimeIndex(sorted(df["date"].unique()))
+    date_pos = {d: i for i, d in enumerate(dates)}
+
+    fwd_df = forward_returns(df, [horizon])[horizon]
+    # forward_returns returns a long DataFrame (date, asset, fwd_ret); convert
+    # to a MultiIndex Series so it can be concat'd with factor_vals.
+    fwd_series = fwd_df.set_index(["date", "asset"])["fwd_ret"]
+    combined = pd.concat([factor_vals.rename("x"), fwd_series.rename("r")], axis=1, join="inner")
+    combined = combined.dropna()
+    if combined.empty:
+        return float("nan")
+
+    obs_by_pos: dict[int, tuple[np.ndarray, np.ndarray]] = {}
+    for d, grp in combined.groupby(level="date", sort=True):
+        pos = date_pos.get(d)
+        if pos is None:
+            continue
+        obs_by_pos[pos] = (grp["x"].to_numpy(dtype=float), grp["r"].to_numpy(dtype=float))
+
+    test_positions = sorted(
+        {
+            date_pos[d]
+            for spl in splits
+            for d in df.iloc[spl.test_idx]["date"].unique()
+            if d in date_pos
+        }
+    )
+    if len(test_positions) < 2:
+        return float("nan")
+
+    sx = sy = sxx = sxy = 0.0
+    n_train = 0
+    flush_pos = 0
+    f_vals: list[float] = []
+    for pos in test_positions:
+        # Expanding window with purge: a training observation at date s is
+        # usable only once its label (realised at s + horizon) is known
+        # strictly before pos.
+        while flush_pos + horizon < pos:
+            if flush_pos in obs_by_pos:
+                x, r = obs_by_pos[flush_pos]
+                sx += float(x.sum())
+                sy += float(r.sum())
+                sxx += float((x * x).sum())
+                sxy += float((x * r).sum())
+                n_train += int(len(x))
+            flush_pos += 1
+        if n_train < min_train_obs or pos not in obs_by_pos:
+            f_vals.append(float("nan"))
+            continue
+        denom = n_train * sxx - sx * sx
+        if denom == 0.0:
+            f_vals.append(float("nan"))
+            continue
+        b = (n_train * sxy - sx * sy) / denom
+        a = (sy - b * sx) / n_train
+        x, r = obs_by_pos[pos]
+        p0 = np.full_like(r, a)
+        p1 = a + b * x
+        f_vals.append(float(np.mean((r - p0) ** 2 - ((r - p1) ** 2 - (p1 - p0) ** 2))))
+
+    f_arr = np.array([v for v in f_vals if not math.isnan(v)], dtype=float)
+    if len(f_arr) < 2:
+        return float("nan")
+    f_bar = float(f_arr.mean())
+    if f_bar == 0.0:
+        return 0.0
+    se = _newey_west_se(f_arr, max_lags=horizon - 1)
+    if math.isnan(se) or se <= 0.0:
+        return float("nan")
+    return f_bar / se
+
+
+def ic_sign_autocorr(ic_series: list[float]) -> dict[str, float]:
+    """Lag-1 IC sign autocorrelation (factor-momentum OOS-consistency test).
+
+    Measures whether the sign of the IC in split t predicts the sign in
+    split t+1 — the empirical test for factor momentum in the sense of
+    Gupta & Kelly (2019) *Factor Momentum Everywhere*, JPM 45(3):13-36.
+
+    If the OOS-consistency gate (≥60% of splits with positive IC) has
+    predictive power for FUTURE IC, the lag-1 IC sign autocorrelation
+    (rho) should be positive and statistically distinguishable from zero.
+    If rho ≈ 0, the gate tests past IC quality but does not predict future
+    IC — an honest finding reported as F-R60 in docs/RESEARCH.md §24.9.
+
+    Method
+    ------
+    Given a sequence of per-split IC values [ic_0, ..., ic_{T-1}]:
+
+    1. Binarise: s_t = sign(ic_t) ∈ {-1, +1} (NaN splits dropped).
+    2. Lag-1 autocorrelation of the sign series::
+
+           rho = corr(s_t, s_{t-1}) = Pearson(s_1…s_{T-1}, s_0…s_{T-2})
+
+    3. Hypothesis test: under H0 rho=0, the approximate SE is 1/sqrt(T-1)
+       where T-1 = number of consecutive sign pairs.  The t-statistic is
+       rho * sqrt(T-1).  This is an asymptotic normal approximation valid
+       for T >= 6; smaller T returns NaN for t_stat.
+
+    Parameters
+    ----------
+    ic_series:
+        Ordered list of per-split IC values (e.g. from walk-forward CV).
+        NaN values are dropped before the autocorrelation is computed.
+
+    Returns
+    -------
+    Dict with keys:
+
+    * ``"rho"`` — lag-1 Pearson autocorrelation of the sign series.
+    * ``"t_stat"`` — asymptotic t-statistic under H0: rho=0.
+    * ``"n_pairs"`` — number of consecutive sign pairs used.
+    * ``"pct_positive"`` — fraction of non-NaN splits with positive IC.
+
+    All float; NaN if fewer than 4 valid IC values (3 pairs minimum for
+    a non-trivial estimate and t-stat).
+    """
+    valid = [ic for ic in ic_series if not (ic != ic)]  # drop NaN
+    if len(valid) < 4:
+        return {
+            "rho": float("nan"),
+            "t_stat": float("nan"),
+            "n_pairs": 0,
+            "pct_positive": float("nan"),
+        }
+
+    signs = np.array([1.0 if v >= 0.0 else -1.0 for v in valid])
+    pct_pos = float((signs > 0).sum()) / len(signs)
+
+    # Lag-1 pairs: x = signs[:-1], y = signs[1:]
+    x = signs[:-1]
+    y = signs[1:]
+    n_pairs = len(x)
+
+    # Pearson correlation of the binary sign series
+    rho = _pearson_corr(x, y)
+
+    # Asymptotic t-stat: rho * sqrt(n_pairs) under H0: rho = 0
+    if n_pairs >= 3 and not math.isnan(rho):  # noqa: PLR2004
+        t_stat = rho * math.sqrt(n_pairs)
+    else:
+        t_stat = float("nan")
+
+    return {
+        "rho": rho,
+        "t_stat": t_stat,
+        "n_pairs": n_pairs,
+        "pct_positive": pct_pos,
+    }

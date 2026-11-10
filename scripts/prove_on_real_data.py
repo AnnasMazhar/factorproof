@@ -48,8 +48,18 @@ import pandas as pd
 _REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(_REPO_ROOT / "src"))
 
-from factorlab.evaluate import evaluate_factor  # noqa: E402
+from factorlab.evaluate import evaluate_factor, yearly_ic_table  # noqa: E402
 from factorlab.factors import REGISTRY, get_factor  # noqa: E402
+from factorlab.microstructure import (  # noqa: E402
+    STALENESS_THRESHOLD,
+    dsr_bias_caveat,
+    find_missing_dates,
+    lag1_autocorr,
+    panel_bias_direction,
+    roll_spread,
+    staleness_flags,
+    zero_volume_share,
+)
 from factorlab.promote import PromotionConfig, promote  # noqa: E402
 from factorlab.significance import (  # noqa: E402
     _norm_cdf,
@@ -137,10 +147,42 @@ def load_real_data(db_path: Path) -> pd.DataFrame:
     return df_daily
 
 
+def raw_zero_volume_summary(db_path: Path) -> dict:
+    """Max raw-level zero-volume share per coin (F-R14 research estimand).
+
+    The daily panel aggregates intraday volume by sum, so a day is zero-volume
+    only when every raw row in it is. The research record (§14.3) counts raw
+    zero-volume rows instead. Both estimands must stay silent on this panel;
+    this function returns the raw-level numbers for the report. Read-only.
+    """
+    uri = f"file:{db_path}?mode=ro"
+    con = sqlite3.connect(uri, uri=True)
+    try:
+        rows = con.execute(
+            "SELECT coin, SUM(volume <= 0), COUNT(*) FROM candles GROUP BY coin"
+        ).fetchall()
+    finally:
+        con.close()
+    worst_coin, worst_n, worst_tot = max(rows, key=lambda r: r[1] / r[2])
+    return {
+        "worst_coin": worst_coin,
+        "worst_zero_rows": int(worst_n),
+        "worst_total_rows": int(worst_tot),
+        "worst_share": float(worst_n) / float(worst_tot),
+    }
+
+
+def _bars_txt(n: int) -> str:
+    """Pluralise a bar count without hand-rolled grammar bugs."""
+    return f"{n:,} bar" if n == 1 else f"{n:,} bars"
+
+
 def dataset_summary(df: pd.DataFrame, db_path: Path) -> dict:
     """Return a dict of aggregate dataset statistics (no raw rows).
 
-    df is the daily-aggregated panel.
+    df is the daily-aggregated panel. Includes the F-R14 microstructure
+    diagnostics (feed gaps, per-coin coverage asymmetry, zero-volume
+    staleness shares) and the F-R15 panel autocorrelation direction.
     """
     coins = sorted(df["asset"].unique().tolist())
     date_min = df["date"].min().strftime("%Y-%m-%d")
@@ -149,6 +191,7 @@ def dataset_summary(df: pd.DataFrame, db_path: Path) -> dict:
     n_coins = len(coins)
     db_size_mb = round(db_path.stat().st_size / 1_048_576, 2)
     db_mtime = time.strftime("%Y-%m-%d %H:%M UTC", time.gmtime(db_path.stat().st_mtime))
+    micro = microstructure_panel(df, db_path)
     return {
         "coins": coins,
         "n_coins": n_coins,
@@ -157,6 +200,58 @@ def dataset_summary(df: pd.DataFrame, db_path: Path) -> dict:
         "granularity": "daily (aggregated from raw intraday where applicable)",
         "db_size_mb": db_size_mb,
         "db_last_modified": db_mtime,
+        "microstructure": micro,
+    }
+
+
+def microstructure_panel(df: pd.DataFrame, db_path: Path) -> dict:
+    """Per-coin microstructure diagnostics on the daily panel (F-R12/F-R14/F-R15).
+
+    Returns feed-gap dates, per-coin bar counts, zero-volume shares with
+    staleness flags, per-coin lag-1 autocorrelations and Roll spreads, the
+    panel bias direction, and the direction-named DSR caveat sentence.
+    All aggregates — no raw rows leave this function.
+    """
+    gaps = [d.strftime("%Y-%m-%d") for d in find_missing_dates(df["date"])]
+
+    per_coin: dict[str, dict] = {}
+    for coin, grp in df.groupby("asset"):
+        g = grp.sort_values("date")
+        closes = g["close"].to_numpy(dtype=float)
+        vols = g["volume"].to_numpy(dtype=float)
+        rets = np.diff(np.log(closes)) if closes.size >= 2 else np.array([])
+        rho = lag1_autocorr(rets) if rets.size >= 2 else float("nan")
+        spr = roll_spread(rets) if rets.size >= 2 else float("nan")
+        per_coin[str(coin)] = {
+            "n_bars": int(len(g)),
+            "first_date": str(g["date"].min())[:10],
+            "zero_volume_share": zero_volume_share(vols),
+            "lag1_autocorr": rho,
+            "roll_spread": spr,
+        }
+
+    shares = {c: v["zero_volume_share"] for c, v in per_coin.items()}
+    flags = staleness_flags(shares, STALENESS_THRESHOLD)
+    rhos = {c: v["lag1_autocorr"] for c, v in per_coin.items()}
+    direction = panel_bias_direction(rhos)
+    finite_rhos = [r for r in rhos.values() if isinstance(r, float) and math.isfinite(r)]
+    max_abs_rho = max((abs(r) for r in finite_rhos), default=float("nan"))
+
+    counts = {c: v["n_bars"] for c, v in per_coin.items()}
+    median_bars = float(np.median(list(counts.values()))) if counts else 0.0
+    thin = sorted([c for c, n in counts.items() if median_bars > 0 and n < 0.5 * median_bars])
+
+    raw_zv = raw_zero_volume_summary(db_path)
+    return {
+        "feed_gaps": gaps,
+        "per_coin": per_coin,
+        "staleness_threshold": STALENESS_THRESHOLD,
+        "staleness_flags": flags,
+        "panel_bias_direction": direction,
+        "max_abs_lag1_autocorr": max_abs_rho,
+        "thin_coins": thin,
+        "raw_zero_volume": raw_zv,
+        "dsr_bias_caveat": dsr_bias_caveat(direction, max_abs_rho),
     }
 
 
@@ -282,6 +377,20 @@ def _evaluate_all_factors(
         except Exception as exc:
             row["verdict"] = f"ERROR: {exc}"
 
+    # ---- by-year IC table (regime robustness; research F-R33 transfer) ----
+    # Computed at each factor's best horizon from freshly computed values.
+    for row in real_rows:
+        if "error" in row:
+            row["by_year"] = []
+            continue
+        factor = get_factor(row["factor"])
+        try:
+            vals = factor.compute(df)
+            tab = yearly_ic_table(vals, df, [row["horizon"]])
+            row["by_year"] = [{"horizon": row["horizon"], **entry} for entry in tab[row["horizon"]]]
+        except Exception:
+            row["by_year"] = []
+
     # ---- seeded noise controls ----
     for i in range(n_noise_factors):
         noise_seed = int(rng.integers(0, 2**31))
@@ -347,6 +456,71 @@ def _make_noise_factor(df: pd.DataFrame, seed: int) -> pd.Series:
     vals = rng.standard_normal(len(df))
     idx = pd.MultiIndex.from_arrays([df["date"], df["asset"]], names=["date", "asset"])
     return pd.Series(vals, index=idx, name=f"noise_{seed}")
+
+
+# ---------------------------------------------------------------------------
+# Cross-IC correlation check (F-R51)
+# ---------------------------------------------------------------------------
+
+
+def _cross_ic_corr(
+    factor_a_name: str,
+    factor_b_name: str,
+    df: pd.DataFrame,
+    horizon: int,
+) -> float:
+    """Pearson correlation between the per-date IC time series of two factors.
+
+    F-R51 (docs/RESEARCH.md 26.10): max_20 (lottery premium) and skew_60
+    (skewness premium) both proxy for tail/lottery preference. Cross-IC
+    correlation > 0.70 indicates < 5% incremental information per the
+    Green-Hand-Zhang (2017) threshold. This is a diagnostic, not a gate:
+    the proof reports the value so reviewers can assess redundancy.
+
+    The per-date IC is the cross-sectional Pearson correlation between
+    the factor's values and the H-day forward log-return, computed on each
+    date independently (same as the IC computation in evaluate.py).
+    """
+    from factorlab.evaluate import forward_returns
+
+    fwd = forward_returns(df, [horizon])[horizon]
+
+    def _ic_series(factor_name: str) -> np.ndarray:
+        factor = get_factor(factor_name)
+        vals = factor.compute(df)
+        factor_df = vals.reset_index()
+        factor_df.columns = pd.Index(["date", "asset", "factor"])
+        merged = pd.merge(factor_df, fwd, on=["date", "asset"], how="inner")
+        merged = merged.dropna(subset=["factor", "fwd_ret"])
+        series = []
+        for _, grp in merged.groupby("date"):
+            if len(grp) < 2:  # noqa: PLR2004
+                continue
+            f = grp["factor"].values
+            r = grp["fwd_ret"].values
+            # Pearson correlation — same formula as evaluate.py _pearson_corr
+            fbar, rbar = f.mean(), r.mean()
+            fc, rc = f - fbar, r - rbar
+            denom = math.sqrt(np.dot(fc, fc) * np.dot(rc, rc))
+            if denom == 0.0:
+                continue
+            series.append(np.dot(fc, rc) / denom)
+        return np.array(series)
+
+    series_a = _ic_series(factor_a_name)
+    series_b = _ic_series(factor_b_name)
+
+    # Align on the shorter of the two (same date grid, so they should match)
+    n = min(len(series_a), len(series_b))
+    if n < 5:  # noqa: PLR2004
+        return float("nan")
+    a, b = series_a[:n], series_b[:n]
+    abar, bbar = a.mean(), b.mean()
+    ac, bc = a - abar, b - bbar
+    denom = math.sqrt(np.dot(ac, ac) * np.dot(bc, bc))
+    if denom == 0.0:
+        return float("nan")
+    return float(np.dot(ac, bc) / denom)
 
 
 # ---------------------------------------------------------------------------
@@ -435,6 +609,7 @@ def write_report(
     command: str,
     output_md: Path,
     output_json: Path,
+    cross_ic: dict | None = None,
 ) -> None:
     promoted = [r for r in real_rows if r.get("verdict") == "promote"]
     n_raw_sig = sum(1 for r in real_rows if r.get("p_raw", 1.0) < 0.05 and "error" not in r)
@@ -460,6 +635,60 @@ def write_report(
     md_lines.append(f"- **Granularity:** {summary['granularity']}")
     md_lines.append(f"- **Dataset size:** {summary['db_size_mb']} MB")
     md_lines.append(f"- **Last modified:** {summary['db_last_modified']}")
+    micro = summary.get("microstructure", {})
+    gaps = micro.get("feed_gaps", [])
+    if gaps:
+        md_lines.append(
+            f"- **Feed gaps (no coin traded):** {', '.join(gaps)} " "(missing data, not staleness)"
+        )
+    else:
+        md_lines.append("- **Feed gaps (no coin traded):** none")
+    per_coin = micro.get("per_coin", {})
+    thin = micro.get("thin_coins", [])
+    if thin:
+        thin_txt = ", ".join(
+            f"{c} ({_bars_txt(per_coin[c]['n_bars'])} from {per_coin[c]['first_date']})"
+            for c in thin
+        )
+        md_lines.append(f"- **Coverage asymmetry:** {thin_txt}")
+    max_share = max((v.get("zero_volume_share", 0.0) for v in per_coin.values()), default=0.0)
+    flagged = sorted(c for c, f in micro.get("staleness_flags", {}).items() if f)
+    raw_zv = micro.get("raw_zero_volume", {})
+    md_lines.append(
+        f"- **Staleness:** max zero-volume share {max_share:.2%} of aggregated daily bars "
+        f"(trigger: >{micro.get('staleness_threshold', 0.05):.0%} of a coin's bars); "
+        f"raw-level worst coin {raw_zv.get('worst_coin', '?')}: "
+        f"{raw_zv.get('worst_zero_rows', 0)} zero-volume rows of "
+        f"{raw_zv.get('worst_total_rows', 0):,} "
+        f"({raw_zv.get('worst_share', 0.0):.2%}). "
+        f"Flagged coins: {', '.join(flagged) if flagged else 'none — diagnostic silent'}"
+    )
+    md_lines.append("")
+
+    # --- F-R12/F-R15 microstructure subsection (unnumbered: keeps §7/§8 headers stable) ---
+    md_lines.append("### Microstructure diagnostics\n")
+    md_lines.append(
+        "Lag-1 rho and Roll spreads are computed on daily aggregated log-returns "
+        "(the strategy frequency), not on raw intraday rows. "
+        "`n/a` spread = imaginary (positive lag-1 covariance: no bounce detectable)."
+    )
+    md_lines.append("")
+    md_lines.append("| Coin | lag-1 rho | Roll spread | Zero-vol share |")
+    md_lines.append("|------|-----------|-------------|----------------|")
+    for coin in sorted(per_coin):
+        v = per_coin[coin]
+        rho = v.get("lag1_autocorr", float("nan"))
+        spr = v.get("roll_spread", float("nan"))
+        rho_txt = f"{rho:.4f}" if isinstance(rho, float) and math.isfinite(rho) else "n/a"
+        spr_txt = f"{spr:.6f}" if isinstance(spr, float) and math.isfinite(spr) else "n/a"
+        md_lines.append(
+            f"| {coin} | {rho_txt} | {spr_txt} | {v.get('zero_volume_share', 0.0):.2%} |"
+        )
+    md_lines.append("")
+    md_lines.append(
+        f"Panel bias direction: **{micro.get('panel_bias_direction', 'unclassified')}**. "
+        f"{micro.get('dsr_bias_caveat', '')}"
+    )
     md_lines.append("")
 
     # --- F2 section 2: per-factor table ---
@@ -474,6 +703,30 @@ def write_report(
         md_lines.append(_row_md(row))
     md_lines.append("")
 
+    # --- By-year IC (regime robustness; unnumbered: keeps §7/§8 headers stable) ---
+    md_lines.append("### By-year IC (regime robustness)\n")
+    md_lines.append(
+        "Mean IC and HAC t-stat per calendar year at each factor's best horizon. "
+        "A factor whose full-sample t-stat passes but whose yearly ICs flip sign "
+        "is not robust across regimes. `n/a` = fewer than 2 valid cross-sections."
+    )
+    md_lines.append("")
+    md_lines.append("| Factor | H | Year | n | IC | t-HAC |")
+    md_lines.append("|--------|---|------|---|-----|-------|")
+    for row in sorted(real_rows, key=lambda r: r.get("factor", "")):
+        if "error" in row:
+            continue
+        for entry in row.get("by_year", []):
+            ic = entry.get("ic", float("nan"))
+            t = entry.get("t_hac", float("nan"))
+            ic_txt = f"{ic:.4f}" if isinstance(ic, float) and math.isfinite(ic) else "n/a"
+            t_txt = f"{t:.4f}" if isinstance(t, float) and math.isfinite(t) else "n/a"
+            md_lines.append(
+                f"| {row['factor']} | {entry.get('horizon', '?')} | {entry.get('year', '?')} | "
+                f"{entry.get('n', 0)} | {ic_txt} | {t_txt} |"
+            )
+    md_lines.append("")
+
     # --- F2 section 3: the delta ---
     md_lines.append("## 3. The Delta — What the Gate Actually Does\n")
     md_lines.append(
@@ -485,7 +738,10 @@ def write_report(
     ]
     if raw_sig_names:
         md_lines.append(f"  - Names: {', '.join(raw_sig_names)}")
-    md_lines.append(f"- Factors passing BH-FDR q=0.15 across family: **{n_bh_sig}**")
+    md_lines.append(
+        f"- Factors passing BH-FDR q=0.15 (family: {len(real_rows)} factors, "
+        f"one best-horizon p per factor; not per-horizon): **{n_bh_sig}**"
+    )
     bh_names = [r["factor"] for r in real_rows if r.get("bh_fdr_pass")]
     if bh_names:
         md_lines.append(f"  - Names: {', '.join(bh_names)}")
@@ -569,9 +825,29 @@ def write_report(
     )
     md_lines.append(
         "- **Factor independence assumed for BH-FDR.** Momentum factors share overlapping data. "
-        "The effective number of independent tests is less than 13, making BH conservative "
+        "The effective number of independent tests is less than the family size, making BH conservative "
         "(over-rejects), not anti-conservative."
     )
+    # F-R51: cross-IC correlation between max_20 and skew_60 (lottery-premium overlap)
+    if cross_ic:
+        corr = cross_ic.get("corr", float("nan"))
+        h = cross_ic.get("horizon", "?")
+        n = cross_ic.get("n_dates", "?")
+        threshold = cross_ic.get("threshold", 0.70)
+        corr_txt = f"{corr:.4f}" if isinstance(corr, float) and math.isfinite(corr) else "n/a"
+        flag = (
+            " (OVERLAP: < 5% incremental information per Green-Hand-Zhang 2017)"
+            if isinstance(corr, float) and math.isfinite(corr) and corr > threshold
+            else ""
+        )
+        md_lines.append(
+            f"- **Cross-IC correlation (F-R51):** max_20 vs skew_60 at H={h}, "
+            f"n={n} dates: corr={corr_txt}{flag}. "
+            f"Threshold for redundancy: >{threshold}."
+        )
+    caveat = summary.get("microstructure", {}).get("dsr_bias_caveat", "")
+    if caveat:
+        md_lines.append(f"- **DSR magnitudes are bounds, not point estimates.** {caveat}")
     md_lines.append("")
 
     # Write markdown
@@ -585,6 +861,7 @@ def write_report(
         "command": command,
         "dataset_summary": summary,
         "real_factors": real_rows,
+        "by_year_ic": {r["factor"]: r.get("by_year", []) for r in real_rows if "error" not in r},
         "noise_controls": noise_rows,
         "f3_specificity": {
             "noise_rejected": n_noise_rejected,
@@ -607,6 +884,8 @@ def write_report(
             "n_promoted": n_promoted,
         },
     }
+    if cross_ic:
+        json_payload["cross_ic_correlations"] = cross_ic
     output_json.write_text(json.dumps(json_payload, indent=2, default=str), encoding="utf-8")
     print(f"Wrote {output_json.relative_to(_REPO_ROOT)}")
 
@@ -731,7 +1010,42 @@ def main(argv: list[str] | None = None) -> int:
     output_md = _REPO_ROOT / "reports" / "real-data-proof.md"
     output_json = _REPO_ROOT / "reports" / "real-data-proof.json"
 
-    write_report(summary, real_rows, noise_rows, stability, command, output_md, output_json)
+    # F-R51: cross-IC correlation between max_20 and skew_60 (lottery overlap check)
+    cross_ic: dict | None = None
+    if "max_20" in REGISTRY and "skew_60" in REGISTRY:
+        # Use H=20 — both max_20 and skew_60 have distributional character
+        # best captured at longer horizons (Bali-Cakici-Whitelaw 2011, §22.7).
+        try:
+            print("Computing cross-IC correlation: max_20 vs skew_60 ...")
+            corr_h20 = _cross_ic_corr("max_20", "skew_60", df, horizon=20)
+            cross_ic = {
+                "pair": ("max_20", "skew_60"),
+                "horizon": 20,
+                "corr": round(corr_h20, 6) if math.isfinite(corr_h20) else None,
+                "n_dates": None,  # computed inline; approximate from panel length
+                "threshold": 0.70,
+                "note": (
+                    "F-R51: Green-Hand-Zhang (2017) threshold for < 5% incremental "
+                    "information is 0.70. Correlation above threshold implies max_20 "
+                    "and skew_60 are largely redundant in the BH family."
+                ),
+            }
+            corr_txt = f"{corr_h20:.4f}" if math.isfinite(corr_h20) else "n/a"
+            print(f"  cross-IC corr(max_20, skew_60) at H=20: {corr_txt}")
+        except Exception as exc:
+            print(f"  WARN: cross-IC computation failed: {exc}")
+            cross_ic = {"pair": ("max_20", "skew_60"), "error": str(exc)}
+
+    write_report(
+        summary,
+        real_rows,
+        noise_rows,
+        stability,
+        command,
+        output_md,
+        output_json,
+        cross_ic=cross_ic,
+    )
 
     # --- Print summary ---
     n_promoted = len(promoted_names)

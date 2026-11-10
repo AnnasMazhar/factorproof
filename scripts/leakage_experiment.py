@@ -35,9 +35,10 @@ _REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(_REPO_ROOT / "src"))
 sys.path.insert(0, str(_REPO_ROOT / "scripts"))
 
+import prove_on_real_data as pur  # noqa: E402  (shared real-data loader)
+
 import factorlab.evaluate as _evaluate_mod  # noqa: E402
 import factorlab.promote as _promote_mod  # noqa: E402
-import prove_on_real_data as pur  # noqa: E402  (shared real-data loader)
 from factorlab.cv import PurgedWalkForward, WalkForwardSplit  # noqa: E402
 from factorlab.factors import REGISTRY, get_factor  # noqa: E402
 from factorlab.promote import PromotionConfig, promote  # noqa: E402

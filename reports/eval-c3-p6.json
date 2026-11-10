@@ -1,0 +1,22 @@
+{
+  "cycle": 3,
+  "pass": 6,
+  "tests_run": 137,
+  "failures": 0,
+  "pytest_rc": 0,
+  "pytest_tail": [
+    "=============================== warnings summary ===============================",
+    "tests/test_adversarial.py::test_constant_factor_rejected",
+    "  repo/.venv/lib/python3.13/site-packages/numpy/lib/_function_base_impl.py:3036: RuntimeWarning: invalid value encountered in divide",
+    "    c /= stddev[:, None]",
+    "",
+    "tests/test_adversarial.py::test_constant_factor_rejected",
+    "  repo/.venv/lib/python3.13/site-packages/numpy/lib/_function_base_impl.py:3037: RuntimeWarning: invalid value encountered in divide",
+    "    c /= stddev[None, :]",
+    "",
+    "-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html",
+    "- generated xml file: repo/.cycle-eval-c3-p6.xml -",
+    "137 passed, 2 warnings in 55.46s"
+  ],
+  "generated_at": 1791849673.826494
+}

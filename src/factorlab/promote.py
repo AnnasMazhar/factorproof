@@ -25,6 +25,7 @@ from .cv import (
     CPurgedCV,
     PurgedWalkForward,
     check_lookahead,
+    check_lookahead_perturbation,
     check_lookahead_runtime,
     check_lookahead_source,
     evaluate_cpcv,
@@ -321,6 +322,40 @@ def promote(
         )
 
     # ------------------------------------------------------------------
+    # Gate 0.85: Lookahead contamination — perturbation test (F-B1/F-B2 fix)
+    #
+    # Correlation screening (Gate 0.75) only fires above |corr| = 0.30, so
+    # a diluted leak (a few percent of future data blended into a clean
+    # factor) passes it while still flipping a REJECT into a PROMOTE.
+    # The perturbation test checks the property directly: past outputs
+    # must not change when only future inputs change. It catches leaks
+    # regardless of obfuscation (closures, np.roll, iloc tricks), and the
+    # staggered windows (quartile ends, not just the tail) catch leaks
+    # confined to early dates (F-B2).
+    # ------------------------------------------------------------------
+    is_pert_lookahead, pert_reason = check_lookahead_perturbation(factor, df)
+    if is_pert_lookahead:
+        reasons.append(
+            Reason(
+                code="no_future_dependence",
+                passed=False,
+                observed="changed",
+                threshold="identical",
+                note=pert_reason,
+            )
+        )
+        return PromotionDecision(
+            factor_name=factor.name,
+            verdict="reject",
+            reasons=reasons,
+            best_horizon=-1,
+            best_ic=float("nan"),
+            best_ic_ir=float("nan"),
+            oos_consistency=float("nan"),
+            n_obs=0,
+        )
+
+    # ------------------------------------------------------------------
     # Compute factor values and metrics
     # ------------------------------------------------------------------
     factor_vals = factor.compute(df)
@@ -520,6 +555,19 @@ def promote(
     else:
         oos_cons = 0.0
 
+    oos_note = f"{cv_label}, method={cfg.cv_method}"
+    if best_wf is not None and best_wf.oos_cw_stat == best_wf.oos_cw_stat:
+        # F-R53: report Clark-West alongside sign-consistency — the sign
+        # count is magnitude-blind (a +0.0001 split counts like a +0.03 one).
+        oos_note += f", cw={best_wf.oos_cw_stat:.2f} (Clark-West; >1.645 = OOS content)"
+    if factor.category == "momentum":
+        # F-R56: momentum IC is an upper bound on alpha (Grundy & Martin
+        # 2001); the systematic fraction is unknown on this panel.
+        oos_note += (
+            "; caveat: momentum IC upper-bounds alpha (systematic fraction"
+            " unknown — Grundy & Martin 2001)"
+        )
+
     oos_pass = oos_cons >= cfg.oos_consistency_min
     reasons.append(
         Reason(
@@ -527,7 +575,7 @@ def promote(
             passed=oos_pass,
             observed=oos_cons,
             threshold=cfg.oos_consistency_min,
-            note=f"{cv_label}, method={cfg.cv_method}",
+            note=oos_note,
         )
     )
 

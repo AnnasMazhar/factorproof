@@ -1,0 +1,35 @@
+{
+  "cycle": 5,
+  "rc": 2,
+  "max_children": 2,
+  "budget_secs": 3600,
+  "killed": 0,
+  "total": 0,
+  "kill_rate": null,
+  "score_raw": "0/0",
+  "target": 0.7,
+  "counts": {
+    "killed": 0,
+    "survived": 0,
+    "no_tests": 0,
+    "skipped": 0,
+    "suspicious": 0,
+    "timeout": 0,
+    "unchecked": 0,
+    "files": 0,
+    "scored": 0,
+    "kill_rate": null
+  },
+  "survivors_count": 0,
+  "survivors_file": "reports/mutants-survived-c5.txt",
+  "survivors_sample": [],
+  "partial": false,
+  "skipped_files": [],
+  "tail": [
+    "Usage: python -m mutmut run [OPTIONS] [ARGUMENT]",
+    "Try 'python -m mutmut run --help' for help.",
+    "",
+    "Error: No such option '--max-children'."
+  ],
+  "generated_at": 1791970218.3090234
+}

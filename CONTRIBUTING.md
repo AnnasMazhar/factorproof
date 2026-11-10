@@ -3,7 +3,7 @@
 ## Getting started
 
 ```bash
-git clone https://github.com/AnnasMazhar/factor-lab.git
+git clone https://github.com/AnnasMazhar/factorproof.git
 cd factor-lab
 uv venv && uv pip install -e '.[dev]'
 pytest -q       # all tests must pass

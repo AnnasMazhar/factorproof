@@ -23,7 +23,7 @@ from dataclasses import dataclass
 import numpy as np
 import pandas as pd
 
-from .evaluate import FactorMetrics, evaluate_factor
+from .evaluate import FactorMetrics, evaluate_factor, oos_cw_stat
 from .factors.base import Factor
 
 # ---------------------------------------------------------------------------
@@ -156,7 +156,7 @@ class PurgedWalkForward:
             # Remove training rows where the label window [date, date+horizon] overlaps
             # the first test date.  A row at training date t is purged if:
             #     t + label_horizon >= first_test_date
-            purge_cutoff = first_test_date - pd.Timedelta(days=self.label_horizon)
+            purge_cutoff = first_test_date - pd.Timedelta(int(self.label_horizon), unit="D")
             # Using calendar days (not trading days) for simplicity and safety
             train_after_purge = train_dates_raw[train_dates_raw <= purge_cutoff]
             n_purged = len(train_dates_raw) - len(train_after_purge)
@@ -207,6 +207,7 @@ class WalkForwardResult:
     oos_ic_ir: float
     sign_consistency: float  # fraction of splits with IC matching overall sign
     n_splits: int
+    oos_cw_stat: float = float("nan")  # Clark-West MSPE-adjusted OOS stat (F-R53)
 
 
 def evaluate_walk_forward(
@@ -305,6 +306,7 @@ def evaluate_walk_forward(
                 oos_ic_ir=ic_ir,
                 sign_consistency=sign_match,
                 n_splits=len(ics),
+                oos_cw_stat=oos_cw_stat(factor_vals, df, splits, h),
             )
         )
 
@@ -413,7 +415,10 @@ def check_lookahead_runtime(
     try:
         factor_vals = factor.compute(df)
     except Exception as e:
-        return (False, f"factor.compute() raised: {e}")
+        # Fail closed (F-B5): a factor that raises here but computes
+        # elsewhere (e.g. only on unperturbed data) would otherwise dodge
+        # every lookahead layer. An honest factor computes on real data.
+        return (True, f"factor.compute() raised on real data, fail-closed: {e}")
 
     # Pivot to wide format for correlation calculation
     close = df.pivot(index="date", columns="asset", values="close")
@@ -452,6 +457,187 @@ def check_lookahead_runtime(
                 f"This indicates lookahead contamination.",
             )
 
+    return (False, "")
+
+
+def check_lookahead_perturbation(
+    factor: Factor,
+    df: pd.DataFrame,
+    tail_days: int = 20,
+    max_diffs: int = 0,
+    n_windows: int | None = None,
+) -> tuple[bool, str]:
+    """Behavioral detection of lookahead via future perturbation.
+
+    Source inspection (check_lookahead_source) is evadable by hiding the
+    shift amount in a closure variable or by using np.roll/iloc instead of
+    .shift(-N). Correlation screening (check_lookahead_runtime) only fires
+    above an absolute-correlation threshold, so a *diluted* leak (a few
+    percent of future data blended into an otherwise clean factor) passes
+    it while still flipping a REJECT into a PROMOTE.
+
+    This function tests the property directly instead of the mechanism.
+    By default it uses stride-1 dense tiling: every sample date starts a
+    perturbation window of `tail_days` dates (`n_windows=None`):
+
+    1. Compute the factor on the panel (baseline, once).
+    2. Deterministically perturb only the OHLCV rows inside each window
+       (per-asset value reversal — no RNG, fully reproducible).
+    3. Recompute. Factor values at dates strictly BEFORE the perturbed
+       window must be bit-identical: a causal factor cannot change its
+       past outputs when only future inputs change.
+
+    Stride-1 matters (F-B4 fix): contiguous tiling with step == length
+    starts windows at deterministic multiples of `tail_days`, and a leak
+    active only at dates t with no window start in (t, t+d] dodges every
+    window — with d=5 and step=20 that is 75% coverage, enough to flip a
+    clean REJECT (IC=0.006) into PROMOTE (IC=0.072) with all gates passing
+    while source, runtime, AND perturbation layers stay blind. With a
+    window starting at every date, any output at t reading a future row at
+    t+d is caught by the window starting at min(t+d, n_dates-1): the read
+    row is inside it and t is strictly before its start. Gap-aiming is
+    impossible because there are no gaps. Cost: one recompute per date
+    (~10ms on the bundled panel size); leaks exit early on the first
+    differing window, so only clean factors pay the full scan.
+
+    1. Compute the factor on the panel (baseline, once).
+    2. Deterministically perturb only the OHLCV rows inside each window
+       (per-asset value reversal — no RNG, fully reproducible).
+    3. Recompute. Factor values at dates strictly BEFORE the perturbed
+       window must be bit-identical: a causal factor cannot change its
+       past outputs when only future inputs change.
+
+    Full tiling matters (F-B3 fix): quartile-spaced windows leave gaps of
+    hundreds of dates, and a leak that reads future rows only inside those
+    gaps is structurally invisible — it flipped a clean REJECT (IC=0.0065)
+    into PROMOTE (IC=0.055) with all gates passing. With contiguous
+    tiling every sample row sits inside some window, so gap-aiming is
+    impossible: any output at date t reading a future row at t+d > t is
+    caught by every window whose start falls in (t, t+d]. A leak can only
+    dodge by keeping its coverage tiny (few enough affected outputs that
+    no window start lands in any (t, t+d] interval) — and such a leak
+    cannot move full-sample IC above the 0.02 floor on its own.
+
+    Any differing past value proves the factor reads future rows,
+    regardless of how the access is obfuscated. The comparison is exact
+    (deterministic compute on identical inputs is bit-identical), so
+    `max_diffs=0` has no false-positive margin by construction — with one
+    documented assumption: the factor must not normalize with full-sample
+    (global) statistics, which is itself a form of in-sample leakage.
+    All factors in the shipped library satisfy this (verified by
+    test_perturbation_no_false_positives_on_library).
+
+    Residual: passing an explicit small `n_windows` (e.g. 1, tail only)
+    reintroduces gaps and the F-B2/F-B3/F-B4 shapes dodge again — the
+    regression tests pin that `n_windows=1` stays blind so the default
+    tiling cannot silently regress to it. An explicit `n_windows >= 2`
+    reproduces the legacy quartile-style spacings for those regression
+    preconditions — never in the gate path (`promote()` calls with
+    defaults).
+
+    Parameters
+    ----------
+    factor:
+        Factor instance to test.
+    df:
+        OHLCV panel (tidy long format).
+    tail_days:
+        Number of trailing dates to perturb. Must exceed any plausible
+        single-lookahead window. Default 20.
+    max_diffs:
+        Tolerated number of differing past values. Default 0.
+    n_windows:
+        Legacy spacings for regression-test preconditions only. Default
+        None means stride-1 dense tiling (no gaps; the gate path). Pass an
+        explicit small int only to reproduce legacy spacings in tests —
+        never in the gate path.
+
+    Returns
+    -------
+    Tuple of (is_lookahead: bool, reason: str).
+    """
+    try:
+        baseline = factor.compute(df)
+    except Exception as e:
+        # Fail closed (F-B5): without a baseline there is nothing to
+        # compare against, so causality cannot be verified.
+        return (True, f"factor.compute() raised on baseline, fail-closed: {e}")
+
+    all_dates = sorted(df["date"].unique())
+    n_dates = len(all_dates)
+    legacy = n_windows is not None
+    if not legacy:
+        # Stride-1 dense tiling: a window starts at every date (F-B4 fix).
+        # Any output at t reading a future row at t+d is caught by the
+        # window starting inside (t, t+d] — which always exists.
+        starts = list(range(1, n_dates))
+        total_windows = len(starts)
+    else:
+        full_tiling = n_dates // max(1, int(tail_days))
+        n_windows = max(1, min(int(n_windows), full_tiling))
+        starts = []
+        for i in range(1, n_windows + 1):
+            end_pos = (n_dates * i) // n_windows
+            start_pos = max(0, end_pos - tail_days)
+            starts.append(start_pos)
+        total_windows = n_windows
+    # Precompute position/asset index structures once: per-window work is
+    # then a vectorized reversal, not a groupby + isin + loc per window.
+    # (Stride-1 runs ~n_dates windows; the naive loop costs ~60ms/window,
+    # this one ~5ms plus one factor recompute.)
+    date_to_pos = {d: i for i, d in enumerate(all_dates)}
+    pos = df["date"].map(date_to_pos).to_numpy()
+    asset_codes = pd.factorize(df["asset"].to_numpy())[0]
+    group_rows = [np.flatnonzero(asset_codes == k) for k in range(int(asset_codes.max()) + 1)]
+    pcols = [c for c in ("open", "high", "low", "close", "volume") if c in df.columns]
+    base_vals = {c: df[c].to_numpy().copy() for c in pcols}
+    for seq, start_pos in enumerate(starts, 1):
+        end_pos = min(start_pos + tail_days, n_dates)
+        window_dates = all_dates[start_pos:end_pos]
+        if not window_dates:
+            continue
+        in_window = (pos >= start_pos) & (pos < end_pos)
+        perturbed = df.copy()
+        for c in pcols:
+            v = base_vals[c].copy()
+            for rows in group_rows:
+                sel = rows[in_window[rows]]
+                if len(sel) == 0:
+                    continue
+                v[sel] = v[sel[::-1]]
+            perturbed[c] = v
+
+        try:
+            retested = factor.compute(perturbed)
+        except Exception as e:
+            # Fail closed (F-B5): the perturbed panel has identical shape,
+            # dtypes and index — only values are reordered within the
+            # window. Raising here while the baseline computed fine proves
+            # data-dependent refusal, the exact shape of a gate-evasion
+            # attack. An honest factor computes on any same-shape panel.
+            return (
+                True,
+                f"factor.compute() raised on perturbed panel, fail-closed: {e}",
+            )
+
+        first_perturbed = pd.Timestamp(window_dates[0])
+        past_mask = baseline.index.get_level_values("date") < first_perturbed
+        a = baseline.loc[past_mask]
+        common = a.index.intersection(retested.index)
+        if len(common) == 0:
+            continue
+        a, b = a.loc[common], retested.loc[common]
+        both_nan = a.isna() & b.isna()
+        n_diffs = int((((a != b) & ~both_nan) | (a.isna() ^ b.isna())).sum())
+
+        if n_diffs > max_diffs:
+            return (
+                True,
+                f"Factor values at {n_diffs} past dates changed when only future "
+                f"OHLCV data was perturbed (window {seq}/{total_windows} starting "
+                f"{first_perturbed.date()}, tail_days={tail_days}). "
+                f"A causal factor cannot do this — lookahead contamination.",
+            )
     return (False, "")
 
 
@@ -580,7 +766,7 @@ class CPurgedCV:
             #   t + label_horizon >= first date of any adjacent test group
             # We remove training dates within label_horizon calendar days of any
             # test group's start boundary.
-            embargo_td = pd.Timedelta(days=self.label_horizon)
+            embargo_td = pd.Timedelta(int(self.label_horizon), unit="D")
             keep_mask = np.ones(len(train_dates_raw), dtype=bool)
 
             for tg in test_groups:
