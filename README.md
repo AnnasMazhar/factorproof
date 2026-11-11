@@ -172,8 +172,9 @@ distribution leaking through adjacency.
 
 The pipeline is designed to reject the author's favourite factors. That is the point:
 IC gates, Wilson lower bounds on hit rate, Benjamini-Hochberg FDR correction across the
-factor family, deflated Sharpe for the number of trials actually run, and purged
-walk-forward cross-validation with an embargo. Every part of the decision is inspectable
+factor family, a deflated Sharpe ratio computed over the number of trials actually run
+(reported beside each factor, not a gate), and purged walk-forward cross-validation with
+an embargo. Every part of the decision is inspectable
 and every number is reproducible from this repository alone, under MIT.
 
 ## Limitations
@@ -193,7 +194,8 @@ and every number is reproducible from this repository alone, under MIT.
   is not wired into `promote()` by default. See `COMPARISONS.md`.
 - **Factor independence assumed for FDR.** In practice, momentum factors share
   data; the effective number of independent tests is less than 13. The BH
-  correction is therefore conservative (over-rejects), not anti-conservative.
+  correction is therefore conservative (it under-rejects, so it loses power), not
+  anti-conservative.
 - **Lookahead detection is two-layered, not airtight.** The `uses_future_data` flag
   plus a source scan for negative `.shift(-N)` patterns in `compute()` catch declared
   and accidental lookahead (see `docs/ADVERSARIAL-REVIEW.md` finding M01, now fixed).

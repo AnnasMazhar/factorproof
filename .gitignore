@@ -15,3 +15,5 @@ htmlcov/
 .hypothesis/
 .mutmut-cache
 uv.lock
+# Generated demo output (examples/run_demo.sh writes here) — regenerate, never commit.
+results/
