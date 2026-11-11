@@ -190,5 +190,5 @@ python scripts/prove_on_real_data.py --db <prices.sqlite> --horizons 1,5,20 --no
 - **Daily bars only.** Intraday factors are not evaluated here.
 - **No transaction cost model.** IC and promotion verdicts do not account for spread, market impact, or borrow costs. The turnover gate applies a crude proxy.
 - **Survivorship.** The coin list reflects coins still active at data-collection time. Coins that delisted before the start date are absent.
-- **Factor independence assumed for BH-FDR.** Momentum factors share overlapping data. The effective number of independent tests is less than 13, making BH conservative (over-rejects), not anti-conservative.
+- **Factor independence assumed for BH-FDR.** Momentum factors share overlapping data. The effective number of independent tests is less than 13, making BH conservative (it under-rejects, so it loses power), not anti-conservative.
 - **DSR magnitudes are bounds, not point estimates.** Maximum |lag-1 autocorrelation| is 0.1203 (caveat threshold 0.2), so the trigger does not fire; reported DSR magnitudes are conservative (bounce-type panel: return vol is slightly OVERstated) bounds on the true risk-adjusted figures, not point estimates. Verdicts are unaffected where DSR is zero — a bias on a zero still rejects.

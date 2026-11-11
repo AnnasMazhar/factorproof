@@ -826,7 +826,7 @@ def write_report(
     md_lines.append(
         "- **Factor independence assumed for BH-FDR.** Momentum factors share overlapping data. "
         "The effective number of independent tests is less than the family size, making BH conservative "
-        "(over-rejects), not anti-conservative."
+        "(it under-rejects, so it loses power), not anti-conservative."
     )
     # F-R51: cross-IC correlation between max_20 and skew_60 (lottery-premium overlap)
     if cross_ic:

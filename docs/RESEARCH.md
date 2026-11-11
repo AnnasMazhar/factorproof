@@ -447,8 +447,8 @@ Assumptions:
   distributions.
 
 Known failure modes:
-- Under strong positive correlation, effective m < 13. BH is conservative (over-rejects),
-  not anti-conservative — an acceptable error direction.
+- Under strong positive correlation, effective m < 13. BH is conservative (it under-rejects
+  and loses power), not anti-conservative — an acceptable error direction.
 - BH FDR is not FWER: it allows up to q * R expected false discoveries. For portfolio
   decisions, one false positive out of 10 promotions is tolerable; for high-stakes
   decisions, Bonferroni may be preferred.

@@ -227,8 +227,8 @@ for assets with documented persistence. See §4.4 (closed) for the numerical imp
 
 The 13 factors share a common price panel, so their IC p-values are correlated. BH
 FDR at q=0.10 is valid under the PRDS condition (positive regression dependence) and
-is known to be *conservative* (over-rejects) when factors are positively correlated —
-the effective number of independent tests is less than 13.
+is known to be *conservative* (it under-rejects, so it loses power) when factors are
+positively correlated — the effective number of independent tests is less than 13.
 
 **Consequence:** factorproof may reject borderline factors that would survive a
 properly independence-adjusted procedure. The error direction is conservative, not liberal.
